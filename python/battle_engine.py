@@ -178,8 +178,8 @@ def _build_player_skills(technique_id: str) -> list:
 def create_default_enemy(enemy_tier: str = "normal") -> Character:
     return Character(
         id="enemy_1", name="蛸头",
-        hp=60, max_hp=60, mp=0, max_mp=0, atb=0, speed=7,
-        constitution=8, martial_arts=10,
+        hp=120, max_hp=120, mp=0, max_mp=0, atb=0, speed=7,
+        constitution=10, martial_arts=12,
         cursed_energy=0, cursed_energy_control=0, cursed_energy_efficiency=0, talent=5,
         skills=[Skill(id="enemy_attack", name="撞击", cost=0, type="martial",
                       damage_multiplier=1.0, cast_time=8, base_recovery_speed=28,

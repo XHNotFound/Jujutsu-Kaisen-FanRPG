@@ -35,14 +35,12 @@ export class SkillTreeUI {
     for (const skill of tree) {
       const { level, effect, nextCost } = getSkillLevelData(skill.id, skillLevels);
       const proficiency = skillProficiency[skill.id] || 0;
-      const isUnlocked = level > 0;
+      const isUnlocked = level > 0 || !skill.requires;  // 无前置=初始即解锁
       const canUpgrade = nextCost && proficiency >= nextCost.proficiency && skillPoints >= nextCost.skillPoints;
 
       let statusHTML = '';
       if (!isUnlocked && skill.requires) {
         statusHTML = `<span class="skilltree-status locked">🔒 需要前置: ${skill.requires}</span>`;
-      } else if (!isUnlocked && !skill.requires) {
-        // 初始已解锁但未在 skillLevels 中 → 视为 Lv.1
       }
 
       const nextCostHTML = nextCost

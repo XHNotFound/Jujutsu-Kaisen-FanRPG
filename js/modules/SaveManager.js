@@ -280,6 +280,98 @@ export class SaveManager {
     return 0; // 覆盖第一个
   }
 
+  /**
+   * Phase 5: 应用养成操作的更新到当前存档状态
+   * @param {object} payload — HubSystem 返回的 updatePayload
+   *   支持格式: { ap: -20, stamina: -15, residual: 10, "attributes.constitution": 2, hp: 30, ... }
+   */
+  applyGrowthUpdate(payload) {
+    if (!this.state || !payload) return;
+
+    // 1. 初始化 Phase 5 字段的默认值
+    if (this.state.stamina === undefined) this.state.stamina = 100;
+    if (this.state.residual === undefined) this.state.residual = 0;
+    if (this.state.relationship === undefined) this.state.relationship = 0;
+    if (this.state.gameDay === undefined) this.state.gameDay = 1;
+    if (this.state.skillPoints === undefined) this.state.skillPoints = 0;
+    if (this.state.inspiration === undefined) this.state.inspiration = 0;
+    if (!this.state.skillLevels) this.state.skillLevels = {};
+    if (!this.state.skillProficiency) this.state.skillProficiency = {};
+
+    const caps = {
+      maxAp: 100, maxStamina: 100, maxResidual: 100,
+      maxRelationship: 10, maxHp: this.state.maxHp || 100
+    };
+
+    // 2. 遍历 payload 中的每个字段
+    for (const [key, value] of Object.entries(payload)) {
+      if (key === 'newRank' && value) {
+        this.state.rank = value;
+        continue;
+      }
+      if (key === 'gameDay') {
+        this.state.gameDay = (this.state.gameDay || 0) + value;
+        continue;
+      }
+      if (key === 'inspirationGained' && value) {
+        this.state.inspiration = (this.state.inspiration || 0) + 1;
+        continue;
+      }
+      if (key === 'storyText' || key === 'relationship' || value === null || value === undefined) {
+        // relationship 专门处理
+        if (key === 'relationship') {
+          this.state.relationship = Math.max(0, Math.min(caps.maxRelationship || 10, (this.state.relationship || 0) + value));
+        }
+        continue;
+      }
+
+      // proficiencyGains: { "aoi": 10, "attack": 10 }
+      if (key === 'proficiencyGains' && typeof value === 'object') {
+        if (!this.state.skillProficiency) this.state.skillProficiency = {};
+        for (const [skillId, gain] of Object.entries(value)) {
+          this.state.skillProficiency[skillId] = (this.state.skillProficiency[skillId] || 0) + gain;
+          if (!this.state.skillLevels[skillId]) this.state.skillLevels[skillId] = 1;
+        }
+        continue;
+      }
+
+      // 嵌套属性: "attributes.constitution": 2
+      if (key.startsWith('attributes.')) {
+        const attrKey = key.split('.')[1];
+        if (!this.state.attributes) this.state.attributes = {};
+        if (!this.state.baseAttributes) this.state.baseAttributes = {};
+        this.state.attributes[attrKey] = (this.state.attributes[attrKey] || 0) + value;
+        this.state.baseAttributes[attrKey] = (this.state.baseAttributes[attrKey] || 0) + value;
+        continue;
+      }
+
+      // 简单顶层字段: hp, ap, stamina, residual, money, skillPoints
+      if (key === 'hp') {
+        const maxHp = this.state.maxHp || 100;
+        this.state.hp = Math.min(maxHp, Math.max(0, (this.state.hp || maxHp) + value));
+      } else if (key === 'stamina') {
+        this.state.stamina = Math.max(0, Math.min(caps.maxStamina, (this.state.stamina || 100) + value));
+      } else if (key === 'ap') {
+        this.state.actionPoints = Math.max(0, Math.min(caps.maxAp, (this.state.actionPoints || 0) + value));
+      } else if (key === 'residual') {
+        this.state.residual = Math.max(0, Math.min(caps.maxResidual, (this.state.residual || 0) + value));
+      } else if (key === 'money') {
+        this.state.money = Math.max(0, (this.state.money || 0) + value);
+      } else if (key === 'skillPoints') {
+        this.state.skillPoints = Math.max(0, (this.state.skillPoints || 0) + value);
+      } else if (key === 'mp') {
+        const maxMp = this.state.maxMp || 100;
+        this.state.mp = Math.min(maxMp, Math.max(0, (this.state.mp || maxMp) + value));
+      }
+    }
+
+    // 3. 持久化
+    const slot = this._findCurrentSlot();
+    if (slot >= 0) {
+      this.saveToSlot(slot);
+    }
+  }
+
   // ===== 内部方法 =====
 
   /**

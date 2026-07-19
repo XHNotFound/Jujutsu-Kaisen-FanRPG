@@ -4,8 +4,8 @@
 
 /**
  * BattleUI 职责：
- * - 渲染战斗画面（敌我 HP/MP/ATB、日志、技能按钮）
- * - 统一事件绑定（委托在 #screen-battle 上）
+ * - 渲染战斗画面（敌我 HP/MP/ATB、距离、束缚、日志、技能按钮）
+ * - 统一事件委托绑定在 #battle-container 上
  * - 调用 Python（通过 PyodideLoader）获取新状态
  * - 将 Python 返回的 JSON 映射到 DOM
  *
@@ -27,6 +27,8 @@ export class BattleUI {
     this.currentState = null;
     /** @type {boolean} 是否正在处理中（防连点） */
     this._processing = false;
+    /** @type {boolean} 事件委托是否已绑定 */
+    this._delegationBound = false;
   }
 
   /**
@@ -63,12 +65,66 @@ export class BattleUI {
       this.currentState = JSON.parse(resultJson);
 
       this._showLoading(false);
+      this._bindDelegation();
       this._renderAll();
     } catch (err) {
       this._showLoading(false);
       this._appendLog(`[ERROR] 战斗环境加载失败: ${err.message}`);
       console.error('[BattleUI]', err);
     }
+  }
+
+  // ================================================================
+  //  事件委托（一次性绑定在 #battle-container 上）
+  // ================================================================
+
+  _bindDelegation() {
+    if (this._delegationBound) return;
+    this._delegationBound = true;
+
+    const container = document.querySelector('#screen-battle .battle-container');
+    if (!container) return;
+
+    container.addEventListener('click', (e) => {
+      if (this._processing) return;
+
+      // 技能按钮
+      const skillBtn = e.target.closest('.battle-skill-btn');
+      if (skillBtn && !skillBtn.disabled) {
+        const skillId = skillBtn.dataset.skillId;
+        this._executeAction({
+          type: 'use_skill',
+          actor: 'player',
+          skill_id: skillId,
+          target: this.currentState?.enemy?.id || 'enemy_1'
+        });
+        return;
+      }
+
+      // 撤离按钮
+      if (e.target.closest('#btn-battle-flee')) {
+        this.uiManager.showModal('确定要撤离战斗吗？', {
+          onConfirm: () => {
+            this.uiManager.hideModal();
+            this.uiManager.renderMainScreen();
+          },
+          onCancel: () => this.uiManager.hideModal()
+        });
+        return;
+      }
+
+      // 束缚按钮
+      const vowBtn = e.target.closest('.battle-vow-btn');
+      if (vowBtn && !vowBtn.disabled) {
+        const vowId = vowBtn.dataset.vowId;
+        this._executeAction({
+          type: 'apply_vow',
+          actor: 'player',
+          vow_id: vowId
+        });
+        return;
+      }
+    });
   }
 
   // ================================================================
@@ -88,23 +144,22 @@ export class BattleUI {
     // === 敌人 ===
     this._renderCharCard('enemy', s.enemy);
 
+    // === 距离显示 ===
+    this._renderDistance(s);
+
     // === 日志 ===
     this._renderLog(s.log);
 
     // === 技能按钮 ===
     this._renderSkillButtons(s.player);
 
-    // === 撤离按钮 ===
-    document.getElementById('btn-battle-flee').onclick = () => {
-      if (this._processing) return;
-      this.uiManager.showModal('确定要撤离战斗吗？', {
-        onConfirm: () => {
-          this.uiManager.hideModal();
-          this.uiManager.renderMainScreen();
-        },
-        onCancel: () => this.uiManager.hideModal()
-      });
-    };
+    // === 束缚按钮 ===
+    this._renderVowButtons(s.player);
+
+    // === 黑闪特效 ===
+    if (s.last_hit_was_black_flash) {
+      this._flashBlackFlashEffect();
+    }
 
     // === 胜利/失败检查 ===
     if (s.turn === 'player_win') {
@@ -118,46 +173,101 @@ export class BattleUI {
 
   /**
    * 渲染角色卡片（HP/MP/ATB 条）
-   * @param {'player'|'enemy'} prefix
-   * @param {object} data
    */
   _renderCharCard(prefix, data) {
     // 名称
-    document.getElementById(`${prefix}-name`).textContent = data.name;
+    const nameEl = document.getElementById(`${prefix}-name`);
+    if (nameEl) {
+      let label = data.name || '--';
+      // 显示距离标签
+      const distNames = ['贴身', '近', '中', '远'];
+      const dist = data.distance;
+      if (dist !== undefined && distNames[dist]) {
+        label = `${data.name} [${distNames[dist]}]`;
+      }
+      nameEl.textContent = label;
+    }
 
     // HP
     const hpPct = data.max_hp > 0 ? (data.hp / data.max_hp) * 100 : 0;
-    document.getElementById(`${prefix}-hp-bar`).style.width = hpPct + '%';
-    document.getElementById(`${prefix}-hp-text`).textContent = `${data.hp} / ${data.max_hp}`;
+    const hpBar = document.getElementById(`${prefix}-hp-bar`);
+    const hpText = document.getElementById(`${prefix}-hp-text`);
+    if (hpBar) hpBar.style.width = hpPct + '%';
+    if (hpText) hpText.textContent = `${data.hp} / ${data.max_hp}`;
 
     // MP（仅玩家有）
     if (prefix === 'player') {
       const mpPct = data.max_mp > 0 ? (data.mp / data.max_mp) * 100 : 0;
-      document.getElementById(`player-mp-bar`).style.width = mpPct + '%';
-      document.getElementById(`player-mp-text`).textContent = `${data.mp} / ${data.max_mp}`;
+      const mpBar = document.getElementById('player-mp-bar');
+      const mpText = document.getElementById('player-mp-text');
+      if (mpBar) mpBar.style.width = mpPct + '%';
+      if (mpText) mpText.textContent = `${data.mp} / ${data.max_mp}`;
     }
 
     // ATB
     const atbPct = (data.atb / 300) * 100;
-    document.getElementById(`${prefix}-atb-bar`).style.width = atbPct + '%';
-    document.getElementById(`${prefix}-atb-text`).textContent = `${data.atb} / 300`;
+    const atbBar = document.getElementById(`${prefix}-atb-bar`);
+    const atbText = document.getElementById(`${prefix}-atb-text`);
+    if (atbBar) atbBar.style.width = atbPct + '%';
+    if (atbText) atbText.textContent = `${data.atb} / 300`;
+  }
+
+  /**
+   * 渲染距离指示器
+   */
+  _renderDistance(s) {
+    // 在日志上方插入距离横条（若还不存在则创建）
+    let distEl = document.getElementById('battle-distance-bar');
+    if (!distEl) {
+      distEl = document.createElement('div');
+      distEl.id = 'battle-distance-bar';
+      distEl.className = 'battle-distance-bar';
+      const logEl = document.getElementById('battle-log');
+      if (logEl && logEl.parentNode) {
+        logEl.parentNode.insertBefore(distEl, logEl);
+      }
+    }
+
+    const slots = ['贴身', '近', '中', '远'];
+    const pDist = s.player.distance;
+    const eDist = s.enemy.distance;
+
+    let html = '<span class="dist-label">距离：</span>';
+    for (let i = 0; i < 4; i++) {
+      let cls = 'dist-slot';
+      if (i === pDist && i === eDist) cls += ' dist-both';
+      else if (i === pDist) cls += ' dist-player';
+      else if (i === eDist) cls += ' dist-enemy';
+      html += `<span class="${cls}">【${slots[i]}】</span>`;
+    }
+
+    distEl.innerHTML = html;
   }
 
   /**
    * 渲染战斗日志（增量追加新条目）
-   * @param {string[]} logs
    */
   _renderLog(logs) {
     const container = document.getElementById('battle-log');
-    // 仅追加新条目
+    if (!container) return;
     const currentCount = container.children.length;
     for (let i = currentCount; i < logs.length; i++) {
       const entry = document.createElement('div');
       entry.className = 'battle-log-entry';
+      // 黑闪日志高亮
+      if (logs[i].includes('【黑闪！】') || logs[i].includes('漆黑的光芒')) {
+        entry.classList.add('log-black-flash');
+      }
+      // 胜利/败北特殊样式
+      if (logs[i].includes('胜利') || logs[i].includes('祓除')) {
+        entry.classList.add('log-victory');
+      }
+      if (logs[i].includes('败北') || logs[i].includes('倒下')) {
+        entry.classList.add('log-defeat');
+      }
       entry.textContent = logs[i];
       container.appendChild(entry);
     }
-    // 自动滚动到底部
     container.scrollTop = container.scrollHeight;
   }
 
@@ -166,38 +276,26 @@ export class BattleUI {
    */
   _appendLog(msg) {
     const container = document.getElementById('battle-log');
+    if (!container) return;
     const entry = document.createElement('div');
     entry.className = 'battle-log-entry';
+    if (msg.includes('【黑闪！】') || msg.includes('漆黑的光芒')) {
+      entry.classList.add('log-black-flash');
+    }
     entry.textContent = msg;
     container.appendChild(entry);
     container.scrollTop = container.scrollHeight;
   }
 
   /**
-   * 渲染技能按钮（事件委托在父容器上）
+   * 渲染技能按钮（事件委托在 _bindDelegation 中处理）
    */
   _renderSkillButtons(playerData) {
     const container = document.getElementById('battle-skills');
+    if (!container) return;
     container.innerHTML = '';
 
     const skills = playerData.skills || [];
-
-    // 事件委托统一绑定
-    container.onclick = (e) => {
-      const btn = e.target.closest('.battle-skill-btn');
-      if (!btn) return;
-      if (this._processing) return;
-      if (btn.disabled) return;
-
-      const skillId = btn.dataset.skillId;
-      const action = {
-        type: 'use_skill',
-        actor: 'player',
-        skill_id: skillId,
-        target: this.currentState.enemy.id
-      };
-      this._executeAction(action);
-    };
 
     for (const skill of skills) {
       const btn = document.createElement('button');
@@ -218,9 +316,15 @@ export class BattleUI {
         btn.classList.add('cost-too-high');
       }
 
+      // 距离提示
+      const distNames = ['贴身', '近', '中', '远'];
+      const minD = skill.min_distance !== undefined ? distNames[skill.min_distance] : '?';
+      const maxD = skill.max_distance !== undefined ? distNames[skill.max_distance] : '?';
+      const distRange = (skill.type === 'movement') ? '' : ` [${minD}~${maxD}]`;
+
       const costLabel = skill.cost > 0 ? ` (MP ${skill.cost})` : '';
       btn.innerHTML = `
-        <span class="skill-name">${skill.name}</span>
+        <span class="skill-name">${skill.name}${distRange}</span>
         <span class="skill-cost">${costLabel}</span>
       `;
 
@@ -229,11 +333,58 @@ export class BattleUI {
   }
 
   /**
+   * 渲染束缚按钮
+   */
+  _renderVowButtons(playerData) {
+    let vowContainer = document.getElementById('battle-vows');
+    if (!vowContainer) {
+      vowContainer = document.createElement('div');
+      vowContainer.id = 'battle-vows';
+      vowContainer.className = 'battle-vows';
+      const skillsEl = document.getElementById('battle-skills');
+      if (skillsEl && skillsEl.parentNode) {
+        skillsEl.parentNode.insertBefore(vowContainer, skillsEl.nextSibling);
+      }
+    }
+
+    const activeVow = playerData.active_vow;
+    const vowLabels = {
+      'offense_boost': '攻击强化',
+      'no_cursed_speed': '禁咒加速',
+    };
+
+    let html = '';
+    if (activeVow) {
+      html += `<span class="vow-active-badge">⚡ 束缚: ${vowLabels[activeVow] || activeVow}</span>`;
+      html += `<button class="btn battle-vow-btn btn-system" data-vow-id="none">解除束缚</button>`;
+    } else {
+      html += `<button class="btn battle-vow-btn btn-system" data-vow-id="offense_boost">🔺 攻击强化之缚</button>`;
+      html += `<button class="btn battle-vow-btn btn-system" data-vow-id="no_cursed_speed">⚡ 禁咒加速之缚</button>`;
+    }
+
+    vowContainer.innerHTML = html;
+  }
+
+  /**
+   * 黑闪屏幕闪烁特效
+   */
+  _flashBlackFlashEffect() {
+    const container = document.querySelector('#screen-battle .battle-container');
+    if (!container) return;
+    container.classList.add('black-flash-shake');
+    setTimeout(() => {
+      container.classList.remove('black-flash-shake');
+    }, 600);
+  }
+
+  /**
    * 禁用所有技能按钮（战斗结束）
    */
   _disableAllSkills() {
     const btns = document.querySelectorAll('#battle-skills .battle-skill-btn');
     btns.forEach(b => { b.disabled = true; });
+    const vowBtns = document.querySelectorAll('#battle-vows .battle-vow-btn');
+    vowBtns.forEach(b => { b.disabled = true; });
   }
 
   // ================================================================
@@ -242,7 +393,7 @@ export class BattleUI {
 
   /**
    * 向 Python 发送行动，接收新状态并重新渲染
-   * @param {object} action — { type, actor, skill_id, target }
+   * @param {object} action — { type, actor, skill_id/vow_id, target }
    */
   async _executeAction(action) {
     if (this._processing) return;
@@ -276,6 +427,8 @@ export class BattleUI {
   _setSkillsDisabled(disabled) {
     const btns = document.querySelectorAll('#battle-skills .battle-skill-btn');
     btns.forEach(b => { b.disabled = disabled; });
+    const vowBtns = document.querySelectorAll('#battle-vows .battle-vow-btn');
+    vowBtns.forEach(b => { b.disabled = disabled; });
   }
 
   // ================================================================

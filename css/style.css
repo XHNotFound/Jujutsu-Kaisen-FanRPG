@@ -682,3 +682,100 @@ body {
   justify-content: center;
   gap: 1rem;
 }
+
+/* ===== Distance Bar ===== */
+.battle-distance-bar {
+  text-align: center;
+  padding: 0.5rem 0;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.dist-label {
+  color: var(--color-text-dim);
+  margin-right: 0.3rem;
+}
+
+.dist-slot {
+  padding: 0.15rem 0.5rem;
+  margin: 0 0.15rem;
+  border-radius: 3px;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+  transition: all 0.3s;
+}
+
+.dist-slot.dist-player {
+  border-color: var(--color-primary);
+  color: var(--color-primary-glow);
+  box-shadow: 0 0 6px rgba(139, 26, 255, 0.3);
+}
+
+.dist-slot.dist-enemy {
+  border-color: var(--color-danger);
+  color: #ef4444;
+  box-shadow: 0 0 6px rgba(220, 38, 38, 0.3);
+}
+
+.dist-slot.dist-both {
+  border-color: var(--color-gold);
+  color: var(--color-gold);
+  box-shadow: 0 0 8px rgba(212, 168, 67, 0.4);
+}
+
+/* ===== Vow Buttons ===== */
+.battle-vows {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.vow-active-badge {
+  color: var(--color-gold);
+  font-size: 0.9rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--color-gold);
+  border-radius: 4px;
+}
+
+.battle-vow-btn {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.75rem;
+}
+
+/* ===== Black Flash Effects ===== */
+.log-black-flash {
+  color: #ef4444 !important;
+  font-weight: bold;
+}
+
+.log-victory {
+  color: var(--color-gold) !important;
+  font-weight: bold;
+}
+
+.log-defeat {
+  color: #dc2626 !important;
+  font-weight: bold;
+}
+
+/* Black flash screen shake */
+@keyframes bf-shake {
+  0%, 100% { transform: translateX(0); background: inherit; }
+  10% { transform: translateX(-3px); }
+  20% { transform: translateX(3px); }
+  30% { transform: translateX(-3px); background: rgba(220, 38, 38, 0.08); }
+  40% { transform: translateX(3px); }
+  50% { transform: translateX(-2px); }
+  60% { transform: translateX(2px); background: rgba(220, 38, 38, 0.04); }
+  70% { transform: translateX(-1px); }
+  80% { transform: translateX(1px); }
+  90% { transform: translateX(0); background: inherit; }
+}
+
+.black-flash-shake {
+  animation: bf-shake 0.5s ease-in-out;
+}

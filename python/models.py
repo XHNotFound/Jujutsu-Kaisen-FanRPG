@@ -5,6 +5,13 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
+# ===== 距离常量 =====
+DISTANCE_CLOSE = 0    # 贴身
+DISTANCE_NEAR = 1     # 近
+DISTANCE_MID = 2      # 中
+DISTANCE_FAR = 3      # 远
+DISTANCE_NAMES = {0: "贴身", 1: "近", 2: "中", 3: "远"}
+
 # ===== 技能定义 =====
 @dataclass
 class Skill:
@@ -14,13 +21,18 @@ class Skill:
     type: str              # "martial" | "cursed" | "movement"
     damage_multiplier: float = 1.0   # 伤害倍率
     description: str = ""
+    # Phase 3 新增：技能适用距离范围
+    min_distance: int = DISTANCE_CLOSE
+    max_distance: int = DISTANCE_FAR
 
     def to_dict(self):
         return {
             "id": self.id,
             "name": self.name,
             "cost": self.cost,
-            "type": self.type
+            "type": self.type,
+            "min_distance": self.min_distance,
+            "max_distance": self.max_distance
         }
 
 
@@ -43,6 +55,10 @@ class Character:
     talent: int = 10                   # 天赋（影响黑闪概率等）
     skills: list = field(default_factory=list)
     is_alive: bool = True
+    # Phase 3 新增字段
+    distance: int = DISTANCE_MID       # 当前距离档位
+    active_vow: Optional[str] = None   # 当前激活的束缚 ID
+    recovery_speed: int = 10           # 补偿速度（基础值 = 角色速度）
 
     def to_dict(self):
         return {
@@ -61,15 +77,24 @@ class Character:
             "cursed_energy_efficiency": self.cursed_energy_efficiency,
             "talent": self.talent,
             "is_alive": self.is_alive,
+            "distance": self.distance,
+            "active_vow": self.active_vow,
+            "recovery_speed": self.recovery_speed,
             "skills": [s.to_dict() for s in self.skills]
         }
 
 
 # ===== 战斗状态 =====
 ATB_MAX = 300           # ATB 满值
-ATB_MOVEMENT_COST = 50  # 位移消耗 ATB
+ATB_MOVEMENT_COST = 50  # 位移消耗 ATB（基础值）
 ATB_ACTION_COST = 300   # 行动后扣除的 ATB（清零）
-BLACK_FLASH_BASE_RATE = 0.005  # 黑闪基础概率 (0.5%)
+BLACK_FLASH_BASE_RATE = 0.01   # 黑闪基础概率 (1%)
+BLACK_FLASH_TALENT_RATE = 0.005  # 黑闪天赋加成 (0.5%/点)
+
+# Phase 3: 战斗阶段
+PHASE_WAITING = "waiting"      # 等待玩家输入
+PHASE_CHANTING = "chanting"    # 咏唱中（预留）
+PHASE_RECOVERY = "recovery"    # ATB 恢复中
 
 
 @dataclass
@@ -80,6 +105,9 @@ class BattleState:
     log: list = field(default_factory=list)
     round_number: int = 1
     atb_tick: float = 10.0   # 每次推进的 ATB 增量系数
+    phase: str = PHASE_WAITING  # Phase 3: 当前战斗阶段
+    # Phase 3: 上一击是否为黑闪（供 UI 渲染特效）
+    last_hit_was_black_flash: bool = False
 
     def get_actor(self, actor_id: str) -> Character:
         """根据 ID 获取角色"""
@@ -107,5 +135,7 @@ class BattleState:
             "turn": self.turn,
             "log": self.log,
             "round_number": self.round_number,
+            "phase": self.phase,
+            "last_hit_was_black_flash": self.last_hit_was_black_flash,
             "status": "success"
         }

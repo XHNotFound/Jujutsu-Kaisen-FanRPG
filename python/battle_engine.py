@@ -171,66 +171,53 @@ def create_player_from_save(save_data: dict) -> Character:
 def _build_player_skills(technique_id: str) -> list:
     """根据术式 ID 构建玩家技能列表
 
-    每个技能现在包含 min_distance / max_distance 范围。
+    所有技能包含 cast_time / base_recovery_speed（Phase 4 新增）。
     """
-    skills = [
-        # 通用基础技能 — 体术：仅限贴身处
-        Skill(id="attack", name="体术平A", cost=0, type="martial",
-              damage_multiplier=1.0, description="基础体术攻击，不消耗咒力",
-              min_distance=DISTANCE_CLOSE, max_distance=DISTANCE_CLOSE),
 
-        # 位移技能
-        Skill(id="advance", name="逼近", cost=0, type="movement",
-              damage_multiplier=0, description="向敌人逼近 1 档距离",
-              min_distance=DISTANCE_CLOSE, max_distance=DISTANCE_FAR),
-
-        Skill(id="retreat", name="后退", cost=0, type="movement",
-              damage_multiplier=0, description="向后退开 1 档距离",
-              min_distance=DISTANCE_CLOSE, max_distance=DISTANCE_FAR),
+    # (id, name, cost, type, mult, cast_time, recovery, min_d, max_d, desc)
+    BASE = [
+        ("attack", "体术平A", 0, "martial", 1.0, 5, 30, DISTANCE_CLOSE, DISTANCE_CLOSE, "基础体术攻击，不消耗咒力"),
+        ("advance", "逼近", 0, "movement", 0.0, 3, 35, DISTANCE_CLOSE, DISTANCE_FAR, "向敌人逼近 1 档距离"),
+        ("retreat", "后退", 0, "movement", 0.0, 3, 35, DISTANCE_CLOSE, DISTANCE_FAR, "向后退开 1 档距离"),
     ]
 
-    # 根据术式添加咒术技能（各术式有不同适用距离）
-    technique_skills = {
+    skills = [
+        Skill(id=id, name=name, cost=cost, type=typ,
+              damage_multiplier=mult, cast_time=ct, base_recovery_speed=rcv,
+              min_distance=min_d, max_distance=max_d, description=desc)
+        for (id, name, cost, typ, mult, ct, rcv, min_d, max_d, desc) in BASE
+    ]
+
+    TECH_SKILLS = {
         "cursedEnergyBoost": [
-            Skill(id="cursed_boost", name="咒力强化拳", cost=10, type="cursed",
-                  damage_multiplier=1.8, description="以咒力强化拳击，朴实但有效",
-                  min_distance=DISTANCE_CLOSE, max_distance=DISTANCE_CLOSE),
+            ("cursed_boost", "咒力强化拳", 10, "cursed", 1.8, 12, 28, DISTANCE_CLOSE, DISTANCE_CLOSE, "以咒力强化拳击，朴实但有效"),
         ],
         "limitless": [
-            Skill(id="aoi", name="苍", cost=15, type="cursed",
-                  damage_multiplier=2.2, description="吸引一切的空之涡",
-                  min_distance=DISTANCE_CLOSE, max_distance=DISTANCE_FAR),
-            Skill(id="aka", name="赫", cost=25, type="cursed",
-                  damage_multiplier=3.0, description="排斥一切的术式顺转",
-                  min_distance=DISTANCE_NEAR, max_distance=DISTANCE_FAR),
+            ("aoi", "苍", 15, "cursed", 2.2, 20, 25, DISTANCE_CLOSE, DISTANCE_FAR, "吸引一切的空之涡"),
+            ("aka", "赫", 25, "cursed", 3.0, 30, 18, DISTANCE_NEAR, DISTANCE_FAR, "排斥一切的术式顺转"),
         ],
         "tenShadows": [
-            Skill(id="gyokuken", name="玉犬", cost=12, type="cursed",
-                  damage_multiplier=1.6, description="召唤黑白玉犬撕咬目标",
-                  min_distance=DISTANCE_CLOSE, max_distance=DISTANCE_NEAR),
+            ("gyokuken", "玉犬", 12, "cursed", 1.6, 15, 28, DISTANCE_CLOSE, DISTANCE_NEAR, "召唤黑白玉犬撕咬目标"),
         ],
         "bloodManipulation": [
-            Skill(id="piercing_blood", name="穿血", cost=14, type="cursed",
-                  damage_multiplier=2.0, description="以高压血箭贯穿目标",
-                  min_distance=DISTANCE_CLOSE, max_distance=DISTANCE_FAR),
+            ("piercing_blood", "穿血", 14, "cursed", 2.0, 16, 24, DISTANCE_CLOSE, DISTANCE_FAR, "以高压血箭贯穿目标"),
         ],
         "boogieWoogie": [
-            Skill(id="boogie_punch", name="拍手连击", cost=8, type="cursed",
-                  damage_multiplier=1.5, description="利用位置交换制造破绽后进行连击",
-                  min_distance=DISTANCE_CLOSE, max_distance=DISTANCE_CLOSE),
+            ("boogie_punch", "拍手连击", 8, "cursed", 1.5, 10, 30, DISTANCE_CLOSE, DISTANCE_CLOSE, "利用位置交换制造破绽后进行连击"),
         ],
         "strawDoll": [
-            Skill(id="doll_resonance", name="共鸣", cost=13, type="cursed",
-                  damage_multiplier=1.9, description="以傀儡共鸣释放远程咒力冲击",
-                  min_distance=DISTANCE_CLOSE, max_distance=DISTANCE_FAR),
+            ("doll_resonance", "共鸣", 13, "cursed", 1.9, 18, 22, DISTANCE_CLOSE, DISTANCE_FAR, "以傀儡共鸣释放远程咒力冲击"),
         ],
     }
 
-    sk = technique_skills.get(technique_id, [])
-    if not sk:
-        sk = technique_skills.get("cursedEnergyBoost", [])
+    entries = TECH_SKILLS.get(technique_id, TECH_SKILLS.get("cursedEnergyBoost", []))
+    for (id, name, cost, typ, mult, ct, rcv, min_d, max_d, desc) in entries:
+        skills.append(Skill(
+            id=id, name=name, cost=cost, type=typ,
+            damage_multiplier=mult, cast_time=ct, base_recovery_speed=rcv,
+            min_distance=min_d, max_distance=max_d, description=desc
+        ))
 
-    skills.extend(sk)
     return skills
 
 

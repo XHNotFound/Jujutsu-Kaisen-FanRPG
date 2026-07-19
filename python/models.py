@@ -24,6 +24,9 @@ class Skill:
     # Phase 3 新增：技能适用距离范围
     min_distance: int = DISTANCE_CLOSE
     max_distance: int = DISTANCE_FAR
+    # Phase 4 新增：咏唱时间与补偿速度
+    cast_time: int = 5              # 咏唱时间（帧/tick），体术默认 5
+    base_recovery_speed: int = 30   # 基础补偿速度，体术默认 30
 
     def to_dict(self):
         return {
@@ -31,8 +34,11 @@ class Skill:
             "name": self.name,
             "cost": self.cost,
             "type": self.type,
+            "damage_multiplier": self.damage_multiplier,
             "min_distance": self.min_distance,
-            "max_distance": self.max_distance
+            "max_distance": self.max_distance,
+            "cast_time": self.cast_time,
+            "base_recovery_speed": self.base_recovery_speed
         }
 
 

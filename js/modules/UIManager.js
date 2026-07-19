@@ -3,6 +3,9 @@
 import { ATTRIBUTES } from '../data/attributes.js';
 import { BattleUI } from './BattleUI.js';
 import { SkillTreeUI } from './SkillTreeUI.js';
+import { HubSystem } from './HubSystem.js';
+import { NPCS } from '../data/npcs.js';
+import { QUESTS } from '../data/quests.js';
 
 /**
  * UIManager 职责：
@@ -34,6 +37,10 @@ export class UIManager {
     // BattleUI 延迟创建（首次使用时初始化）
     /** @type {import('./BattleUI.js').BattleUI|null} */
     this._battleUI = null;
+
+    // Phase 5: HubSystem 初始化
+    /** @type {HubSystem} */
+    this._hubSystem = new HubSystem();
   }
 
   // ================================================================
@@ -436,6 +443,20 @@ export class UIManager {
           return;
         }
 
+        // Phase 5: 修炼/请教/任务 → 调用 HubSystem
+        if (action === 'train') {
+          this._showTrainPanel();
+          return;
+        }
+        if (action === 'learn') {
+          this._showConsultPanel();
+          return;
+        }
+        if (action === 'quest') {
+          this._showQuestPanel();
+          return;
+        }
+
         this.showModal(
           `「${labels[action] || action}」功能开发中，敬请期待。`,
           { confirmOnly: true, onConfirm: () => this.hideModal() }
@@ -446,6 +467,11 @@ export class UIManager {
     // 技能树
     document.getElementById('btn-skilltree').onclick = () => {
       this._showSkillTree();
+    };
+
+    // 休息
+    document.getElementById('btn-rest').onclick = () => {
+      this._handleRest();
     };
 
     // 存档
@@ -489,6 +515,204 @@ export class UIManager {
       this._skillTreeUI = new SkillTreeUI(this.saveManager, this);
     }
     this._skillTreeUI.show();
+  }
+
+  // ================================================================
+  //  Phase 5: 养成面板（修炼 / 请教 / 任务 / 休息）
+  // ================================================================
+
+  /** 修炼面板 */
+  _showTrainPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    const ap = state.actionPoints || 0;
+    const stamina = state.stamina !== undefined ? state.stamina : 100;
+
+    let rows = '';
+    for (const [key, cfg] of Object.entries(ATTRIBUTES)) {
+      const curVal = (state.attributes && state.attributes[key]) || 0;
+      const canTrain = ap >= 20 && stamina >= 15;
+      rows += `
+        <div class="train-row">
+          <span class="train-name">${cfg.name}</span>
+          <span class="train-value">当前: ${curVal}</span>
+          <button class="btn btn-primary btn-train-action" data-attr="${key}" ${canTrain ? '' : 'disabled'}>修炼 (+1~3)</button>
+        </div>
+      `;
+    }
+
+    const residual = state.residual || 0;
+    const html = `
+      <div class="train-panel">
+        <h3>🏋️ 修炼</h3>
+        <p class="train-info">AP: ${ap}/100 | 体力: ${stamina}/100 | 残秽: ${residual}/100</p>
+        <p style="color:var(--color-text-dim);font-size:0.8rem;">每次消耗 20 AP + 15 体力，属性 +1~3，残秽 +10</p>
+        <div class="train-grid">${rows}</div>
+        <button id="btn-train-close" class="btn btn-secondary">关闭</button>
+      </div>
+    `;
+
+    this.showModal(html, { confirmOnly: false, useHTML: true });
+
+    // 事件委托：修炼属性
+    setTimeout(() => {
+      document.querySelectorAll('.btn-train-action').forEach(btn => {
+        btn.onclick = () => {
+          const attrKey = btn.dataset.attr;
+          const result = this._hubSystem.train(state, attrKey);
+          if (result.success && result.updatePayload) {
+            this.saveManager.applyGrowthUpdate(result.updatePayload);
+            this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this.renderMainScreen(); } });
+          } else {
+            this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+          }
+        };
+      });
+      document.getElementById('btn-train-close').onclick = () => { this.hideModal(); };
+    }, 50);
+  }
+
+  /** 请教面板 */
+  _showConsultPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    const ap = state.actionPoints || 0;
+    const rel = state.relationship !== undefined ? state.relationship : 0;
+
+    let rows = '';
+    for (const npc of NPCS) {
+      for (const action of npc.actions) {
+        const canDo = ap >= (action.cost.ap || 0) && rel >= (action.cost.relationship || 0);
+        const costLabel = [];
+        if (action.cost.ap) costLabel.push(`${action.cost.ap} AP`);
+        if (action.cost.relationship) costLabel.push(`${action.cost.relationship} 人情`);
+        if (action.cost.money) costLabel.push(`${action.cost.money} 金币`);
+        rows += `
+          <div class="train-row">
+            <span class="train-name">${npc.name}</span>
+            <span class="train-value">${action.name} (${costLabel.join(', ')})</span>
+            <button class="btn btn-primary btn-consult-action" data-npc="${npc.id}" data-action="${action.id}" ${canDo ? '' : 'disabled'}>执行</button>
+          </div>
+        `;
+      }
+    }
+
+    const html = `
+      <div class="train-panel">
+        <h3>👥 请教</h3>
+        <p class="train-info">AP: ${ap}/100 | 人情: ${rel}</p>
+        <div class="train-grid">${rows}</div>
+        <button id="btn-consult-close" class="btn btn-secondary">关闭</button>
+      </div>
+    `;
+
+    this.showModal(html, { confirmOnly: false, useHTML: true });
+
+    setTimeout(() => {
+      document.querySelectorAll('.btn-consult-action').forEach(btn => {
+        btn.onclick = () => {
+          const result = this._hubSystem.consult(state, btn.dataset.npc, btn.dataset.action);
+          if (result.success && result.updatePayload) {
+            this.saveManager.applyGrowthUpdate(result.updatePayload);
+            this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this.renderMainScreen(); } });
+          } else {
+            this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+          }
+        };
+      });
+      document.getElementById('btn-consult-close').onclick = () => { this.hideModal(); };
+    }, 50);
+  }
+
+  /** 任务面板 */
+  _showQuestPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    const ap = state.actionPoints || 0;
+
+    let rows = '';
+    // NPC 任务
+    for (const q of QUESTS.npcTasks || []) {
+      const canDo = ap >= (q.cost.ap || 0);
+      rows += `
+        <div class="train-row">
+          <span class="train-name">${q.name}</span>
+          <span class="train-value">${q.description} (${q.cost.ap} AP)</span>
+          <button class="btn btn-primary btn-quest-action" data-quest="${q.id}" data-cat="npcTasks" ${canDo ? '' : 'disabled'}>接取</button>
+        </div>
+      `;
+    }
+
+    // 升职考核
+    for (const q of QUESTS.promotions || []) {
+      const canDo = ap >= (q.cost.ap || 0);
+      rows += `
+        <div class="train-row">
+          <span class="train-name">🏅 ${q.name}</span>
+          <span class="train-value">${q.description} (${q.cost.ap} AP)</span>
+          <button class="btn btn-primary btn-quest-action" data-quest="${q.id}" data-cat="promotions" ${canDo ? '' : 'disabled'}>考核</button>
+        </div>
+      `;
+    }
+
+    // 主线
+    const completedChapter = state.completedChapter || 1;
+    for (const q of QUESTS.mainStory || []) {
+      const reqChap = q.requiresChapter || 0;
+      const canDo = ap >= (q.cost.ap || 0) && reqChap <= completedChapter;
+      rows += `
+        <div class="train-row">
+          <span class="train-name">📖 ${q.name}</span>
+          <span class="train-value">${q.description} (${q.cost.ap} AP)</span>
+          <button class="btn btn-primary btn-quest-action" data-quest="${q.id}" data-cat="mainStory" ${canDo ? '' : 'disabled'}>推进</button>
+        </div>
+      `;
+    }
+
+    const html = `
+      <div class="train-panel">
+        <h3>📋 任务</h3>
+        <p class="train-info">AP: ${ap}/100</p>
+        <div class="train-grid">${rows}</div>
+        <button id="btn-quest-close" class="btn btn-secondary">关闭</button>
+      </div>
+    `;
+
+    this.showModal(html, { confirmOnly: false, useHTML: true });
+
+    setTimeout(() => {
+      document.querySelectorAll('.btn-quest-action').forEach(btn => {
+        btn.onclick = () => {
+          const result = this._hubSystem.acceptQuest(state, btn.dataset.quest, btn.dataset.cat);
+          if (result.success && result.updatePayload) {
+            this.saveManager.applyGrowthUpdate(result.updatePayload);
+            let msg = result.log;
+            if (result.storyText) msg += '\n\n' + result.storyText;
+            this.showModal(msg, { confirmOnly: true, onConfirm: () => { this.hideModal(); this.renderMainScreen(); } });
+          } else {
+            this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+          }
+        };
+      });
+      document.getElementById('btn-quest-close').onclick = () => { this.hideModal(); };
+    }, 50);
+  }
+
+  /** 休息 */
+  _handleRest() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    const result = this._hubSystem.rest(state);
+    if (result.success && result.updatePayload) {
+      this.saveManager.applyGrowthUpdate(result.updatePayload);
+      this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this.renderMainScreen(); } });
+    } else {
+      this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+    }
   }
 
   /**

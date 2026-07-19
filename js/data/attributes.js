@@ -22,3 +22,49 @@ export const RANK_THRESHOLDS = [
   { name: "特级", min: 56 },
   { name: "现代最强", min: 64 }
 ];
+
+// ================================================================
+// Phase 5: 养成系统配置
+// ================================================================
+
+/** 修炼消耗与效果 */
+export const TRAIN_CONFIG = {
+  apCost: 20,           // 每次修炼消耗 AP
+  staminaCost: 15,      // 每次修炼消耗体力
+  residualGain: 10,     // 每次修炼增加残秽
+  attrGainMin: 1,       // 属性最小提升
+  attrGainMax: 3,       // 属性最大提升
+};
+
+/** 请教消耗与效果 */
+export const CONSULT_CONFIG = {
+  apCost: 20,           // 每次请教消耗 AP
+  relationshipCost: 1,   // 每次请教消耗人情
+  proficiencyGain: 10,   // 基础熟练度增加
+  inspirationChanceBase: 0.15, // 基础灵感概率
+};
+
+/** 休息恢复配置 */
+export const REST_CONFIG = {
+  apRecovery: 70,       // 休息恢复 AP
+  staminaRecovery: 50,   // 休息恢复体力
+  hpRecoveryPct: 0.30,   // 休息恢复 HP 百分比
+  residualClearPct: 0.30, // 休息清除残秽百分比
+};
+
+/** 资源上限 */
+export const RESOURCE_CAPS = {
+  maxAp: 100,
+  maxStamina: 100,
+  maxResidual: 100,
+  maxRelationship: 10,
+});
+
+/** 主界面行动消耗（修炼/请教/任务/探索/休息 以外的按钮暂用此） */
+export const HUB_ACTION_COSTS = {
+  train: { ap: 20, stamina: 15 },
+  consult: { ap: 20, relationship: 1 },
+  quest: { ap: 20 },
+  explore: { ap: 0 },   // 探索由战斗系统接管
+  rest: { ap: 0 },      // 休息有专门逻辑
+};

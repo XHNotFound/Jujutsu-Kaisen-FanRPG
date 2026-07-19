@@ -1,0 +1,4 @@
+# Pyodide local files (450MB+)
+lib/pyodide/
+__pycache__/
+*.pyc

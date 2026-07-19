@@ -123,6 +123,80 @@
     </div>
   </div>
 
+  <!-- ===== 战斗界面 ===== -->
+  <div id="screen-battle" class="screen hidden">
+    <div class="battle-container">
+      <!-- 加载中遮罩 -->
+      <div id="battle-loading" class="battle-loading">
+        <p id="battle-loading-text">正在加载战斗环境...</p>
+      </div>
+
+      <!-- 敌方信息 -->
+      <div class="battle-enemy-section">
+        <div class="battle-char-card">
+          <div class="battle-char-name" id="enemy-name">--</div>
+          <div class="battle-stat-row">
+            <span class="stat-label">HP</span>
+            <div class="stat-bar-bg battle-bar-wide">
+              <div id="enemy-hp-bar" class="stat-bar hp-bar"></div>
+            </div>
+            <span id="enemy-hp-text" class="stat-text">--/--</span>
+          </div>
+          <div class="battle-stat-row">
+            <span class="stat-label">ATB</span>
+            <div class="stat-bar-bg battle-bar-wide">
+              <div id="enemy-atb-bar" class="stat-bar" style="background: #eab308;"></div>
+            </div>
+            <span id="enemy-atb-text" class="stat-text">0/300</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 战斗日志 -->
+      <div id="battle-log" class="battle-log">
+        <!-- 动态追加 -->
+      </div>
+
+      <!-- 玩家信息 -->
+      <div class="battle-player-section">
+        <div class="battle-char-card">
+          <div class="battle-char-name" id="player-name">--</div>
+          <div class="battle-stat-row">
+            <span class="stat-label">HP</span>
+            <div class="stat-bar-bg battle-bar-wide">
+              <div id="player-hp-bar" class="stat-bar hp-bar"></div>
+            </div>
+            <span id="player-hp-text" class="stat-text">--/--</span>
+          </div>
+          <div class="battle-stat-row">
+            <span class="stat-label">MP</span>
+            <div class="stat-bar-bg battle-bar-wide">
+              <div id="player-mp-bar" class="stat-bar mp-bar"></div>
+            </div>
+            <span id="player-mp-text" class="stat-text">--/--</span>
+          </div>
+          <div class="battle-stat-row">
+            <span class="stat-label">ATB</span>
+            <div class="stat-bar-bg battle-bar-wide">
+              <div id="player-atb-bar" class="stat-bar" style="background: #eab308;"></div>
+            </div>
+            <span id="player-atb-text" class="stat-text">0/300</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 技能按钮区 -->
+      <div id="battle-skills" class="battle-skills">
+        <!-- 动态渲染 -->
+      </div>
+
+      <!-- 撤离按钮 -->
+      <div class="battle-bottom-btns">
+        <button id="btn-battle-flee" class="btn btn-system">撤离</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== 读档界面 ===== -->
   <div id="screen-load" class="screen hidden">
     <div class="load-container">
@@ -162,7 +236,7 @@
   </div>
 
   <!-- ===== 脚本 ===== -->
-  <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+  <script src="lib/pyodide/pyodide.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

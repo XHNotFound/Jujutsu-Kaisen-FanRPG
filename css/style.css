@@ -562,3 +562,123 @@ body {
   color: var(--color-primary-glow);
   font-size: 1.1rem;
 }
+
+/* ===== Battle UI ===== */
+.battle-container {
+  max-width: 750px;
+  margin: 0 auto;
+  padding-top: 1rem;
+}
+
+.battle-loading {
+  text-align: center;
+  padding: 3rem 0;
+  color: var(--color-primary-glow);
+  font-size: 1.2rem;
+}
+
+.battle-loading.hidden {
+  display: none;
+}
+
+.battle-char-card {
+  padding: 1rem;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin-bottom: 0.75rem;
+}
+
+.battle-char-name {
+  font-size: 1.2rem;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+}
+
+.battle-enemy-section .battle-char-name {
+  color: var(--color-danger);
+}
+
+.battle-player-section .battle-char-name {
+  color: var(--color-primary-glow);
+}
+
+.battle-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.battle-bar-wide {
+  width: 300px;
+}
+
+/* 战斗日志 */
+.battle-log {
+  height: 180px;
+  overflow-y: auto;
+  padding: 0.75rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+}
+
+.battle-log-entry {
+  font-size: 0.85rem;
+  padding: 0.15rem 0;
+  border-bottom: 1px solid rgba(51, 51, 51, 0.5);
+  color: var(--color-text-dim);
+  line-height: 1.4;
+}
+
+.battle-log-entry:last-child {
+  border-bottom: none;
+}
+
+/* 技能按钮 */
+.battle-skills {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.battle-skill-btn {
+  padding: 0.6rem;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.battle-skill-btn .skill-name {
+  font-weight: bold;
+  display: block;
+}
+
+.battle-skill-btn .skill-cost {
+  font-size: 0.75rem;
+  color: var(--color-text-dim);
+}
+
+.battle-skill-btn.cost-too-high {
+  opacity: 0.4;
+}
+
+.battle-skill-btn.skill-martial {
+  border-left: 3px solid var(--color-success);
+}
+
+.battle-skill-btn.skill-cursed {
+  border-left: 3px solid #2563eb;
+}
+
+.battle-skill-btn.skill-movement {
+  border-left: 3px solid var(--color-gold);
+}
+
+.battle-bottom-btns {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}

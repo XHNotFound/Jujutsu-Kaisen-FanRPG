@@ -1,6 +1,7 @@
 // js/modules/UIManager.js — UI 管理器（唯一负责 DOM 操作、事件监听和画面切换）
 
 import { ATTRIBUTES } from '../data/attributes.js';
+import { BattleUI } from './BattleUI.js';
 
 /**
  * UIManager 职责：
@@ -18,14 +19,20 @@ export class UIManager {
   /**
    * @param {import('./SaveManager.js').SaveManager} saveManager
    * @param {import('./CharCreator.js').CharCreator} charCreator
+   * @param {import('../pyodide_loader.js').PyodideLoader} pyodideLoader
    */
-  constructor(saveManager, charCreator) {
+  constructor(saveManager, charCreator, pyodideLoader) {
     this.saveManager = saveManager;
     this.charCreator = charCreator;
+    this.pyodideLoader = pyodideLoader;
     this.currentScreen = null;
 
     // 缓存弹窗回调
     this._modalCallbacks = {};
+
+    // BattleUI 延迟创建（首次使用时初始化）
+    /** @type {import('./BattleUI.js').BattleUI|null} */
+    this._battleUI = null;
   }
 
   // ================================================================
@@ -421,6 +428,13 @@ export class UIManager {
           quest: '任务',
           explore: '探索'
         };
+
+        // 探索按钮 → 进入战斗
+        if (action === 'explore') {
+          this._enterBattle();
+          return;
+        }
+
         this.showModal(
           `「${labels[action] || action}」功能开发中，敬请期待。`,
           { confirmOnly: true, onConfirm: () => this.hideModal() }
@@ -449,6 +463,16 @@ export class UIManager {
         onCancel: () => this.hideModal()
       });
     };
+  }
+
+  /**
+   * 进入战斗（从探索按钮触发）
+   */
+  async _enterBattle() {
+    if (!this._battleUI) {
+      this._battleUI = new BattleUI(this.pyodideLoader, this);
+    }
+    await this._battleUI.start();
   }
 
   /**

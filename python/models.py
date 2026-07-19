@@ -103,6 +103,32 @@ PHASE_CHANTING = "chanting"    # 咏唱中（预留）
 PHASE_RECOVERY = "recovery"    # ATB 恢复中
 
 
+# Phase 4: 战斗内追踪器（移到这里避免循环导入）
+class BattleTracker:
+    """战斗内追踪器 — 记录技能使用次数与奖励数据"""
+    def __init__(self):
+        self.skill_usage = {}
+        self.money_reward = 0
+        self.skill_points_reward = 0
+        self.inspiration_gained = False
+
+    def record_skill_use(self, skill_id: str):
+        self.skill_usage[skill_id] = self.skill_usage.get(skill_id, 0) + 1
+
+    def set_rewards(self, money: int, skill_points: int, inspiration: bool):
+        self.money_reward = money
+        self.skill_points_reward = skill_points
+        self.inspiration_gained = inspiration
+
+    def to_dict(self):
+        return {
+            "skill_usage": dict(self.skill_usage),
+            "money_reward": self.money_reward,
+            "skill_points_reward": self.skill_points_reward,
+            "inspiration_gained": self.inspiration_gained
+        }
+
+
 @dataclass
 class BattleState:
     player: Character

@@ -165,6 +165,7 @@ export class BattleUI {
     if (s.turn === 'player_win') {
       this._appendLog('━━ 胜利！诅咒被祓除了。 ━━');
       this._disableAllSkills();
+      this._showVictoryScreen(s);
     } else if (s.turn === 'enemy_win') {
       this._appendLog('━━ 败北…你失去了意识。 ━━');
       this._disableAllSkills();
@@ -375,6 +376,82 @@ export class BattleUI {
     setTimeout(() => {
       container.classList.remove('black-flash-shake');
     }, 600);
+  }
+
+  /**
+   * Phase 4: 战斗胜利结算弹窗
+   */
+  _showVictoryScreen(s) {
+    const tracker = s._tracker || {};
+    const usage = tracker.skill_usage || {};
+
+    // 调用 Python 生成奖励（通过 SaveManager 的 state 中不包含敌人配置，使用默认配置）
+    const skillUsageStr = JSON.stringify(usage);
+    this.pyodideLoader.runPython(
+      `from python.battle_engine import generate_battle_rewards, BattleTracker
+t = BattleTracker()
+t.skill_usage = ${skillUsageStr}
+rewards = generate_battle_rewards(t)
+__builtins__.dict(rewards)`
+    ).then(rewardsStr => {
+      const rewards = typeof rewardsStr === 'string' ? JSON.parse(rewardsStr) : rewardsStr;
+      this._renderRewardPopup(rewards);
+    }).catch(err => {
+      // 如果 Python 调用失败，用 JS 兜底计算
+      const proficiency = {};
+      for (const [id, count] of Object.entries(usage)) {
+        proficiency[id] = count * 5;
+      }
+      this._renderRewardPopup({
+        money: Math.floor(Math.random() * 31) + 20,
+        skillPoints: 1,
+        inspirationGained: Math.random() < 0.05,
+        proficiencyGains: proficiency
+      });
+    });
+  }
+
+  _renderRewardPopup(rewards) {
+    const container = document.querySelector('#screen-battle .battle-container');
+    if (!container) return;
+
+    // 移除旧弹窗
+    const old = document.getElementById('battle-reward-overlay');
+    if (old) old.remove();
+
+    const pGains = rewards.proficiencyGains || {};
+    const profLines = Object.entries(pGains)
+      .map(([id, val]) => {
+        const nameMap = { attack: '体术平A', cursed_boost: '咒力强化拳', aoi: '苍', aka: '赫', gyokuken: '玉犬', piercing_blood: '穿血', boogie_punch: '拍手连击', doll_resonance: '共鸣' };
+        return `<div class="reward-row">${nameMap[id] || id}: +${val} 熟练度</div>`;
+      })
+      .join('');
+
+    const inspText = rewards.inspirationGained ? '<div class="reward-row reward-inspiration">⚡ 获得了灵感！</div>' : '';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'battle-reward-overlay';
+    overlay.className = 'battle-reward-overlay';
+    overlay.innerHTML = `
+      <div class="battle-reward-box">
+        <h3>━━ 战斗胜利 ━━</h3>
+        <div class="reward-row reward-money">💰 金币: +${rewards.money}</div>
+        <div class="reward-row reward-sp">🔧 技能点: +${rewards.skillPoints}</div>
+        ${profLines}
+        ${inspText}
+        <button id="btn-reward-confirm" class="btn btn-primary">确认</button>
+      </div>
+    `;
+
+    container.appendChild(overlay);
+
+    document.getElementById('btn-reward-confirm').onclick = () => {
+      overlay.remove();
+      // 回写到 SaveManager
+      if (this.uiManager.saveManager && typeof this.uiManager.saveManager.applyBattleRewards === 'function') {
+        this.uiManager.saveManager.applyBattleRewards(rewards);
+      }
+    };
   }
 
   /**

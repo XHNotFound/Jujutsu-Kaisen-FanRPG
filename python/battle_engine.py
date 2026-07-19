@@ -6,7 +6,7 @@ import json
 import random
 import math
 from python.models import (
-    Character, Skill, BattleState,
+    Character, Skill, BattleState, BattleTracker,
     ATB_MAX, ATB_MOVEMENT_COST, ATB_ACTION_COST,
     BLACK_FLASH_BASE_RATE, BLACK_FLASH_TALENT_RATE,
     DISTANCE_CLOSE, DISTANCE_NEAR, DISTANCE_MID, DISTANCE_FAR, DISTANCE_NAMES,
@@ -19,25 +19,19 @@ from python.models import (
 # ================================================================
 
 def _capped(value: int, lo: int, hi: int) -> int:
-    """将 value 限制在 [lo, hi] 范围内"""
     return max(lo, min(hi, value))
 
 
 def _check_black_flash(actor: Character) -> bool:
-    """判定黑闪是否触发：概率 = 基础概率(1%) + 天赋 * 0.5%"""
     rate = BLACK_FLASH_BASE_RATE + actor.talent * BLACK_FLASH_TALENT_RATE
     return random.random() < rate
 
 
 # ================================================================
-#  距离系统（Phase 3 新增）
+#  距离系统
 # ================================================================
 
 def calculate_move_cost(actor: Character, from_distance: int, to_distance: int) -> int:
-    """
-    计算移动消耗：
-      cost = max(2, abs(距离差) * 10 - floor(体术水平 / 5))
-    """
     diff = abs(to_distance - from_distance)
     if diff == 0:
         return 0
@@ -46,72 +40,38 @@ def calculate_move_cost(actor: Character, from_distance: int, to_distance: int) 
     return max(2, base - reduction)
 
 
-def resolve_distance(
-    actor: Character,
-    skill: Skill,
-    target: Character,
-    state: BattleState
-) -> bool:
-    """
-    距离校验与自动位移。
-    如果当前距离不满足技能要求，自动扣除 ATB 进行移动，并追加日志。
-
-    Returns:
-        True 如果距离已满足（或自动调整后满足），False 如果 ATB 不足以完成移动
-    """
+def resolve_distance(actor, skill, target, state):
     current_dist = actor.distance
     min_d = skill.min_distance
     max_d = skill.max_distance
-
     if min_d <= current_dist <= max_d:
-        return True  # 距离满足
-
-    # 需要进行自动位移：选择最近的合法距离
+        return True
     if current_dist < min_d:
         target_dist = min_d
         dir_text = "后退"
     else:
         target_dist = max_d
         dir_text = "逼近"
-
     cost = calculate_move_cost(actor, current_dist, target_dist)
     if actor.atb < cost:
-        state.log.append(
-            f"行动值不足！需要 {cost} ATB 进行位移（当前 {actor.atb}）。"
-        )
+        state.log.append(f"行动值不足！需要 {cost} ATB 进行位移（当前 {actor.atb}）。")
         return False
-
     actor.atb -= cost
     actor.distance = target_dist
-    state.log.append(
-        f"{actor.name} 自动{dir_text}至{DISTANCE_NAMES[target_dist]}距离（消耗 {cost} ATB）。"
-    )
+    state.log.append(f"{actor.name} 自动{dir_text}至{DISTANCE_NAMES[target_dist]}距离（消耗 {cost} ATB）。")
     return True
 
 
 # ================================================================
-#  行动间隔与补偿速度（Phase 3 新增）
+#  ATB / 恢复
 # ================================================================
 
 def _resolve_recovery(actor: Character, delta_ticks: int = 1):
-    """每帧恢复 ATB：恢复量 = 补偿速度 * delta_ticks"""
     gain = actor.recovery_speed * delta_ticks
     actor.atb = min(ATB_MAX, actor.atb + gain)
 
 
 def calculate_action_interval(actor: Character, skill: Skill = None) -> int:
-    """
-    Phase 4 行动间隔公式（重构版）：
-      总间隔 = 咏唱时间 + ceil(300 / 补偿速度) + ceil(300 / 角色速度)
-
-    其中：
-      - 咏唱时间：技能的 cast_time 属性（不受束缚影响）
-      - 补偿速度：actor.recovery_speed（基础 = base_recovery_speed，可被束缚修改）
-      - 角色速度：actor.speed
-
-    若未传入 skill，使用默认值（体术平A）。
-    返回值单位：帧/tick 次数
-    """
     ct = skill.cast_time if skill else 5
     recovery = actor.recovery_speed
     if recovery <= 0:
@@ -123,34 +83,17 @@ def calculate_action_interval(actor: Character, skill: Skill = None) -> int:
 
 
 def apply_recovery_after_action(actor: Character, skill: Skill, state: BattleState):
-    """
-    行动后结算 ATB 与补偿恢复。
-    1. 更新角色的 recovery_speed 为技能的 base_recovery_speed（乘以束缚倍率）
-    2. ATB 清零
-    3. 基于补偿速度恢复 1 tick（补偿速度 = 每 tick 恢复量）
-    4. 输出详细日志
-    """
-    # 束缚倍率：如果当前 recovery_speed 被束缚修改过，保留倍率
     base_speed = actor.speed
     vow_multiplier = 1.0
     if base_speed > 0 and actor.recovery_speed != base_speed:
         vow_multiplier = actor.recovery_speed / base_speed
-
-    # 更新为技能的基础补偿速度（乘束缚倍率）
     if skill and skill.base_recovery_speed > 0:
         actor.recovery_speed = max(1, int(skill.base_recovery_speed * vow_multiplier))
-
-    # ATB 清零
     actor.atb = 0
-
-    # 计算总行动间隔
     total_interval = calculate_action_interval(actor, skill)
     ct = skill.cast_time if skill else 5
     recovery = actor.recovery_speed
-
-    # 模拟一次恢复 tick：恢复量 = 补偿速度
     _resolve_recovery(actor, 1)
-
     state.log.append(
         f"{actor.name} 消耗了咏唱时间 {ct}，"
         f"行动间隔 {total_interval} 帧（补偿速度 {recovery}，速度 {actor.speed}），"
@@ -158,22 +101,25 @@ def apply_recovery_after_action(actor: Character, skill: Skill, state: BattleSta
     )
 
 
+def tick_atb(state: BattleState) -> BattleState:
+    state.player.atb = min(ATB_MAX, state.player.atb + int(state.player.speed * state.atb_tick))
+    state.enemy.atb = min(ATB_MAX, state.enemy.atb + int(state.enemy.speed * state.atb_tick))
+    return state
+
+
 # ================================================================
 #  角色/技能构建
 # ================================================================
 
 def create_player_from_save(save_data: dict) -> Character:
-    """从存档数据创建玩家角色"""
     name = save_data.get("characterName", "无名咒术师")
     attrs = save_data.get("attributes", {})
-
     constitution = attrs.get("constitution", 10)
     cursed_energy = attrs.get("cursedEnergy", 10)
     hp = save_data.get("hp", 100) or 100
     max_hp = save_data.get("maxHp", 100) or 100
     mp = save_data.get("mp", 50) or 50
     max_mp = save_data.get("maxMp", 50) or 50
-
     if max_hp <= 0:
         max_hp = 80 + constitution * 2
     if hp <= 0:
@@ -182,17 +128,12 @@ def create_player_from_save(save_data: dict) -> Character:
         max_mp = 30 + cursed_energy * 3
     if mp <= 0:
         mp = max_mp
-
     technique_id = save_data.get("techniqueId", "cursedEnergyBoost")
     speed = 8 + attrs.get("talent", 10) // 3
-
     return Character(
-        id="player",
-        name=name,
-        hp=hp, max_hp=max_hp,
-        mp=mp, max_mp=max_mp,
-        atb=ATB_MAX,
-        speed=speed,
+        id="player", name=name,
+        hp=hp, max_hp=max_hp, mp=mp, max_mp=max_mp,
+        atb=ATB_MAX, speed=speed,
         constitution=constitution,
         martial_arts=attrs.get("martialArts", 10),
         cursed_energy=cursed_energy,
@@ -200,133 +141,74 @@ def create_player_from_save(save_data: dict) -> Character:
         cursed_energy_efficiency=attrs.get("cursedEnergyEfficiency", 10),
         talent=attrs.get("talent", 10),
         skills=_build_player_skills(technique_id),
-        is_alive=True,
-        distance=DISTANCE_MID,
-        active_vow=None,
-        recovery_speed=speed
+        is_alive=True, distance=DISTANCE_MID,
+        active_vow=None, recovery_speed=speed
     )
 
 
 def _build_player_skills(technique_id: str) -> list:
-    """根据术式 ID 构建玩家技能列表
-
-    所有技能包含 cast_time / base_recovery_speed（Phase 4 新增）。
-    """
-
-    # (id, name, cost, type, mult, cast_time, recovery, min_d, max_d, desc)
     BASE = [
-        ("attack", "体术平A", 0, "martial", 1.0, 5, 30, DISTANCE_CLOSE, DISTANCE_CLOSE, "基础体术攻击，不消耗咒力"),
+        ("attack", "体术平A", 0, "martial", 1.0, 5, 30, DISTANCE_CLOSE, DISTANCE_CLOSE, "基础体术攻击"),
         ("advance", "逼近", 0, "movement", 0.0, 3, 35, DISTANCE_CLOSE, DISTANCE_FAR, "向敌人逼近 1 档距离"),
         ("retreat", "后退", 0, "movement", 0.0, 3, 35, DISTANCE_CLOSE, DISTANCE_FAR, "向后退开 1 档距离"),
     ]
-
-    skills = [
-        Skill(id=id, name=name, cost=cost, type=typ,
-              damage_multiplier=mult, cast_time=ct, base_recovery_speed=rcv,
-              min_distance=min_d, max_distance=max_d, description=desc)
-        for (id, name, cost, typ, mult, ct, rcv, min_d, max_d, desc) in BASE
-    ]
-
+    skills = [Skill(id=id, name=name, cost=cost, type=typ,
+                    damage_multiplier=mult, cast_time=ct, base_recovery_speed=rcv,
+                    min_distance=min_d, max_distance=max_d, description=desc)
+              for (id, name, cost, typ, mult, ct, rcv, min_d, max_d, desc) in BASE]
     TECH_SKILLS = {
-        "cursedEnergyBoost": [
-            ("cursed_boost", "咒力强化拳", 10, "cursed", 1.8, 12, 28, DISTANCE_CLOSE, DISTANCE_CLOSE, "以咒力强化拳击，朴实但有效"),
-        ],
+        "cursedEnergyBoost": [("cursed_boost", "咒力强化拳", 10, "cursed", 1.8, 12, 28, DISTANCE_CLOSE, DISTANCE_CLOSE, "以咒力强化拳击")],
         "limitless": [
             ("aoi", "苍", 15, "cursed", 2.2, 20, 25, DISTANCE_CLOSE, DISTANCE_FAR, "吸引一切的空之涡"),
             ("aka", "赫", 25, "cursed", 3.0, 30, 18, DISTANCE_NEAR, DISTANCE_FAR, "排斥一切的术式顺转"),
         ],
-        "tenShadows": [
-            ("gyokuken", "玉犬", 12, "cursed", 1.6, 15, 28, DISTANCE_CLOSE, DISTANCE_NEAR, "召唤黑白玉犬撕咬目标"),
-        ],
-        "bloodManipulation": [
-            ("piercing_blood", "穿血", 14, "cursed", 2.0, 16, 24, DISTANCE_CLOSE, DISTANCE_FAR, "以高压血箭贯穿目标"),
-        ],
-        "boogieWoogie": [
-            ("boogie_punch", "拍手连击", 8, "cursed", 1.5, 10, 30, DISTANCE_CLOSE, DISTANCE_CLOSE, "利用位置交换制造破绽后进行连击"),
-        ],
-        "strawDoll": [
-            ("doll_resonance", "共鸣", 13, "cursed", 1.9, 18, 22, DISTANCE_CLOSE, DISTANCE_FAR, "以傀儡共鸣释放远程咒力冲击"),
-        ],
+        "tenShadows": [("gyokuken", "玉犬", 12, "cursed", 1.6, 15, 28, DISTANCE_CLOSE, DISTANCE_NEAR, "召唤黑白玉犬撕咬目标")],
+        "bloodManipulation": [("piercing_blood", "穿血", 14, "cursed", 2.0, 16, 24, DISTANCE_CLOSE, DISTANCE_FAR, "以高压血箭贯穿目标")],
+        "boogieWoogie": [("boogie_punch", "拍手连击", 8, "cursed", 1.5, 10, 30, DISTANCE_CLOSE, DISTANCE_CLOSE, "利用位置交换制造破绽")],
+        "strawDoll": [("doll_resonance", "共鸣", 13, "cursed", 1.9, 18, 22, DISTANCE_CLOSE, DISTANCE_FAR, "以傀儡共鸣释放远程咒力冲击")],
     }
-
     entries = TECH_SKILLS.get(technique_id, TECH_SKILLS.get("cursedEnergyBoost", []))
     for (id, name, cost, typ, mult, ct, rcv, min_d, max_d, desc) in entries:
-        skills.append(Skill(
-            id=id, name=name, cost=cost, type=typ,
-            damage_multiplier=mult, cast_time=ct, base_recovery_speed=rcv,
-            min_distance=min_d, max_distance=max_d, description=desc
-        ))
-
+        skills.append(Skill(id=id, name=name, cost=cost, type=typ,
+                            damage_multiplier=mult, cast_time=ct, base_recovery_speed=rcv,
+                            min_distance=min_d, max_distance=max_d, description=desc))
     return skills
 
 
 def create_default_enemy(enemy_tier: str = "normal") -> Character:
-    """创建默认敌人"""
     return Character(
-        id="enemy_1",
-        name="蛸头",
-        hp=60, max_hp=60,
-        mp=0, max_mp=0,
-        atb=0,
-        speed=7,
-        constitution=8,
-        martial_arts=10,
-        cursed_energy=0,
-        cursed_energy_control=0,
-        cursed_energy_efficiency=0,
-        talent=5,
-        skills=[
-            Skill(id="enemy_attack", name="撞击", cost=0, type="martial",
-                  damage_multiplier=1.0, description="用身体撞击目标",
-                  min_distance=DISTANCE_CLOSE, max_distance=DISTANCE_CLOSE),
-        ],
-        is_alive=True,
-        distance=DISTANCE_MID,
-        active_vow=None,
-        recovery_speed=7
+        id="enemy_1", name="蛸头",
+        hp=60, max_hp=60, mp=0, max_mp=0, atb=0, speed=7,
+        constitution=8, martial_arts=10,
+        cursed_energy=0, cursed_energy_control=0, cursed_energy_efficiency=0, talent=5,
+        skills=[Skill(id="enemy_attack", name="撞击", cost=0, type="martial",
+                      damage_multiplier=1.0, cast_time=8, base_recovery_speed=28,
+                      min_distance=DISTANCE_CLOSE, max_distance=DISTANCE_CLOSE,
+                      description="用身体撞击目标")],
+        is_alive=True, distance=DISTANCE_MID, active_vow=None, recovery_speed=7
     )
 
 
 # ================================================================
-#  伤害计算（纯函数）
+#  伤害计算
 # ================================================================
 
-def calculate_damage(
-    actor: Character,
-    skill: Skill,
-    target: Character,
-    is_black_flash: bool = False
-) -> int:
-    """
-    伤害计算公式：
-      基础伤害 = max(1, (攻击方体术 * 2) + (技能倍率 * 10) - (防御方体质 * 0.5))
-
-    黑闪额外：
-      - 伤害 * 2.5
-      - 无视 50% 防御
-    """
+def calculate_damage(actor, skill, target, is_black_flash=False):
     base_atk = actor.martial_arts * 2
     skill_bonus = skill.damage_multiplier * 10
     effective_defense = target.constitution * 0.5
-
     if is_black_flash:
         effective_defense *= 0.5
-
     raw = base_atk + skill_bonus - effective_defense
     damage = max(1, int(raw))
-
     if is_black_flash:
         damage = max(1, int(damage * 2.5))
-
-    # 咒力操控加成（每点 +1% 伤害，最多 50%）
     control_bonus = 1.0 + min(0.5, actor.cursed_energy_control * 0.01)
     damage = max(1, int(damage * control_bonus))
-
     return damage
 
 
-def calculate_mp_cost(actor: Character, skill: Skill) -> int:
-    """咒力消耗公式"""
+def calculate_mp_cost(actor, skill):
     if skill.cost <= 0:
         return 0
     efficiency_factor = 1.0 - (actor.cursed_energy_efficiency * 0.005)
@@ -335,69 +217,44 @@ def calculate_mp_cost(actor: Character, skill: Skill) -> int:
 
 
 # ================================================================
-#  ATB 系统
+#  敌 AI
 # ================================================================
 
-def tick_atb(state: BattleState) -> BattleState:
-    """推进 ATB：双方 ATB += speed * atb_tick"""
-    state.player.atb = min(ATB_MAX, state.player.atb + int(state.player.speed * state.atb_tick))
-    state.enemy.atb = min(ATB_MAX, state.enemy.atb + int(state.enemy.speed * state.atb_tick))
-    return state
-
-
 def begin_enemy_turn(state: BattleState) -> BattleState:
-    """切换到敌人回合，执行敌人 AI"""
     if state.turn in ("player_win", "enemy_win"):
         return state
-
-    # 推进 ATB
     state.enemy.atb = min(ATB_MAX, state.enemy.atb + int(state.enemy.speed * state.atb_tick * 2))
     state.player.atb = min(ATB_MAX, state.player.atb + int(state.player.speed * state.atb_tick))
-
     state.turn = "enemy"
     state.log.append("—— 敌人回合 ——")
-
-    # 敌人 AI：检查距离 → 自动位移（若需要）→ 选择体术技能攻击
     enemy_skill = None
     for s in state.enemy.skills:
         if s.type in ("martial", "cursed") and state.enemy.mp >= s.cost:
             enemy_skill = s
             break
-
     if not enemy_skill:
         state.log.append(f"{state.enemy.name} 无法行动！")
         state.enemy.atb = 0
         state.turn = "player"
         state.log.append("—— 玩家回合 ——")
         return state
-
-    # 距离校验（敌人也会自动逼近）
     resolve_distance(state.enemy, enemy_skill, state.player, state)
-
-    # 执行攻击
     is_bf = _check_black_flash(state.enemy)
     damage = calculate_damage(state.enemy, enemy_skill, state.player, is_bf)
     cost = calculate_mp_cost(state.enemy, enemy_skill)
-
     state.enemy.mp = max(0, state.enemy.mp - cost)
     state.enemy.atb = 0
     state.player.hp = max(0, state.player.hp - damage)
-
     bf_text = "【黑闪！】" if is_bf else ""
     state.log.append(f"{state.enemy.name} 使用 {enemy_skill.name}{bf_text}，造成 {damage} 点伤害。")
-
     if is_bf:
         state.log.append("漆黑的光芒一闪——那一击超越了极限。")
-
-    # 标记黑闪状态供 UI 渲染特效
     state.last_hit_was_black_flash = is_bf
-
     if state.player.hp <= 0:
         state.player.is_alive = False
         state.turn = "enemy_win"
         state.log.append(f"{state.player.name} 倒下了…")
         return state
-
     state.turn = "player"
     state.phase = PHASE_WAITING
     state.log.append("—— 玩家回合 ——")
@@ -409,67 +266,59 @@ def begin_enemy_turn(state: BattleState) -> BattleState:
 # ================================================================
 
 def execute_action(action_json: str, state_json: str) -> str:
-    """执行战斗行动"""
     action = json.loads(action_json)
     state_dict = json.loads(state_json)
     state = _deserialize_state(state_dict)
-
+    tracker_data = state_dict.get("_tracker", {})
+    tracker = BattleTracker()
+    tracker.skill_usage = tracker_data.get("skill_usage", {})
+    tracker.money_reward = tracker_data.get("money_reward", 0)
+    tracker.skill_points_reward = tracker_data.get("skill_points_reward", 0)
+    tracker.inspiration_gained = tracker_data.get("inspiration_gained", False)
     action_type = action.get("type", "")
-
     if action_type == "use_skill":
-        _handle_use_skill(action, state)
+        _handle_use_skill(action, state, tracker)
     elif action_type == "tick":
         tick_atb(state)
     elif action_type == "apply_vow":
         _handle_apply_vow(action, state)
+    result = state.to_dict()
+    result["_tracker"] = tracker.to_dict()
+    return json.dumps(result, ensure_ascii=False)
 
-    return json.dumps(state.to_dict(), ensure_ascii=False)
 
-
-def _handle_use_skill(action: dict, state: BattleState):
-    """处理玩家使用技能（Phase 3 扩展：距离校验）"""
+def _handle_use_skill(action: dict, state: BattleState, tracker: BattleTracker = None):
     actor_id = action.get("actor", "player")
     skill_id = action.get("skill_id", "attack")
     target_id = action.get("target", state.enemy.id)
-
     actor = state.get_actor(actor_id)
     target = state.get_target(target_id)
-
     if not actor or not target:
         state.log.append("[ERROR] 无效的行动者或目标。")
         return
-
     if actor.atb < ATB_MAX and state.turn == "player":
         tick_atb(state)
         state.log.append(f"{actor.name} 的 ATB 恢复中（{actor.atb}/{ATB_MAX}）…")
         return
-
-    # 查找技能
     skill = None
     for s in actor.skills:
         if s.id == skill_id:
             skill = s
             break
-
     if not skill:
         state.log.append(f"[ERROR] 未找到技能: {skill_id}")
         return
-
-    # 检查咒力
     if actor.mp < skill.cost and skill.type == "cursed":
         state.log.append(f"咒力不足！需要 {skill.cost} MP，当前 {actor.mp} MP。")
         return
-
-    # ---- 执行技能 ----
+    if tracker:
+        tracker.record_skill_use(skill_id)
     if skill.type == "movement":
         _execute_movement(actor, skill, state)
     elif skill.type in ("martial", "cursed"):
-        # Phase 3: 距离校验
         if not resolve_distance(actor, skill, target, state):
-            return  # ATB 不足，无法自动位移
+            return
         _execute_attack(actor, skill, target, state)
-
-    # 检查敌人是否死亡
     if state.enemy.hp <= 0:
         state.enemy.is_alive = False
         state.turn = "player_win"
@@ -477,207 +326,125 @@ def _handle_use_skill(action: dict, state: BattleState):
 
 
 def _execute_attack(actor: Character, skill: Skill, target: Character, state: BattleState):
-    """执行攻击类技能（体术/咒术）"""
     is_bf = False
     bf_text = ""
-
-    # 黑闪判定：仅体术技能可触发
     if skill.type == "martial":
         if _check_black_flash(actor):
             is_bf = True
             bf_text = "【黑闪！】"
-
-    # 伤害计算
     damage = calculate_damage(actor, skill, target, is_bf)
     actual_cost = calculate_mp_cost(actor, skill)
-
-    # 执行
     actor.mp = max(0, actor.mp - actual_cost)
     target.hp = max(0, target.hp - damage)
-
-    # 日志
     bf_detail = " 无视 50% 防御！" if is_bf else ""
     cost_text = f"（消耗 {actual_cost} MP）" if actual_cost > 0 else ""
-    state.log.append(
-        f"{actor.name} 使用 {skill.name}{cost_text}{bf_text}，造成 {damage} 点伤害。{bf_detail}"
-    )
-
+    state.log.append(f"{actor.name} 使用 {skill.name}{cost_text}{bf_text}，造成 {damage} 点伤害。{bf_detail}")
     if is_bf:
         state.log.append("漆黑的光芒一闪——那一击超越了极限。")
-
-    # Phase 4: 使用新的 ATB 恢复公式（咏唱时间 + 补偿速度）
     apply_recovery_after_action(actor, skill, state)
-
-    # 标记黑闪状态供 UI 渲染特效
     state.last_hit_was_black_flash = is_bf
-
-    # 攻击后切换至敌人回合
     if target.is_alive and target.hp > 0:
         begin_enemy_turn(state)
 
 
 def _execute_movement(actor: Character, skill: Skill, state: BattleState):
-    """执行位移技能 — 移动 1 档距离"""
     current = actor.distance
     if "advance" in skill.id:
         new_dist = max(DISTANCE_CLOSE, current - 1)
     else:
         new_dist = min(DISTANCE_FAR, current + 1)
-
     if new_dist == current:
         state.log.append(f"{actor.name} 已经处于边界，无法继续移动。")
         return
-
     cost = calculate_move_cost(actor, current, new_dist)
     if actor.atb < cost:
         state.log.append(f"行动值不足！需要 {cost} ATB（当前 {actor.atb}）。")
         return
-
     actor.atb -= cost
     actor.distance = new_dist
     dir_text = "逼近" if new_dist < current else "后退"
-    state.log.append(
-        f"{actor.name} {dir_text}至{DISTANCE_NAMES[new_dist]}距离（消耗 {cost} ATB）。"
-    )
+    state.log.append(f"{actor.name} {dir_text}至{DISTANCE_NAMES[new_dist]}距离（消耗 {cost} ATB）。")
 
 
 # ================================================================
-#  束缚系统（Phase 3 新增）
+#  束缚系统
 # ================================================================
 
-# 预设束缚定义
 VOWS = {
-    "offense_boost": {
-        "id": "offense_boost",
-        "name": "攻击强化之缚",
-        "description": "放弃防御以换取攻击力。攻击伤害 +50%，但承受伤害 +30%。",
-        "forbidden_type": None,     # 不禁止任何技能类型
-        "bonus_damage_pct": 0.50,   # 伤害 +50%
-        "penalty_dmg_taken_pct": 0.30,  # 受伤 +30%
-        "speed_bonus": 0,
-        "violation_hp_loss_pct": 0.20,  # 违规扣除 20% HP
-    },
-    "no_cursed_speed": {
-        "id": "no_cursed_speed",
-        "name": "禁咒加速之缚",
-        "description": "立誓本回合不使用咒术，体术速度 +30%。若违规则遭受反噬。",
-        "forbidden_type": "cursed",  # 禁止使用咒术
-        "bonus_damage_pct": 0,
-        "penalty_dmg_taken_pct": 0,
-        "speed_bonus": 0.30,         # 速度 +30%（用于 ATB 恢复）
-        "recovery_bonus": 0.30,      # 补偿速度 +30%
-        "violation_hp_loss_pct": 0.20,
-    },
+    "offense_boost": {"id": "offense_boost", "name": "攻击强化之缚", "description": "放弃防御以换取攻击力。攻击伤害 +50%，但承受伤害 +30%。", "forbidden_type": None, "bonus_damage_pct": 0.50, "penalty_dmg_taken_pct": 0.30, "speed_bonus": 0, "violation_hp_loss_pct": 0.20},
+    "no_cursed_speed": {"id": "no_cursed_speed", "name": "禁咒加速之缚", "description": "立誓本回合不使用咒术，体术速度 +30%。若违规则遭受反噬。", "forbidden_type": "cursed", "bonus_damage_pct": 0, "penalty_dmg_taken_pct": 0, "speed_bonus": 0.30, "recovery_bonus": 0.30, "violation_hp_loss_pct": 0.20},
 }
 
 
-def get_available_vows() -> list:
-    """获取所有可用的束缚定义"""
-    return [
-        {
-            "id": v["id"],
-            "name": v["name"],
-            "description": v["description"],
-            "forbidden_type": v.get("forbidden_type"),
-        }
-        for v in VOWS.values()
-    ]
+def get_available_vows():
+    return [{"id": v["id"], "name": v["name"], "description": v["description"], "forbidden_type": v.get("forbidden_type")} for v in VOWS.values()]
 
 
-def _handle_apply_vow(action: dict, state: BattleState):
-    """应用束缚"""
+def _handle_apply_vow(action, state):
     vow_id = action.get("vow_id", "")
     actor_id = action.get("actor", "player")
     actor = state.get_actor(actor_id)
-
     if not actor:
         return
-
-    # 清除旧束缚
     if actor.active_vow:
-        state.log.append(f"{actor.name} 解除了之前的束缚「{VOWS.get(actor.active_vow, {}.get('name', actor.active_vow))}」。")
+        state.log.append(f"{actor.name} 解除了之前的束缚。")
         _clear_vow_effects(actor, actor.active_vow)
-
     if vow_id == "none" or vow_id == "":
         actor.active_vow = None
         state.log.append(f"{actor.name} 选择不施加束缚。")
         return
-
     vow = VOWS.get(vow_id)
     if not vow:
         state.log.append(f"[ERROR] 未知束缚: {vow_id}")
         return
-
     actor.active_vow = vow_id
     _apply_vow_effects(actor, vow)
     state.log.append(f"{actor.name} 立下束缚「{vow['name']}」——{vow['description']}")
 
 
-def _apply_vow_effects(actor: Character, vow: dict):
-    """应用束缚增益到角色"""
-    # 补偿速度加成
+def _apply_vow_effects(actor, vow):
     recovery_bonus = vow.get("recovery_bonus", 0)
     if recovery_bonus > 0:
         actor.recovery_speed = int(actor.speed * (1.0 + recovery_bonus))
-    # 速度加成
     speed_bonus = vow.get("speed_bonus", 0)
     if speed_bonus > 0:
-        original = actor.speed
         actor.speed = int(actor.speed * (1.0 + speed_bonus))
 
 
-def _clear_vow_effects(actor: Character, vow_id: str):
-    """清除束缚效果，恢复默认"""
-    actor.recovery_speed = actor.speed  # 恢复速度 = 基础速度
-    # 速度已在 _apply_vow_effects 中修改，此处重置
-    # 注：由于 speed 是基础值，恢复时直接用 speed 覆盖 recovery_speed
+def _clear_vow_effects(actor, vow_id):
+    actor.recovery_speed = actor.speed
 
 
-def check_vow_violation(actor: Character, skill: Skill) -> bool:
-    """
-    检查是否违反束缚。
-
-    Returns:
-        True 如果违规（需要反噬），False 如果合规。
-    """
+def check_vow_violation(actor, skill):
     if not actor.active_vow:
         return False
-
     vow = VOWS.get(actor.active_vow)
     if not vow:
         return False
-
     forbidden = vow.get("forbidden_type")
     if forbidden and skill.type == forbidden:
         return True
-
     return False
 
 
-def apply_vow_bonus_damage(actor: Character, base_damage: int) -> int:
-    """应用束缚的伤害加成"""
+def apply_vow_bonus_damage(actor, base_damage):
     if not actor.active_vow:
         return base_damage
-
     vow = VOWS.get(actor.active_vow)
     if not vow:
         return base_damage
-
     bonus = vow.get("bonus_damage_pct", 0)
     if bonus > 0:
         return max(1, int(base_damage * (1.0 + bonus)))
     return base_damage
 
 
-def apply_vow_penalty_damage(actor: Character, incoming_damage: int) -> int:
-    """应用束缚的受伤惩罚"""
+def apply_vow_penalty_damage(actor, incoming_damage):
     if not actor.active_vow:
         return incoming_damage
-
     vow = VOWS.get(actor.active_vow)
     if not vow:
         return incoming_damage
-
     penalty = vow.get("penalty_dmg_taken_pct", 0)
     if penalty > 0:
         return max(1, int(incoming_damage * (1.0 + penalty)))
@@ -685,57 +452,43 @@ def apply_vow_penalty_damage(actor: Character, incoming_damage: int) -> int:
 
 
 # ================================================================
-#  序列化/反序列化
+#  序列化
 # ================================================================
 
 def _deserialize_state(d: dict) -> BattleState:
-    """从 JSON dict 重建 BattleState 对象"""
     pd = d.get("player", {})
     ed = d.get("enemy", {})
+    def _build_char(cd):
+        skills = [Skill(id=s.get("id",""), name=s.get("name",""), cost=s.get("cost",0), type=s.get("type","martial"),
+                        damage_multiplier=s.get("damage_multiplier",1.0), min_distance=s.get("min_distance",0), max_distance=s.get("max_distance",3),
+                        cast_time=s.get("cast_time",5), base_recovery_speed=s.get("base_recovery_speed",30))
+                  for s in cd.get("skills",[])]
+        return Character(id=cd.get("id",""), name=cd.get("name",""), hp=cd.get("hp",0), max_hp=cd.get("max_hp",0),
+                         mp=cd.get("mp",0), max_mp=cd.get("max_mp",0), atb=cd.get("atb",0), speed=cd.get("speed",10),
+                         is_alive=cd.get("is_alive",True), skills=skills,
+                         constitution=cd.get("constitution",10), martial_arts=cd.get("martial_arts",10),
+                         cursed_energy=cd.get("cursed_energy",10), cursed_energy_control=cd.get("cursed_energy_control",10),
+                         cursed_energy_efficiency=cd.get("cursed_energy_efficiency",10), talent=cd.get("talent",10),
+                         distance=cd.get("distance",2), active_vow=cd.get("active_vow"),
+                         recovery_speed=cd.get("recovery_speed",cd.get("speed",10)))
+    return BattleState(player=_build_char(pd), enemy=_build_char(ed),
+                       turn=d.get("turn","player"), log=d.get("log",[]), round_number=d.get("round_number",1),
+                       phase=d.get("phase",PHASE_WAITING), last_hit_was_black_flash=d.get("last_hit_was_black_flash",False))
 
-    def _build_char(cd: dict) -> Character:
-        skills = [
-            Skill(
-                id=s.get("id", ""),
-                name=s.get("name", ""),
-                cost=s.get("cost", 0),
-                type=s.get("type", "martial"),
-                min_distance=s.get("min_distance", DISTANCE_CLOSE),
-                max_distance=s.get("max_distance", DISTANCE_FAR),
-            )
-            for s in cd.get("skills", [])
-        ]
-        return Character(
-            id=cd.get("id", ""),
-            name=cd.get("name", ""),
-            hp=cd.get("hp", 0),
-            max_hp=cd.get("max_hp", 0),
-            mp=cd.get("mp", 0),
-            max_mp=cd.get("max_mp", 0),
-            atb=cd.get("atb", 0),
-            speed=cd.get("speed", 10),
-            is_alive=cd.get("is_alive", True),
-            skills=skills,
-            constitution=cd.get("constitution", 10),
-            martial_arts=cd.get("martial_arts", 10),
-            cursed_energy=cd.get("cursed_energy", 10),
-            cursed_energy_control=cd.get("cursed_energy_control", 10),
-            cursed_energy_efficiency=cd.get("cursed_energy_efficiency", 10),
-            talent=cd.get("talent", 10),
-            distance=cd.get("distance", DISTANCE_MID),
-            active_vow=cd.get("active_vow"),
-            recovery_speed=cd.get("recovery_speed", cd.get("speed", 10)),
-        )
 
-    return BattleState(
-        player=_build_char(pd),
-        enemy=_build_char(ed),
-        turn=d.get("turn", "player"),
-        log=d.get("log", []),
-        round_number=d.get("round_number", 1),
-        phase=d.get("phase", PHASE_WAITING),
-        last_hit_was_black_flash=d.get("last_hit_was_black_flash", False),
-    )
+# ================================================================
+#  战后结算
+# ================================================================
+
+def generate_battle_rewards(tracker: BattleTracker, enemy_config: dict = None) -> dict:
+    if enemy_config is None:
+        enemy_config = {"money": {"min": 20, "max": 50}, "skillPoints": 1, "inspirationChance": 0.05}
+    money = enemy_config["money"]["min"] + random.randint(0, enemy_config["money"]["max"] - enemy_config["money"]["min"])
+    skill_points = enemy_config.get("skillPoints", 1)
+    inspiration = random.random() < enemy_config.get("inspirationChance", 0.05)
+    proficiency_gains = {skill_id: count * 5 for skill_id, count in tracker.skill_usage.items()}
+    tracker.set_rewards(money, skill_points, inspiration)
+    return {"money": money, "skillPoints": skill_points, "inspirationGained": inspiration, "proficiencyGains": proficiency_gains}
 
 
 # ================================================================
@@ -743,7 +496,6 @@ def _deserialize_state(d: dict) -> BattleState:
 # ================================================================
 
 def init_battle(save_data_json: str) -> str:
-    """初始化战斗状态"""
     if save_data_json and save_data_json != "{}":
         try:
             save_data = json.loads(save_data_json)
@@ -751,14 +503,11 @@ def init_battle(save_data_json: str) -> str:
             save_data = {}
     else:
         save_data = {}
-
     player = create_player_from_save(save_data)
     enemy = create_default_enemy()
-
     state = BattleState(player=player, enemy=enemy, turn="player", phase=PHASE_WAITING)
     state.log.append("战斗开始！一股诅咒气息扑面而来。")
     state.log.append(f"遭遇了 {enemy.name}！")
     state.log.append(f"初始距离：{DISTANCE_NAMES[player.distance]}。")
     state.log.append(f"—— 玩家回合 ——")
-
     return json.dumps(state.to_dict(), ensure_ascii=False)

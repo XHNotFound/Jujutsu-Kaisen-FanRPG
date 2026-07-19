@@ -2,6 +2,7 @@
 
 import { ATTRIBUTES } from '../data/attributes.js';
 import { BattleUI } from './BattleUI.js';
+import { SkillTreeUI } from './SkillTreeUI.js';
 
 /**
  * UIManager 职责：
@@ -442,6 +443,11 @@ export class UIManager {
       };
     });
 
+    // 技能树
+    document.getElementById('btn-skilltree').onclick = () => {
+      this._showSkillTree();
+    };
+
     // 存档
     document.getElementById('btn-save').onclick = () => {
       this._handleSave();
@@ -473,6 +479,16 @@ export class UIManager {
       this._battleUI = new BattleUI(this.pyodideLoader, this);
     }
     await this._battleUI.start();
+  }
+
+  /**
+   * 打开技能树面板
+   */
+  _showSkillTree() {
+    if (!this._skillTreeUI) {
+      this._skillTreeUI = new SkillTreeUI(this.saveManager, this);
+    }
+    this._skillTreeUI.show();
   }
 
   /**
@@ -665,7 +681,12 @@ export class UIManager {
     const confirmBtn = document.getElementById('modal-confirm');
     const cancelBtn = document.getElementById('modal-cancel');
 
-    msgEl.textContent = message;
+    // Phase 4: 支持 useHTML 标记，允许传入 HTML 面板
+    if (opts.useHTML) {
+      msgEl.innerHTML = message;
+    } else {
+      msgEl.textContent = message;
+    }
 
     // 存储回调
     this._modalCallbacks = {

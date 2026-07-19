@@ -832,3 +832,109 @@ body {
 #btn-reward-confirm {
   margin-top: 1.2rem;
 }
+
+/* ===== Skill Tree Panel ===== */
+.skilltree-panel-container {
+  max-width: 600px;
+  text-align: left;
+}
+
+.skilltree-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.skilltree-panel-header h3 {
+  color: var(--color-primary-glow);
+  font-size: 1.1rem;
+}
+
+.skilltree-sp {
+  color: var(--color-gold);
+  font-size: 0.9rem;
+}
+
+.skilltree-section {
+  margin-bottom: 1rem;
+}
+
+.skilltree-section h4 {
+  color: var(--color-text-dim);
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+.skilltree-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.skilltree-card {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.skilltree-card.skilltree-locked {
+  opacity: 0.5;
+}
+
+.skilltree-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.3rem;
+}
+
+.skilltree-name {
+  font-weight: bold;
+  color: var(--color-text);
+}
+
+.skilltree-level {
+  color: var(--color-gold);
+  font-size: 0.85rem;
+}
+
+.skilltree-desc {
+  font-size: 0.8rem;
+  color: var(--color-text-dim);
+  margin-bottom: 0.3rem;
+}
+
+.skilltree-cost {
+  font-size: 0.75rem;
+  color: var(--color-text-dim);
+  margin-bottom: 0.3rem;
+}
+
+.skilltree-max {
+  font-size: 0.75rem;
+  color: var(--color-success);
+  margin-bottom: 0.3rem;
+}
+
+.skilltree-status {
+  font-size: 0.75rem;
+}
+
+.skilltree-status.locked {
+  color: var(--color-danger);
+}
+
+.btn-upgrade-skill {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.75rem;
+  margin-top: 0.3rem;
+}
+
+.skilltree-footer {
+  text-align: center;
+  margin-top: 1rem;
+}

@@ -36,6 +36,11 @@ export class BattleUI {
     this.uiManager.showScreen('screen-battle');
     this._showLoading(true);
 
+    // 清空上一次战斗的残留日志和状态
+    this.currentState = null;
+    const logContainer = document.getElementById('battle-log');
+    if (logContainer) logContainer.innerHTML = '';
+
     try {
       // 加载 Python 依赖
       const pyFiles = [

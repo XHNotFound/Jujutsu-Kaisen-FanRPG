@@ -93,30 +93,69 @@ def resolve_distance(
 #  行动间隔与补偿速度（Phase 3 新增）
 # ================================================================
 
-def calculate_action_interval(actor: Character) -> int:
+def _resolve_recovery(actor: Character, delta_ticks: int = 1):
+    """每帧恢复 ATB：恢复量 = 补偿速度 * delta_ticks"""
+    gain = actor.recovery_speed * delta_ticks
+    actor.atb = min(ATB_MAX, actor.atb + gain)
+
+
+def calculate_action_interval(actor: Character, skill: Skill = None) -> int:
     """
-    行动间隔公式：
-      总间隔 = ceil(300 / 补偿速度) + ceil(300 / 角色速度)
-    补偿速度初始值 = 角色速度，可被束缚等机制修改。
+    Phase 4 行动间隔公式（重构版）：
+      总间隔 = 咏唱时间 + ceil(300 / 补偿速度) + ceil(300 / 角色速度)
+
+    其中：
+      - 咏唱时间：技能的 cast_time 属性（不受束缚影响）
+      - 补偿速度：actor.recovery_speed（基础 = base_recovery_speed，可被束缚修改）
+      - 角色速度：actor.speed
+
+    若未传入 skill，使用默认值（体术平A）。
     返回值单位：帧/tick 次数
     """
+    ct = skill.cast_time if skill else 5
     recovery = actor.recovery_speed
     if recovery <= 0:
         recovery = 1
     speed = actor.speed
     if speed <= 0:
         speed = 1
-    return math.ceil(300 / recovery) + math.ceil(300 / speed)
+    return ct + math.ceil(300 / recovery) + math.ceil(300 / speed)
 
 
-def resolve_recovery(actor: Character, delta_ticks: int = 1):
+def apply_recovery_after_action(actor: Character, skill: Skill, state: BattleState):
     """
-    每帧恢复 ATB：
-      恢复量 = 补偿速度 * delta_ticks
-    用于行动后的 ATB 重填阶段。
+    行动后结算 ATB 与补偿恢复。
+    1. 更新角色的 recovery_speed 为技能的 base_recovery_speed（乘以束缚倍率）
+    2. ATB 清零
+    3. 基于补偿速度恢复 1 tick（补偿速度 = 每 tick 恢复量）
+    4. 输出详细日志
     """
-    gain = actor.recovery_speed * delta_ticks
-    actor.atb = min(ATB_MAX, actor.atb + gain)
+    # 束缚倍率：如果当前 recovery_speed 被束缚修改过，保留倍率
+    base_speed = actor.speed
+    vow_multiplier = 1.0
+    if base_speed > 0 and actor.recovery_speed != base_speed:
+        vow_multiplier = actor.recovery_speed / base_speed
+
+    # 更新为技能的基础补偿速度（乘束缚倍率）
+    if skill and skill.base_recovery_speed > 0:
+        actor.recovery_speed = max(1, int(skill.base_recovery_speed * vow_multiplier))
+
+    # ATB 清零
+    actor.atb = 0
+
+    # 计算总行动间隔
+    total_interval = calculate_action_interval(actor, skill)
+    ct = skill.cast_time if skill else 5
+    recovery = actor.recovery_speed
+
+    # 模拟一次恢复 tick：恢复量 = 补偿速度
+    _resolve_recovery(actor, 1)
+
+    state.log.append(
+        f"{actor.name} 消耗了咏唱时间 {ct}，"
+        f"行动间隔 {total_interval} 帧（补偿速度 {recovery}，速度 {actor.speed}），"
+        f"ATB 已恢复至 {actor.atb}/{ATB_MAX}。"
+    )
 
 
 # ================================================================
@@ -454,7 +493,6 @@ def _execute_attack(actor: Character, skill: Skill, target: Character, state: Ba
 
     # 执行
     actor.mp = max(0, actor.mp - actual_cost)
-    actor.atb = 0
     target.hp = max(0, target.hp - damage)
 
     # 日志
@@ -467,13 +505,8 @@ def _execute_attack(actor: Character, skill: Skill, target: Character, state: Ba
     if is_bf:
         state.log.append("漆黑的光芒一闪——那一击超越了极限。")
 
-    # 恢复阶段：使用补偿速度开始 ATB 恢复
-    recover_ticks = max(1, actor.speed // 3)
-    resolve_recovery(actor, recover_ticks)
-    resolve_recovery(target, recover_ticks)
-    state.log.append(
-        f"{actor.name} 的 ATB 开始恢复（补偿速度 {actor.recovery_speed}，+{actor.recovery_speed * recover_ticks} ATB）。"
-    )
+    # Phase 4: 使用新的 ATB 恢复公式（咏唱时间 + 补偿速度）
+    apply_recovery_after_action(actor, skill, state)
 
     # 标记黑闪状态供 UI 渲染特效
     state.last_hit_was_black_flash = is_bf

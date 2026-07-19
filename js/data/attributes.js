@@ -57,8 +57,8 @@ export const RESOURCE_CAPS = {
   maxAp: 100,
   maxStamina: 100,
   maxResidual: 100,
-  maxRelationship: 10,
-});
+  maxRelationship: 10
+};
 
 /** 主界面行动消耗（修炼/请教/任务/探索/休息 以外的按钮暂用此） */
 export const HUB_ACTION_COSTS = {

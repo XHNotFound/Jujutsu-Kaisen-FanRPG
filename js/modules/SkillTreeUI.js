@@ -76,15 +76,16 @@ export class SkillTreeUI {
 
     // ★ 新增：基础技能区
     let baseHTML = '';
-    for (const [id, skill] of Object.entries(BASE_SKILLS)) {
-      if (id === 'advance' || id === 'retreat') continue; // 位移技能不可升级
+    for (const [id, skillDef] of Object.entries(BASE_SKILLS)) {
+      if (id === 'advance' || id === 'retreat') continue;
       const { level, effect, nextCost } = getSkillLevelData(id, skillLevels);
       const proficiency = skillProficiency[id] || 0;
+      const isUnlocked2 = level > 0;
       const canUpgrade = nextCost && proficiency >= nextCost.proficiency && skillPoints >= nextCost.skillPoints;
 
       let statusHTML2 = '';
-      if (!isUnlocked && skill.requires) {
-        statusHTML2 = `<span class="skilltree-status locked">🔒 需要前置: ${skill.requires}</span>`;
+      if (!isUnlocked2 && skillDef.requires) {
+        statusHTML2 = `<span class="skilltree-status locked">🔒 需要前置: ${skillDef.requires}</span>`;
       }
 
       const nextCostHTML2 = nextCost
@@ -99,10 +100,10 @@ export class SkillTreeUI {
       baseHTML += `
         <div class="skilltree-card">
           <div class="skilltree-header">
-            <span class="skilltree-name">${skill.name}</span>
+            <span class="skilltree-name">${skillDef.name}</span>
             <span class="skilltree-level">Lv.${level}</span>
           </div>
-          <div class="skilltree-desc">${skill.description}${effectText2}</div>
+          <div class="skilltree-desc">${skillDef.description}${effectText2}</div>
           ${statusHTML2}
           ${nextCost ? nextCostHTML2 : '<div class="skilltree-max">已达到最高等级</div>'}
           ${nextCost ? `<button class="btn btn-primary btn-upgrade-skill" data-skill-id="${id}" ${btnDisabled2}>升级</button>` : ''}

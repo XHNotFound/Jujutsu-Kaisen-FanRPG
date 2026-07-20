@@ -714,6 +714,52 @@ body {
   background: rgba(212, 168, 67, 0.15) !important;
 }
 
+/* Phase 7: Domain Detail Page */
+.domain-detail-panel {
+  max-width: 500px;
+  text-align: left;
+}
+
+.domain-detail-panel h3 {
+  color: var(--color-gold);
+  margin-bottom: 0.5rem;
+}
+
+.domain-flavor {
+  font-style: italic;
+  color: var(--color-text-dim);
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  background: rgba(212, 168, 67, 0.05);
+  border-left: 3px solid var(--color-gold);
+  border-radius: 0 4px 4px 0;
+}
+
+.domain-req-section h4,
+.domain-progress-section h4 {
+  color: var(--color-primary-glow);
+  font-size: 0.9rem;
+  margin: 0.5rem 0 0.3rem;
+}
+
+.domain-req-section p {
+  font-size: 0.8rem;
+  color: var(--color-text-dim);
+  line-height: 1.4;
+}
+
+.domain-stat-row {
+  font-size: 0.85rem;
+  color: var(--color-text);
+  padding: 0.2rem 0;
+}
+
+.domain-note {
+  margin-top: 1rem;
+  font-size: 0.75rem;
+  color: var(--color-danger);
+}
+
 /* ===== Distance Bar ===== */
 .battle-distance-bar {
   text-align: center;

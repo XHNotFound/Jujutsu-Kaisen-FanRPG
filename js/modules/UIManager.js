@@ -469,6 +469,11 @@ export class UIManager {
       this._showSkillTree();
     };
 
+    // Phase 7: 领域详情
+    document.getElementById('btn-domain-detail').onclick = () => {
+      this._showDomainDetail();
+    };
+
     // 休息
     document.getElementById('btn-rest').onclick = () => {
       this._handleRest();
@@ -505,6 +510,68 @@ export class UIManager {
       this._battleUI = new BattleUI(this.pyodideLoader, this);
     }
     await this._battleUI.start();
+  }
+
+  /**
+   * Phase 7: 打开领域详情页面
+   */
+  _showDomainDetail() {
+    const state = this.saveManager.getState();
+    if (!state) {
+      this.showModal('没有角色数据。', { confirmOnly: true, onConfirm: () => this.hideModal() });
+      return;
+    }
+
+    const techId = state.techniqueId || 'cursedEnergyBoost';
+    const domainNames = {
+      limitless: '无量空处', tenShadows: '嵌合暗翳庭', boogieWoogie: '不义游戏·领域',
+      curseManipulation: '极之番·漩涡', pureMartial: '天与咒缚·体'
+    };
+    const domainHints = {
+      limitless: '需术式等级≥8、结界术≥8、灵感×3、咒力操控≥60 方可展开完全领域。不完全领域仅需术式 Lv.5/结界术 Lv.5/灵感×1/咒力操控≥40。',
+      tenShadows: '玉犬、鵺、满象等式神在领域内能力大幅提升。展开条件：术式 Lv.7/结界术 Lv.7/灵感×2/咒力操控≥50。',
+      boogieWoogie: '领域内一切物体可随意交换位置。展开条件：术式 Lv.6/结界术 Lv.6/灵感×2/咒力操控≥45。',
+      curseManipulation: '将所有吸收的咒灵融为毁灭性漩涡。展开条件：术式 Lv.7/结界术 Lv.6/灵感×3/咒力操控≥55。',
+      pureMartial: '无领域——以纯粹的肉体极限为终点。天与咒缚·体是另一种境界。',
+      cursedEnergyBoost: '咒力强化术没有领域，但朴实的力量同样不可小觑。',
+    };
+    const flavorTexts = {
+      limitless: '将目标拉入无限的虚空之中，所有感知信息被无限放大，使其陷入完全无法行动的状态。',
+      tenShadows: '影子覆盖一切，十种式神可以在领域中自由进出影子的世界。',
+      boogieWoogie: '领域范围内的一切物体都可以被随意交换位置，形成绝对的空间控制。',
+      curseManipulation: '将所有吸收的咒灵融为一体，化作毁灭性的诅咒漩涡。',
+      pureMartial: '以完全丧失咒力为代价，换取超越极限的肉体能力。',
+      cursedEnergyBoost: '无领域。专注修炼咒力强化，以血肉之躯对抗诅咒。',
+    };
+
+    const dn = domainNames[techId] || '（该术式无领域配置）';
+    const dh = domainHints[techId] || '该术式暂无领域展开能力。';
+    const ft = flavorTexts[techId] || '';
+    const sl = state.skillLevels || {};
+    let totalTech = 0;
+    for (const lv of Object.values(sl)) totalTech += lv;
+    const barrier = state.attributes?.cursedEnergyControl || 0;
+    const insp = state.inspiration || 0;
+
+    const html = `
+      <div class="domain-detail-panel">
+        <h3>🏛️ ${dn}（领域展开）</h3>
+        <div class="domain-flavor">"${ft}"</div>
+        <div class="domain-req-section">
+          <h4>展开条件</h4>
+          <p>${dh}</p>
+        </div>
+        <div class="domain-progress-section">
+          <h4>当前进度</h4>
+          <div class="domain-stat-row">术式总等级：${totalTech}</div>
+          <div class="domain-stat-row">结界术（咒力操控）：${barrier}</div>
+          <div class="domain-stat-row">灵感点数：⚡ ${insp}</div>
+        </div>
+        <div class="domain-note">🔒 本期（Phase 7）领域在战斗中可通过🏛️按钮临时展开。完全解锁条件将在后续版本校验。</div>
+      </div>
+    `;
+
+    this.showModal(html, { confirmOnly: false, useHTML: true });
   }
 
   /**

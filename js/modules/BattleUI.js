@@ -157,7 +157,7 @@ export class BattleUI {
         return;
       }
 
-      // 解除领域按钮
+      // 解除领域按钮 (Fix 2: 改为取消领域，不碰束缚)
       if (e.target.closest('[data-action="cancel-domain"]')) {
         const d = this.currentState?.units?.find(u => u.unit_type === 'domain');
         if (d) this._executeAction({ type: 'cancel_domain', domain_id: d.id });
@@ -370,7 +370,7 @@ export class BattleUI {
             <div class="stat-bar hp-bar" style="width: ${domain.max_hp > 0 ? (domain.hp / domain.max_hp) * 100 : 0}%"></div>
           </div>
           <span class="stat-text">${domain.hp} / ${domain.max_hp}</span>
-          <button class="btn battle-vow-btn btn-system" data-action="cancel-domain">解除领域</button>
+          <button class="btn battle-domain-btn btn-system" data-action="cancel-domain">取消领域</button>
         </div>
       `;
     } else {

@@ -46,7 +46,7 @@ def _advance_time(state: BattleState, frames: int):
         for u in state.units:
             if u.is_alive:
                 if u.unit_type == UNIT_DOMAIN:
-                    u.atb = min(ATB_MAX, u.atb + u.attack_interval)
+                    u.atb = min(ATB_MAX, u.atb + u.attack_interval * 3)
                     if u.atb >= ATB_MAX:
                         _resolve_domain_auto_attack(u, state)
                         u.atb = 0
@@ -58,29 +58,22 @@ def _advance_time(state: BattleState, frames: int):
             _interrupt_enemy_turn(state)
             break  # 敌人回合结束后停止推进
 
-def _interrupt_enemy_turn(state: BattleState):
-    """中断敌人回合 — 在玩家行动的任何阶段都可能被触发"""
-    enemy = state.find_enemy(); p = state.find_player()
-    if not enemy or not p: return
-    state.turn = "enemy"
-    _log(state, "—— 敌人回合（中断） ——")
-    es = None
-    for s in enemy.skills:
-        if s.type in ("martial","cursed") and enemy.mp >= s.cost: es = s; break
-    if not es:
-        _log(state, f"{enemy.name} 无法行动！"); enemy.atb = 0; state.turn = "player"
-        _log(state, "—— 玩家回合 ——"); return
-    _resolve_distance(enemy, es, p, state)
-    is_bf = _check_black_flash(enemy); dmg = calculate_damage(enemy, es, p, is_bf)
-    cost = calculate_mp_cost(enemy, es)
-    enemy.mp = max(0, enemy.mp - cost); enemy.atb = 0; p.hp = max(0, p.hp - dmg)
-    bf_text = "【黑闪！】" if is_bf else ""
-    _log(state, f"{enemy.name} 使用 {es.name}{bf_text}，造成 {dmg} 点伤害。")
-    if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
-    state.last_hit_was_black_flash = is_bf
-    if p.hp <= 0: p.is_alive = False; state.turn = "enemy_win"; _log(state, f"{p.name} 倒下了…"); return
-    state.turn = "player"
-    _log(state, "—— 玩家回合 ——")
+def _check_battle_end(state: BattleState):
+    """Fix 1: 统一伤亡检查 — 任何地方需要检查胜负时调用此函数"""
+    p = state.find_player(); e = state.find_enemy()
+    if e and e.hp <= 0 and e.is_alive:
+        e.is_alive = False; state.turn = "player_win"
+        _log(state, f"{e.name} 被击败了！")
+        # 如果有领域，自动解除
+        for u in list(state.units):
+            if u.unit_type == UNIT_DOMAIN:
+                _handle_cancel_domain({"domain_id": u.id}, state)
+    if p and p.hp <= 0 and p.is_alive:
+        p.is_alive = False; state.turn = "enemy_win"
+        _log(state, f"{p.name} 倒下了…")
+        for u in list(state.units):
+            if u.unit_type == UNIT_DOMAIN:
+                _handle_cancel_domain({"domain_id": u.id}, state)
 
 def _resolve_domain_auto_attack(domain, state):
     owner = state.find_unit(domain.owner) if domain.owner else None
@@ -92,6 +85,8 @@ def _resolve_domain_auto_attack(domain, state):
     if not target or not target.is_alive: return
     dmg = domain.attack_damage; target.hp = max(0, target.hp - dmg)
     _log(state, f"{domain.name} 自动攻击 {target.name}，造成 {dmg} 点伤害。")
+    _check_battle_end(state)
+    if state.turn in ("player_win","enemy_win"): return
     if owner.hp < owner.max_hp * 0.5:
         penalty = max(0, int(domain.max_hp * 0.05))
         domain.hp = max(0, domain.hp - penalty)
@@ -211,6 +206,9 @@ def _execute_attack_framed(actor, skill, target, state):
     _log(state, f"{actor.name} 使用 {skill.name}{cost_text}{bf_text}，造成 {dmg} 点伤害。{bf_detail}")
     if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
     state.last_hit_was_black_flash = is_bf
+    _check_battle_end(state)
+    if state.turn in ("player_win","enemy_win"): return
+    _check_battle_end(state)
     if target.hp <= 0: return
     # Step 4: 补偿恢复阶段（逐帧推进，允许中断）
     rec = actor.recovery_speed
@@ -223,6 +221,7 @@ def _execute_attack_framed(actor, skill, target, state):
     _log(state, f"{actor.name} 进入补偿恢复（{recovery_frames} 帧，补偿速度 {actor.recovery_speed}）…")
     _advance_time(state, recovery_frames)
     actor.atb = min(ATB_MAX, actor.atb + actor.recovery_speed * recovery_frames)
+    _check_battle_end(state)
 
 def _execute_movement(actor, skill, state):
     cur = actor.distance

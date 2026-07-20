@@ -199,9 +199,11 @@ class BattleState:
         return self.find_enemy()
 
     def to_dict(self):
+        p = self.find_player()
+        e = self.find_enemy()
         result = {
-            "player": self.find_player().to_dict() if self.find_player() else None,
-            "enemy": self.find_enemy().to_dict() if self.find_enemy() else None,
+            "player": p.to_dict() if p else None,
+            "enemy": e.to_dict() if e else None,  # 死亡敌人仍序列化
             "units": [u.to_dict() for u in self.units],  # Phase 7: 完整单位列表
             "turn": self.turn,
             "log": self.log,

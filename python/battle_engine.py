@@ -6,7 +6,7 @@ import json
 import random
 import math
 from python.models import (
-    Character, Skill, BattleState, BattleTracker,
+    Unit, Skill, BattleState, BattleTracker,
     ATB_MAX, ATB_MOVEMENT_COST, ATB_ACTION_COST,
     BLACK_FLASH_BASE_RATE, BLACK_FLASH_TALENT_RATE,
     DISTANCE_CLOSE, DISTANCE_NEAR, DISTANCE_MID, DISTANCE_FAR, DISTANCE_NAMES,
@@ -22,7 +22,7 @@ def _capped(value: int, lo: int, hi: int) -> int:
     return max(lo, min(hi, value))
 
 
-def _check_black_flash(actor: Character) -> bool:
+def _check_black_flash(actor: Unit) -> bool:
     rate = BLACK_FLASH_BASE_RATE + actor.talent * BLACK_FLASH_TALENT_RATE
     return random.random() < rate
 
@@ -31,7 +31,7 @@ def _check_black_flash(actor: Character) -> bool:
 #  距离系统
 # ================================================================
 
-def calculate_move_cost(actor: Character, from_distance: int, to_distance: int) -> int:
+def calculate_move_cost(actor: Unit, from_distance: int, to_distance: int) -> int:
     diff = abs(to_distance - from_distance)
     if diff == 0:
         return 0
@@ -66,12 +66,12 @@ def resolve_distance(actor, skill, target, state):
 #  ATB / 恢复
 # ================================================================
 
-def _resolve_recovery(actor: Character, delta_ticks: int = 1):
+def _resolve_recovery(actor: Unit, delta_ticks: int = 1):
     gain = actor.recovery_speed * delta_ticks
     actor.atb = min(ATB_MAX, actor.atb + gain)
 
 
-def calculate_action_interval(actor: Character, skill: Skill = None) -> int:
+def calculate_action_interval(actor: Unit, skill: Skill = None) -> int:
     ct = skill.cast_time if skill else 5
     recovery = actor.recovery_speed
     if recovery <= 0:
@@ -82,7 +82,7 @@ def calculate_action_interval(actor: Character, skill: Skill = None) -> int:
     return ct + math.ceil(300 / recovery) + math.ceil(300 / speed)
 
 
-def apply_recovery_after_action(actor: Character, skill: Skill, state: BattleState):
+def apply_recovery_after_action(actor: Unit, skill: Skill, state: BattleState):
     base_speed = actor.speed
     vow_multiplier = 1.0
     if base_speed > 0 and actor.recovery_speed != base_speed:
@@ -103,7 +103,7 @@ def apply_recovery_after_action(actor: Character, skill: Skill, state: BattleSta
 
 def tick_atb(state: BattleState) -> BattleState:
     state.player.atb = min(ATB_MAX, state.player.atb + int(state.player.speed * state.atb_tick))
-    state.enemy.atb = min(ATB_MAX, state.enemy.atb + int(state.enemy.speed * state.atb_tick))
+    state.find_enemy().atb = min(ATB_MAX, state.find_enemy().atb + int(state.find_enemy().speed * state.atb_tick))
     return state
 
 
@@ -111,7 +111,7 @@ def tick_atb(state: BattleState) -> BattleState:
 #  角色/技能构建
 # ================================================================
 
-def create_player_from_save(save_data: dict) -> Character:
+def create_player_from_save(save_data: dict) -> Unit:
     name = save_data.get("characterName", "无名咒术师")
     attrs = save_data.get("attributes", {})
     constitution = attrs.get("constitution", 10)
@@ -130,8 +130,8 @@ def create_player_from_save(save_data: dict) -> Character:
         mp = max_mp
     technique_id = save_data.get("techniqueId", "cursedEnergyBoost")
     speed = 8 + attrs.get("talent", 10) // 3
-    return Character(
-        id="player", name=name,
+    return Unit(
+        id="player", name=name, unit_type=UNIT_PLAYER,
         hp=hp, max_hp=max_hp, mp=mp, max_mp=max_mp,
         atb=ATB_MAX, speed=speed,
         constitution=constitution,
@@ -221,9 +221,9 @@ def _build_player_skills(technique_id: str) -> list:
     return skills
 
 
-def create_default_enemy(enemy_tier: str = "normal") -> Character:
-    return Character(
-        id="enemy_1", name="蛸头",
+def create_default_enemy(enemy_tier: str = "normal") -> Unit:
+    return Unit(
+        id="enemy_1", name="蛸头", unit_type=UNIT_ENEMY,
         hp=120, max_hp=120, mp=0, max_mp=0, atb=0, speed=7,
         constitution=10, martial_arts=12,
         cursed_energy=0, cursed_energy_control=0, cursed_energy_efficiency=0, talent=5,
@@ -269,30 +269,33 @@ def calculate_mp_cost(actor, skill):
 def begin_enemy_turn(state: BattleState) -> BattleState:
     if state.turn in ("player_win", "enemy_win"):
         return state
-    state.enemy.atb = min(ATB_MAX, state.enemy.atb + int(state.enemy.speed * state.atb_tick * 2))
+    enemy = state.find_enemy()
+    if not enemy:
+        return state
+    enemy.atb = min(ATB_MAX, enemy.atb + int(enemy.speed * state.atb_tick * 2))
     state.player.atb = min(ATB_MAX, state.player.atb + int(state.player.speed * state.atb_tick))
     state.turn = "enemy"
     state.log.append("—— 敌人回合 ——")
     enemy_skill = None
-    for s in state.enemy.skills:
-        if s.type in ("martial", "cursed") and state.enemy.mp >= s.cost:
+    for s in enemy.skills:
+        if s.type in ("martial", "cursed") and enemy.mp >= s.cost:
             enemy_skill = s
             break
     if not enemy_skill:
-        state.log.append(f"{state.enemy.name} 无法行动！")
-        state.enemy.atb = 0
+        state.log.append(f"{enemy.name} 无法行动！")
+        enemy.atb = 0
         state.turn = "player"
         state.log.append("—— 玩家回合 ——")
         return state
-    resolve_distance(state.enemy, enemy_skill, state.player, state)
-    is_bf = _check_black_flash(state.enemy)
-    damage = calculate_damage(state.enemy, enemy_skill, state.player, is_bf)
-    cost = calculate_mp_cost(state.enemy, enemy_skill)
-    state.enemy.mp = max(0, state.enemy.mp - cost)
-    state.enemy.atb = 0
+    resolve_distance(enemy, enemy_skill, state.player, state)
+    is_bf = _check_black_flash(enemy)
+    damage = calculate_damage(enemy, enemy_skill, state.player, is_bf)
+    cost = calculate_mp_cost(enemy, enemy_skill)
+    enemy.mp = max(0, enemy.mp - cost)
+    enemy.atb = 0
     state.player.hp = max(0, state.player.hp - damage)
     bf_text = "【黑闪！】" if is_bf else ""
-    state.log.append(f"{state.enemy.name} 使用 {enemy_skill.name}{bf_text}，造成 {damage} 点伤害。")
+    state.log.append(f"{enemy.name} 使用 {enemy_skill.name}{bf_text}，造成 {damage} 点伤害。")
     if is_bf:
         state.log.append("漆黑的光芒一闪——那一击超越了极限。")
     state.last_hit_was_black_flash = is_bf
@@ -336,7 +339,7 @@ def execute_action(action_json: str, state_json: str) -> str:
 def _handle_use_skill(action: dict, state: BattleState, tracker: BattleTracker = None):
     actor_id = action.get("actor", "player")
     skill_id = action.get("skill_id", "attack")
-    target_id = action.get("target", state.enemy.id)
+    target_id = action.get("target", state.find_enemy().id if state.find_enemy() else "enemy_1")
     actor = state.get_actor(actor_id)
     target = state.get_target(target_id)
     if not actor or not target:
@@ -365,13 +368,14 @@ def _handle_use_skill(action: dict, state: BattleState, tracker: BattleTracker =
         if not resolve_distance(actor, skill, target, state):
             return
         _execute_attack(actor, skill, target, state)
-    if state.enemy.hp <= 0:
-        state.enemy.is_alive = False
+    enemy = state.find_enemy()
+    if enemy and enemy.hp <= 0:
+        enemy.is_alive = False
         state.turn = "player_win"
-        state.log.append(f"{state.enemy.name} 被击败了！")
+        state.log.append(f"{enemy.name} 被击败了！")
 
 
-def _execute_attack(actor: Character, skill: Skill, target: Character, state: BattleState):
+def _execute_attack(actor: Unit, skill: Skill, target: Unit, state: BattleState):
     is_bf = False
     bf_text = ""
     if skill.type == "martial":
@@ -393,7 +397,7 @@ def _execute_attack(actor: Character, skill: Skill, target: Character, state: Ba
         begin_enemy_turn(state)
 
 
-def _execute_movement(actor: Character, skill: Skill, state: BattleState):
+def _execute_movement(actor: Unit, skill: Skill, state: BattleState):
     current = actor.distance
     if "advance" in skill.id:
         new_dist = max(DISTANCE_CLOSE, current - 1)
@@ -509,7 +513,8 @@ def _deserialize_state(d: dict) -> BattleState:
                         damage_multiplier=s.get("damage_multiplier",1.0), min_distance=s.get("min_distance",0), max_distance=s.get("max_distance",3),
                         cast_time=s.get("cast_time",5), base_recovery_speed=s.get("base_recovery_speed",30))
                   for s in cd.get("skills",[])]
-        return Character(id=cd.get("id",""), name=cd.get("name",""), hp=cd.get("hp",0), max_hp=cd.get("max_hp",0),
+        return Unit(id=cd.get("id",""), name=cd.get("name",""), unit_type=cd.get("unit_type","player"),
+                         hp=cd.get("hp",0), max_hp=cd.get("max_hp",0),
                          mp=cd.get("mp",0), max_mp=cd.get("max_mp",0), atb=cd.get("atb",0), speed=cd.get("speed",10),
                          is_alive=cd.get("is_alive",True), skills=skills,
                          constitution=cd.get("constitution",10), martial_arts=cd.get("martial_arts",10),
@@ -517,7 +522,7 @@ def _deserialize_state(d: dict) -> BattleState:
                          cursed_energy_efficiency=cd.get("cursed_energy_efficiency",10), talent=cd.get("talent",10),
                          distance=cd.get("distance",2), active_vow=cd.get("active_vow"),
                          recovery_speed=cd.get("recovery_speed",cd.get("speed",10)))
-    return BattleState(player=_build_char(pd), enemy=_build_char(ed),
+    return BattleState(units=[_build_char(pd), _build_char(ed)],
                        turn=d.get("turn","player"), log=d.get("log",[]), round_number=d.get("round_number",1),
                        phase=d.get("phase",PHASE_WAITING), last_hit_was_black_flash=d.get("last_hit_was_black_flash",False))
 
@@ -551,7 +556,7 @@ def init_battle(save_data_json: str) -> str:
         save_data = {}
     player = create_player_from_save(save_data)
     enemy = create_default_enemy()
-    state = BattleState(player=player, enemy=enemy, turn="player", phase=PHASE_WAITING)
+    state = BattleState(units=[player, enemy], turn="player", phase=PHASE_WAITING)
     state.log.append("战斗开始！一股诅咒气息扑面而来。")
     state.log.append(f"遭遇了 {enemy.name}！")
     state.log.append(f"初始距离：{DISTANCE_NAMES[player.distance]}。")

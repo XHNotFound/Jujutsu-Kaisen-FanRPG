@@ -68,7 +68,7 @@ def tick_atb(state: BattleState) -> BattleState:
     # Phase 7: 领域自动攻击 — 领域 Unit 的 ATB 按 attack_interval 推进
     for u in state.units:
         if u.unit_type == UNIT_DOMAIN and u.is_alive and u.owner:
-            u.atb = min(ATB_MAX, u.atb + u.attack_interval)
+            u.atb = min(ATB_MAX, u.atb + u.attack_interval * 3)
             if u.atb >= ATB_MAX and e and e.is_alive:
                 _resolve_domain_auto_attack(u, state)
                 u.atb = 0

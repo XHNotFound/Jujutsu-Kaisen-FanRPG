@@ -65,7 +65,41 @@ def tick_atb(state: BattleState) -> BattleState:
     p = state.find_player(); e = state.find_enemy()
     if p: p.atb = min(ATB_MAX, p.atb + int(p.speed * state.atb_tick))
     if e: e.atb = min(ATB_MAX, e.atb + int(e.speed * state.atb_tick))
+    # Phase 7: 领域自动攻击 — 领域 Unit 的 ATB 按 attack_interval 推进
+    for u in state.units:
+        if u.unit_type == UNIT_DOMAIN and u.is_alive and u.owner:
+            u.atb = min(ATB_MAX, u.atb + u.attack_interval)
+            if u.atb >= ATB_MAX and e and e.is_alive:
+                _resolve_domain_auto_attack(u, state)
+                u.atb = 0
     return state
+
+def _resolve_domain_auto_attack(domain: Unit, state: BattleState):
+    """领域自动攻击 — 在 tick_atb 中自动触发，无需玩家手动点击"""
+    owner = state.find_unit(domain.owner) if domain.owner else None
+    if not owner:
+        domain.is_alive = False
+        _log(state, "领域展开者已消失，领域破碎。")
+        return
+    cost = domain.domain_maintenance_cost
+    if owner.mp < cost:
+        _log(state, "咒力不足，领域无法维持！")
+        _handle_cancel_domain({"domain_id": domain.id}, state)
+        return
+    owner.mp -= cost
+    target = state.find_enemy()
+    if not target or not target.is_alive: return
+    dmg = domain.attack_damage
+    target.hp = max(0, target.hp - dmg)
+    state.global_action_time += 1
+    _log(state, f"{domain.name} 自动攻击 {target.name}，造成 {dmg} 点伤害。")
+    mp_penalty = max(0, int(domain.max_hp * 0.05))
+    if owner.hp < owner.max_hp * 0.5:
+        domain.hp = max(0, domain.hp - mp_penalty)
+        _log(state, f"{owner.name} HP 低于 50%，领域受到维系损耗（-{mp_penalty} HP）。")
+    if domain.hp <= 0:
+        _handle_cancel_domain({"domain_id": domain.id}, state)
+        _log(state, f"{domain.name} 破碎了！")
 
 # ===== 角色/技能构建 =====
 def create_player_from_save(save_data: dict) -> Unit:

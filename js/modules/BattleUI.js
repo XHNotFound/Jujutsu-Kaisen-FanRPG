@@ -88,6 +88,21 @@ export class BattleUI {
     container.addEventListener('click', (e) => {
       if (this._processing) return;
 
+      // 折叠区头部按钮（攻击/束缚/领域）
+      const toggleBtn = e.target.closest('.battle-section-toggle');
+      if (toggleBtn) {
+        const sectionId = toggleBtn.dataset.section;
+        if (sectionId) {
+          const section = document.getElementById(sectionId);
+          if (section) {
+            const isHidden = section.style.display === 'none';
+            section.style.display = isHidden ? '' : 'none';
+            toggleBtn.classList.toggle('collapsed', !isHidden);
+          }
+        }
+        return;
+      }
+
       // 技能按钮
       const skillBtn = e.target.closest('.battle-skill-btn');
       if (skillBtn && !skillBtn.disabled) {
@@ -103,7 +118,6 @@ export class BattleUI {
 
       // 撤离按钮
       if (e.target.closest('#btn-battle-flee')) {
-        // Bugfix: 撤离时把当前战斗状态中的 HP/MP 写回存档
         if (this.currentState && this.uiManager.saveManager) {
           const p = this.currentState.player;
           const sm = this.uiManager.saveManager;
@@ -142,6 +156,13 @@ export class BattleUI {
         this._handleDomainExpand(domainBtn.dataset.domainId || 'limitless_domain');
         return;
       }
+
+      // 解除领域按钮
+      if (e.target.closest('[data-action="cancel-domain"]')) {
+        const d = this.currentState?.units?.find(u => u.unit_type === 'domain');
+        if (d) this._executeAction({ type: 'cancel_domain', domain_id: d.id });
+        return;
+      }
     });
   }
 
@@ -149,40 +170,26 @@ export class BattleUI {
   //  渲染
   // ================================================================
 
-  /**
-   * 全量渲染战斗画面
-   */
   _renderAll() {
     if (!this.currentState) return;
     const s = this.currentState;
 
-    // === 玩家 ===
     this._renderCharCard('player', s.player);
-
-    // === 敌人 ===
     this._renderCharCard('enemy', s.enemy);
-
-    // === 距离显示 ===
     this._renderDistance(s);
-
-    // === 日志 ===
     this._renderLog(s.log);
 
-    // === 技能按钮 ===
-    this._renderSkillButtons(s.player);
-
-    // === 束缚按钮 ===
-    this._renderVowButtons(s.player);
-
-    // Phase 7: 领域展开按钮
+    // 折叠攻击区
+    this._renderCollapsibleSection('battle-attack-section', 'battle-attack-body', '⚔️ 攻击', () => this._renderSkillButtons(s.player));
+    // 折叠束缚区
+    this._renderCollapsibleSection('battle-vow-section', 'battle-vow-body', '🔗 束缚', () => this._renderVowButtons(s.player));
+    // 领域区（独立）
     this._renderDomainButton(s);
 
-    // === 黑闪特效 ===
     if (s.last_hit_was_black_flash) {
       this._flashBlackFlashEffect();
     }
 
-    // === 胜利/失败检查 ===
     if (s.turn === 'player_win') {
       this._appendLog('━━ 胜利！诅咒被祓除了。 ━━');
       this._disableAllSkills();
@@ -193,15 +200,28 @@ export class BattleUI {
     }
   }
 
-  /**
-   * 渲染角色卡片（HP/MP/ATB 条）
-   */
+  _renderCollapsibleSection(containerId, bodyId, label, renderFn) {
+    let container = document.getElementById(containerId);
+    if (!container) {
+      container = document.createElement('div');
+      container.id = containerId;
+      container.className = 'battle-collapsible-section';
+      const skillsEl = document.getElementById('battle-skills');
+      if (skillsEl && skillsEl.parentNode) {
+        skillsEl.parentNode.insertBefore(container, skillsEl);
+      }
+    }
+    container.innerHTML = `
+      <button class="btn battle-section-toggle" data-section="${bodyId}">${label}</button>
+      <div id="${bodyId}" class="battle-section-body"></div>
+    `;
+    renderFn();
+  }
+
   _renderCharCard(prefix, data) {
-    // 名称
     const nameEl = document.getElementById(`${prefix}-name`);
     if (nameEl) {
       let label = data.name || '--';
-      // 显示距离标签
       const distNames = ['贴身', '近', '中', '远'];
       const dist = data.distance;
       if (dist !== undefined && distNames[dist]) {
@@ -209,15 +229,11 @@ export class BattleUI {
       }
       nameEl.textContent = label;
     }
-
-    // HP
     const hpPct = data.max_hp > 0 ? (data.hp / data.max_hp) * 100 : 0;
     const hpBar = document.getElementById(`${prefix}-hp-bar`);
     const hpText = document.getElementById(`${prefix}-hp-text`);
     if (hpBar) hpBar.style.width = hpPct + '%';
     if (hpText) hpText.textContent = `${data.hp} / ${data.max_hp}`;
-
-    // MP（仅玩家有）
     if (prefix === 'player') {
       const mpPct = data.max_mp > 0 ? (data.mp / data.max_mp) * 100 : 0;
       const mpBar = document.getElementById('player-mp-bar');
@@ -225,8 +241,6 @@ export class BattleUI {
       if (mpBar) mpBar.style.width = mpPct + '%';
       if (mpText) mpText.textContent = `${data.mp} / ${data.max_mp}`;
     }
-
-    // ATB
     const atbPct = (data.atb / 300) * 100;
     const atbBar = document.getElementById(`${prefix}-atb-bar`);
     const atbText = document.getElementById(`${prefix}-atb-text`);
@@ -234,26 +248,18 @@ export class BattleUI {
     if (atbText) atbText.textContent = `${data.atb} / 300`;
   }
 
-  /**
-   * 渲染距离指示器
-   */
   _renderDistance(s) {
-    // 在日志上方插入距离横条（若还不存在则创建）
     let distEl = document.getElementById('battle-distance-bar');
     if (!distEl) {
       distEl = document.createElement('div');
       distEl.id = 'battle-distance-bar';
       distEl.className = 'battle-distance-bar';
       const logEl = document.getElementById('battle-log');
-      if (logEl && logEl.parentNode) {
-        logEl.parentNode.insertBefore(distEl, logEl);
-      }
+      if (logEl && logEl.parentNode) logEl.parentNode.insertBefore(distEl, logEl);
     }
-
     const slots = ['贴身', '近', '中', '远'];
     const pDist = s.player.distance;
     const eDist = s.enemy.distance;
-
     let html = '<span class="dist-label">距离：</span>';
     for (let i = 0; i < 4; i++) {
       let cls = 'dist-slot';
@@ -262,13 +268,9 @@ export class BattleUI {
       else if (i === eDist) cls += ' dist-enemy';
       html += `<span class="${cls}">【${slots[i]}】</span>`;
     }
-
     distEl.innerHTML = html;
   }
 
-  /**
-   * 渲染战斗日志（增量追加新条目）
-   */
   _renderLog(logs) {
     const container = document.getElementById('battle-log');
     if (!container) return;
@@ -276,74 +278,48 @@ export class BattleUI {
     for (let i = currentCount; i < logs.length; i++) {
       const entry = document.createElement('div');
       entry.className = 'battle-log-entry';
-      // 黑闪日志高亮
-      if (logs[i].includes('【黑闪！】') || logs[i].includes('漆黑的光芒')) {
-        entry.classList.add('log-black-flash');
-      }
-      // 胜利/败北特殊样式
-      if (logs[i].includes('胜利') || logs[i].includes('祓除')) {
-        entry.classList.add('log-victory');
-      }
-      if (logs[i].includes('败北') || logs[i].includes('倒下')) {
-        entry.classList.add('log-defeat');
-      }
+      if (logs[i].includes('【黑闪！】') || logs[i].includes('漆黑的光芒')) entry.classList.add('log-black-flash');
+      if (logs[i].includes('胜利') || logs[i].includes('祓除')) entry.classList.add('log-victory');
+      if (logs[i].includes('败北') || logs[i].includes('倒下')) entry.classList.add('log-defeat');
       entry.textContent = logs[i];
       container.appendChild(entry);
     }
     container.scrollTop = container.scrollHeight;
   }
 
-  /**
-   * 追加单条日志
-   */
   _appendLog(msg) {
     const container = document.getElementById('battle-log');
     if (!container) return;
     const entry = document.createElement('div');
     entry.className = 'battle-log-entry';
-    if (msg.includes('【黑闪！】') || msg.includes('漆黑的光芒')) {
-      entry.classList.add('log-black-flash');
-    }
+    if (msg.includes('【黑闪！】') || msg.includes('漆黑的光芒')) entry.classList.add('log-black-flash');
     entry.textContent = msg;
     container.appendChild(entry);
     container.scrollTop = container.scrollHeight;
   }
 
-  /**
-   * 渲染技能按钮（事件委托在 _bindDelegation 中处理）
-   */
   _renderSkillButtons(playerData) {
-    const container = document.getElementById('battle-skills');
-    if (!container) return;
-    container.innerHTML = '';
-
+    // 渲染到折叠 body 中
+    let body = document.getElementById('battle-attack-body');
+    if (!body) {
+      const container = document.getElementById('battle-skills');
+      if (container) { body = document.createElement('div'); body.id = 'battle-attack-body'; container.appendChild(body); }
+      else return;
+    }
+    body.innerHTML = '';
     const skills = playerData.skills || [];
-
     for (const skill of skills) {
       const btn = document.createElement('button');
       btn.className = 'btn battle-skill-btn';
       btn.dataset.skillId = skill.id;
-
-      // 技能类型样式
-      if (skill.type === 'martial') {
-        btn.classList.add('skill-martial');
-      } else if (skill.type === 'cursed') {
-        btn.classList.add('skill-cursed');
-      } else if (skill.type === 'movement') {
-        btn.classList.add('skill-movement');
-      }
-
-      // 咒力不足标记
-      if (skill.cost > 0 && playerData.mp < skill.cost) {
-        btn.classList.add('cost-too-high');
-      }
-
-      // 距离提示
+      if (skill.type === 'martial') btn.classList.add('skill-martial');
+      else if (skill.type === 'cursed') btn.classList.add('skill-cursed');
+      else if (skill.type === 'movement') btn.classList.add('skill-movement');
+      if (skill.cost > 0 && playerData.mp < skill.cost) btn.classList.add('cost-too-high');
       const distNames = ['贴身', '近', '中', '远'];
       const minD = skill.min_distance !== undefined ? distNames[skill.min_distance] : '?';
       const maxD = skill.max_distance !== undefined ? distNames[skill.max_distance] : '?';
       const distRange = (skill.type === 'movement') ? '' : ` [${minD}~${maxD}]`;
-
       const costLabel = skill.cost > 0 ? ` (MP ${skill.cost})` : '';
       const ctLabel = skill.cast_time !== undefined ? ` 咏唱${skill.cast_time}帧` : '';
       const rvLabel = skill.base_recovery_speed !== undefined ? ` 补偿${skill.base_recovery_speed}` : '';
@@ -351,32 +327,19 @@ export class BattleUI {
         <span class="skill-name">${skill.name}${distRange}</span>
         <span class="skill-cost">${costLabel}${ctLabel}${rvLabel}</span>
       `;
-
-      container.appendChild(btn);
+      body.appendChild(btn);
     }
   }
 
-  /**
-   * 渲染束缚按钮
-   */
   _renderVowButtons(playerData) {
-    let vowContainer = document.getElementById('battle-vows');
-    if (!vowContainer) {
-      vowContainer = document.createElement('div');
-      vowContainer.id = 'battle-vows';
-      vowContainer.className = 'battle-vows';
-      const skillsEl = document.getElementById('battle-skills');
-      if (skillsEl && skillsEl.parentNode) {
-        skillsEl.parentNode.insertBefore(vowContainer, skillsEl.nextSibling);
-      }
+    let body = document.getElementById('battle-vow-body');
+    if (!body) {
+      const container = document.getElementById('battle-vows');
+      if (container) { body = document.createElement('div'); body.id = 'battle-vow-body'; container.appendChild(body); }
+      else return;
     }
-
     const activeVow = playerData.active_vow;
-    const vowLabels = {
-      'offense_boost': '攻击强化',
-      'no_cursed_speed': '禁咒加速',
-    };
-
+    const vowLabels = { 'offense_boost': '攻击强化', 'no_cursed_speed': '禁咒加速' };
     let html = '';
     if (activeVow) {
       html += `<span class="vow-active-badge">⚡ 束缚: ${vowLabels[activeVow] || activeVow}</span>`;
@@ -385,30 +348,51 @@ export class BattleUI {
       html += `<button class="btn battle-vow-btn btn-system" data-vow-id="offense_boost">🔺 攻击强化之缚</button>`;
       html += `<button class="btn battle-vow-btn btn-system" data-vow-id="no_cursed_speed">⚡ 禁咒加速之缚</button>`;
     }
-
-    vowContainer.innerHTML = html;
+    body.innerHTML = html;
   }
 
-  /**
-   * 黑闪屏幕闪烁特效
-   */
+  _renderDomainButton(s) {
+    const hasDomain = s.units && s.units.some(u => u.unit_type === 'domain');
+    let btnContainer = document.getElementById('battle-domain-bar');
+    if (!btnContainer) {
+      btnContainer = document.createElement('div');
+      btnContainer.id = 'battle-domain-bar';
+      btnContainer.className = 'battle-domain-bar';
+      const vowsEl = document.getElementById('battle-vows');
+      if (vowsEl && vowsEl.parentNode) vowsEl.parentNode.insertBefore(btnContainer, vowsEl.nextSibling);
+    }
+    if (hasDomain) {
+      const domain = s.units.find(u => u.unit_type === 'domain');
+      btnContainer.innerHTML = `
+        <div class="domain-hp-row">
+          <span class="domain-label">🏛️ ${domain.name}</span>
+          <div class="stat-bar-bg battle-bar-wide" style="margin: 0 0.5rem;">
+            <div class="stat-bar hp-bar" style="width: ${domain.max_hp > 0 ? (domain.hp / domain.max_hp) * 100 : 0}%"></div>
+          </div>
+          <span class="stat-text">${domain.hp} / ${domain.max_hp}</span>
+          <button class="btn battle-vow-btn btn-system" data-action="cancel-domain">解除领域</button>
+        </div>
+      `;
+    } else {
+      const state = this.uiManager.saveManager?.getState();
+      const hasLearned = state && state.domainUnlocked === state.techniqueId;
+      const techId = state?.techniqueId || 'cursedEnergyBoost';
+      btnContainer.innerHTML = `
+        <button class="btn battle-domain-btn btn-primary" data-domain-id="${techId}_domain" ${hasLearned ? '' : 'disabled'}>🏛️ 领域展开${hasLearned ? '' : ' (未学习)'}</button>
+      `;
+    }
+  }
+
   _flashBlackFlashEffect() {
     const container = document.querySelector('#screen-battle .battle-container');
     if (!container) return;
     container.classList.add('black-flash-shake');
-    setTimeout(() => {
-      container.classList.remove('black-flash-shake');
-    }, 600);
+    setTimeout(() => container.classList.remove('black-flash-shake'), 600);
   }
 
-  /**
-   * Phase 4: 战斗胜利结算弹窗
-   */
   _showVictoryScreen(s) {
     const tracker = s._tracker || {};
     const usage = tracker.skill_usage || {};
-
-    // 调用 Python 生成奖励（通过 SaveManager 的 state 中不包含敌人配置，使用默认配置）
     const skillUsageStr = JSON.stringify(usage);
     this.pyodideLoader.runPython(
       `from python.battle_engine import generate_battle_rewards, BattleTracker
@@ -420,11 +404,8 @@ __builtins__.dict(rewards)`
       const rewards = typeof rewardsStr === 'string' ? JSON.parse(rewardsStr) : rewardsStr;
       this._renderRewardPopup(rewards);
     }).catch(err => {
-      // 如果 Python 调用失败，用 JS 兜底计算
       const proficiency = {};
-      for (const [id, count] of Object.entries(usage)) {
-        proficiency[id] = count * 5;
-      }
+      for (const [id, count] of Object.entries(usage)) proficiency[id] = count * 5;
       this._renderRewardPopup({
         money: Math.floor(Math.random() * 31) + 20,
         skillPoints: 1,
@@ -437,21 +418,15 @@ __builtins__.dict(rewards)`
   _renderRewardPopup(rewards) {
     const container = document.querySelector('#screen-battle .battle-container');
     if (!container) return;
-
-    // 移除旧弹窗
     const old = document.getElementById('battle-reward-overlay');
     if (old) old.remove();
-
     const pGains = rewards.proficiencyGains || {};
     const profLines = Object.entries(pGains)
       .map(([id, val]) => {
         const nameMap = { attack: '体术平A', cursed_boost: '咒力强化拳', aoi: '苍', aka: '赫', gyokuken: '玉犬', piercing_blood: '穿血', boogie_punch: '拍手连击', doll_resonance: '共鸣' };
         return `<div class="reward-row">${nameMap[id] || id}: +${val} 熟练度</div>`;
-      })
-      .join('');
-
+      }).join('');
     const inspText = rewards.inspirationGained ? '<div class="reward-row reward-inspiration">⚡ 获得了灵感！</div>' : '';
-
     const overlay = document.createElement('div');
     overlay.id = 'battle-reward-overlay';
     overlay.className = 'battle-reward-overlay';
@@ -460,192 +435,75 @@ __builtins__.dict(rewards)`
         <h3>━━ 战斗胜利 ━━</h3>
         <div class="reward-row reward-money">💰 金币: +${rewards.money}</div>
         <div class="reward-row reward-sp">🔧 技能点: +${rewards.skillPoints}</div>
-        ${profLines}
-        ${inspText}
+        ${profLines}${inspText}
         <button id="btn-reward-confirm" class="btn btn-primary">确认</button>
       </div>
     `;
-
     container.appendChild(overlay);
-
     document.getElementById('btn-reward-confirm').onclick = () => {
       overlay.remove();
-      // 回写到 SaveManager
       if (this.uiManager.saveManager && typeof this.uiManager.saveManager.applyBattleRewards === 'function') {
         this.uiManager.saveManager.applyBattleRewards(rewards);
       }
     };
   }
 
-  /**
-   * 禁用所有技能按钮（战斗结束）
-   */
   _disableAllSkills() {
-    const btns = document.querySelectorAll('#battle-skills .battle-skill-btn');
-    btns.forEach(b => { b.disabled = true; });
-    const vowBtns = document.querySelectorAll('#battle-vows .battle-vow-btn');
-    vowBtns.forEach(b => { b.disabled = true; });
+    document.querySelectorAll('#battle-attack-body .battle-skill-btn').forEach(b => b.disabled = true);
+    document.querySelectorAll('#battle-vow-body .battle-vow-btn').forEach(b => b.disabled = true);
+    const dBtn = document.querySelector('#battle-domain-bar .battle-domain-btn');
+    if (dBtn) dBtn.disabled = true;
   }
 
-  // ================================================================
-  //  调用 Python 执行行动
-  // ================================================================
-
-  /**
-   * 向 Python 发送行动，接收新状态并重新渲染
-   * @param {object} action — { type, actor, skill_id/vow_id, target }
-   */
   async _executeAction(action) {
     if (this._processing) return;
     this._processing = true;
-    this._setSkillsDisabled(true);
-
+    this._setAllBtns(true);
     try {
       const actionJson = JSON.stringify(action);
       const stateJson = JSON.stringify(this.currentState);
-
-      // 调用 Python
       const resultJson = await this.pyodideLoader.runPython(
         `from python.battle_engine import execute_action\nexecute_action('${actionJson.replace(/'/g, "\\'")}', '''${stateJson.replace(/'/g, "\\'")}''')`
       );
       this.currentState = JSON.parse(resultJson);
-
-      // 重新渲染
       this._renderAll();
     } catch (err) {
       this._appendLog(`[ERROR] 行动执行失败: ${err.message}`);
       console.error('[BattleUI]', err);
     } finally {
       this._processing = false;
-      this._setSkillsDisabled(false);
+      this._setAllBtns(false);
     }
   }
 
-  /**
-   * 切换所有技能按钮的禁用状态（防连点）
-   */
-  _setSkillsDisabled(disabled) {
-    const btns = document.querySelectorAll('#battle-skills .battle-skill-btn');
-    btns.forEach(b => { b.disabled = disabled; });
-    const vowBtns = document.querySelectorAll('#battle-vows .battle-vow-btn');
-    vowBtns.forEach(b => { b.disabled = disabled; });
+  _setAllBtns(disabled) {
+    document.querySelectorAll('#battle-attack-body .battle-skill-btn, #battle-vow-body .battle-vow-btn, #battle-domain-bar .battle-domain-btn, [data-action="cancel-domain"]').forEach(b => b.disabled = disabled);
   }
-
-  // ================================================================
-  //  辅助
-  // ================================================================
 
   _showLoading(show) {
     const el = document.getElementById('battle-loading');
-    if (el) {
-      el.classList.toggle('hidden', !show);
-    }
+    if (el) el.classList.toggle('hidden', !show);
   }
 
-  /**
-   * Phase 7: 渲染领域展开按钮 + 领域 HP 条
-   */
-  _renderDomainButton(s) {
-    // 检查是否已有领域
-    const hasDomain = s.units && s.units.some(u => u.unit_type === 'domain');
-
-    // 领域展开按钮区域
-    let btnContainer = document.getElementById('battle-domain-bar');
-    if (!btnContainer) {
-      btnContainer = document.createElement('div');
-      btnContainer.id = 'battle-domain-bar';
-      btnContainer.className = 'battle-domain-bar';
-      const vowsEl = document.getElementById('battle-vows');
-      if (vowsEl && vowsEl.parentNode) {
-        vowsEl.parentNode.insertBefore(btnContainer, vowsEl.nextSibling);
-      }
-    }
-
-    if (hasDomain) {
-      const domain = s.units.find(u => u.unit_type === 'domain');
-      btnContainer.innerHTML = `
-        <div class="domain-hp-row">
-          <span class="domain-label">🏛️ ${domain.name}</span>
-          <div class="stat-bar-bg battle-bar-wide" style="margin: 0 0.5rem;">
-            <div class="stat-bar hp-bar" style="width: ${domain.max_hp > 0 ? (domain.hp / domain.max_hp) * 100 : 0}%"></div>
-          </div>
-          <span class="stat-text">${domain.hp} / ${domain.max_hp}</span>
-          <button class="btn battle-vow-btn btn-system" data-action="cancel-domain">解除领域</button>
-          <button class="btn battle-domain-btn btn-system" data-action="domain-strike">⚔️ 领域攻击</button>
-        </div>
-      `;
-      // 绑定解除按钮
-      setTimeout(() => {
-        const cancelBtn = btnContainer.querySelector('[data-action="cancel-domain"]');
-        if (cancelBtn) {
-          cancelBtn.onclick = () => {
-            const d = s.units.find(u => u.unit_type === 'domain');
-            if (d) {
-              this._executeAction({ type: 'cancel_domain', domain_id: d.id });
-            }
-          };
-        }
-        const strikeBtn = btnContainer.querySelector('[data-action="domain-strike"]');
-        if (strikeBtn) {
-          strikeBtn.onclick = () => {
-            const d = s.units.find(u => u.unit_type === 'domain');
-            if (d) {
-              this._executeAction({ type: 'domain_attack', domain_id: d.id });
-            }
-          };
-        }
-      }, 50);
-    } else {
-      const state = this.uiManager.saveManager?.getState();
-      const hasLearned = state && state.domainUnlocked === state.techniqueId;
-      const techId = state?.techniqueId || 'cursedEnergyBoost';
-      btnContainer.innerHTML = `
-        <button class="btn battle-domain-btn btn-primary" data-domain-id="${techId}_domain" ${hasLearned ? '' : 'disabled'}>🏛️ 领域展开${hasLearned ? '' : ' (未学习)'}</button>
-      `;
-    }
-  }
-
-  /**
-   * Phase 7: 处理领域展开
-   */
   _handleDomainExpand(domainId) {
     const saveState = this.uiManager.saveManager?.getState();
     if (!saveState) return;
-
     const techId = saveState.techniqueId || 'cursedEnergyBoost';
-    // 从存档中读取已学会的领域层级
     const tier = (saveState.domainLearnedTiers && saveState.domainLearnedTiers[techId]) || 'complete';
     const isComplete = tier === 'complete';
-
-    // 根据角色属性计算领域数值（使用 domains.js 的 export 或内联默认）
     const attrs = saveState.attributes || {};
     let totalTech = 0;
     const sl = saveState.skillLevels || {};
     for (const lv of Object.values(sl)) totalTech += lv;
     const barrier = attrs.cursedEnergyControl || 10;
-
-    // 默认领域数值
     let hp = 100 * barrier + 5 * barrier;
     let atkDmg = 50 * Math.max(1, totalTech);
-    let atkInterval = 10;
-    let mpCost = 5;
     if (!isComplete) { hp = Math.floor(hp * 0.6); atkDmg = Math.floor(atkDmg * 0.6); }
-
-    const domainNames = {
-      limitless: '无量空处', tenShadows: '嵌合暗翳庭', boogieWoogie: '不义游戏·领域',
-      curseManipulation: '极之番·漩涡', pureMartial: '天与咒缚·体'
-    };
-
+    const domainNames = { limitless: '无量空处', tenShadows: '嵌合暗翳庭', boogieWoogie: '不义游戏·领域', curseManipulation: '极之番·漩涡', pureMartial: '天与咒缚·体' };
     this._executeAction({
-      type: 'expand_domain',
-      actor: 'player',
-      domain_id: domainId,
-      domain_name: domainNames[techId] || '领域',
-      is_complete: isComplete,
-      domain_hp: hp,
-      attack_interval: atkInterval,
-      attack_damage: atkDmg,
-      mp_cost: mpCost
+      type: 'expand_domain', actor: 'player', domain_id: domainId,
+      domain_name: domainNames[techId] || '领域', is_complete: isComplete,
+      domain_hp: hp, attack_interval: 10, attack_damage: atkDmg, mp_cost: 5
     });
   }
 }

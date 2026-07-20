@@ -542,6 +542,9 @@ body {
   border-radius: 8px;
   padding: 2rem;
   min-width: 300px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
   text-align: center;
 }
 
@@ -643,6 +646,46 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* Phase 7: Collapsible sections */
+.battle-collapsible-section {
+  margin-bottom: 0.5rem;
+}
+
+.battle-section-toggle {
+  width: 100%;
+  text-align: center;
+  padding: 0.4rem;
+  font-size: 0.95rem;
+  font-weight: bold;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  margin-bottom: 0;
+}
+
+.battle-section-toggle:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary-glow);
+}
+
+.battle-section-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  padding-top: 0.4rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+#battle-vow-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  max-height: none;
 }
 
 .battle-skill-btn {

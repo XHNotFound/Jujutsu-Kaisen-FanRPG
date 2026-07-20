@@ -53,7 +53,18 @@ export class PyodideLoader {
    */
   async loadPythonFile(filePath) {
     const py = await this.load();
-    if (this._loadedFiles.has(filePath)) return;
+    // Phase 7: 清除 Python 模块缓存，确保重新加载（支持热更新）
+    if (this._loadedFiles.has(filePath)) {
+      // 清除模块缓存
+      const moduleName = filePath.replace(/\//g, '.').replace('.py', '');
+      await py.runPythonAsync(`
+import sys
+for k in list(sys.modules.keys()):
+    if '${moduleName.split('/').pop().replace('.py','')}' in k or 'python' in k:
+        sys.modules.pop(k, None)
+      `.trim());
+      this._loadedFiles.delete(filePath);
+    }
 
     const response = await fetch(filePath);
     if (!response.ok) {

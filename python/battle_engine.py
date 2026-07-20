@@ -10,7 +10,9 @@ from python.models import (
     ATB_MAX, ATB_MOVEMENT_COST, ATB_ACTION_COST,
     BLACK_FLASH_BASE_RATE, BLACK_FLASH_TALENT_RATE,
     DISTANCE_CLOSE, DISTANCE_NEAR, DISTANCE_MID, DISTANCE_FAR, DISTANCE_NAMES,
-    PHASE_WAITING, PHASE_RECOVERY
+    PHASE_WAITING, PHASE_RECOVERY,
+    UNIT_PLAYER, UNIT_ENEMY, UNIT_DOMAIN, UNIT_SHIKIGAMI,
+    DOMAIN_BURNOUT_ATB_COST, DOMAIN_BURNOUT_SPEED_PENALTY
 )
 
 
@@ -331,6 +333,12 @@ def execute_action(action_json: str, state_json: str) -> str:
         tick_atb(state)
     elif action_type == "apply_vow":
         _handle_apply_vow(action, state)
+    elif action_type == "expand_domain":
+        _handle_expand_domain(action, state)
+    elif action_type == "domain_attack":
+        _handle_domain_attack(action, state)
+    elif action_type == "cancel_domain":
+        _handle_cancel_domain(action, state)
     result = state.to_dict()
     result["_tracker"] = tracker.to_dict()
     return json.dumps(result, ensure_ascii=False)
@@ -508,6 +516,11 @@ def apply_vow_penalty_damage(actor, incoming_damage):
 def _deserialize_state(d: dict) -> BattleState:
     pd = d.get("player", {})
     ed = d.get("enemy", {})
+    # Phase 7: Also deserialize additional units (domain, shikigami)
+    extra_units_data = d.get("units", [])
+    # Only keep units that aren't player or enemy (those are built separately)
+    extra_units_data = [u for u in extra_units_data if u.get("id") not in (pd.get("id"), ed.get("id"))]
+
     def _build_char(cd):
         skills = [Skill(id=s.get("id",""), name=s.get("name",""), cost=s.get("cost",0), type=s.get("type","martial"),
                         damage_multiplier=s.get("damage_multiplier",1.0), min_distance=s.get("min_distance",0), max_distance=s.get("max_distance",3),
@@ -521,10 +534,18 @@ def _deserialize_state(d: dict) -> BattleState:
                          cursed_energy=cd.get("cursed_energy",10), cursed_energy_control=cd.get("cursed_energy_control",10),
                          cursed_energy_efficiency=cd.get("cursed_energy_efficiency",10), talent=cd.get("talent",10),
                          distance=cd.get("distance",2), active_vow=cd.get("active_vow"),
-                         recovery_speed=cd.get("recovery_speed",cd.get("speed",10)))
-    return BattleState(units=[_build_char(pd), _build_char(ed)],
+                         recovery_speed=cd.get("recovery_speed",cd.get("speed",10)),
+                         owner=cd.get("owner"), attack_interval=cd.get("attack_interval",0),
+                         attack_damage=cd.get("attack_damage",0), status_effects=cd.get("status_effects",[]),
+                         domain_maintenance_cost=cd.get("domain_maintenance_cost",0))
+
+    units = [_build_char(pd), _build_char(ed)]
+    for ud in extra_units_data:
+        units.append(_build_char(ud))
+    return BattleState(units=units,
                        turn=d.get("turn","player"), log=d.get("log",[]), round_number=d.get("round_number",1),
-                       phase=d.get("phase",PHASE_WAITING), last_hit_was_black_flash=d.get("last_hit_was_black_flash",False))
+                       phase=d.get("phase",PHASE_WAITING), last_hit_was_black_flash=d.get("last_hit_was_black_flash",False),
+                       global_action_time=d.get("global_action_time",0))
 
 
 # ================================================================
@@ -543,8 +564,120 @@ def generate_battle_rewards(tracker: BattleTracker, enemy_config: dict = None) -
 
 
 # ================================================================
-#  初始化 API
+#  Phase 7: 领域系统
 # ================================================================
+
+def _handle_expand_domain(action: dict, state: BattleState):
+    """领域展开 — 向 units 中添加领域 Unit"""
+    actor_id = action.get("actor", "player")
+    owner = state.find_unit(actor_id)
+    if not owner:
+        state.log.append("[ERROR] 展开者不存在。")
+        return
+
+    # 检查是否已有领域
+    existing = [u for u in state.units if u.unit_type == UNIT_DOMAIN]
+    if existing:
+        state.log.append("已经存在领域，无法重复展开。")
+        return
+
+    domain_id = action.get("domain_id", "limitless_domain")
+    domain_name = action.get("domain_name", "领域")
+    is_complete = action.get("is_complete", True)
+    domain_hp = action.get("domain_hp", 500)
+    attack_interval = action.get("attack_interval", 15)
+    attack_damage = action.get("attack_damage", 50)
+    mp_cost = action.get("mp_cost", 5)
+
+    domain_unit = Unit(
+        id=f"{actor_id}_domain_{domain_id}",
+        name=domain_name,
+        unit_type=UNIT_DOMAIN,
+        hp=domain_hp, max_hp=domain_hp,
+        mp=0, max_mp=0,
+        atb=0, speed=0,
+        owner=actor_id,
+        attack_interval=attack_interval,
+        attack_damage=attack_damage,
+        domain_maintenance_cost=mp_cost
+    )
+
+    state.units.append(domain_unit)
+    state.global_action_time += 30  # 领域展开消耗 30 AV
+    level_text = "完全领域" if is_complete else "不完全领域"
+    state.log.append(
+        f"[{state.global_action_time} AV] {owner.name} 展开了{level_text}「{domain_name}」！"
+        f" 领域 HP: {domain_hp}, 攻击间隔: {attack_interval} 帧, 伤害: {attack_damage}"
+    )
+
+
+def _handle_domain_attack(action: dict, state: BattleState):
+    """领域自动攻击"""
+    domain_id = action.get("domain_id", "")
+    domain = state.find_unit(domain_id)
+    if not domain or domain.unit_type != UNIT_DOMAIN:
+        return
+
+    owner = state.find_unit(domain.owner) if domain.owner else None
+    if not owner:
+        domain.is_alive = False
+        state.log.append("领域展开者已消失，领域破碎。")
+        return
+
+    # 扣除展开者咒力
+    cost = domain.domain_maintenance_cost
+    if owner.mp < cost:
+        state.log.append(f"[{state.global_action_time} AV] 咒力不足，领域无法维持！")
+        _handle_cancel_domain({"domain_id": domain_id}, state)
+        return
+    owner.mp -= cost
+
+    # 查找敌方目标
+    target = state.find_enemy()
+    if not target or not target.is_alive:
+        return
+
+    damage = domain.attack_damage
+    target.hp = max(0, target.hp - damage)
+    state.log.append(
+        f"[{state.global_action_time} AV] {domain.name} 自动攻击 {target.name}，造成 {damage} 点伤害。"
+    )
+
+    # 维系检查
+    maintenance_penalty = max(0, int(domain.max_hp * 0.05))
+    if owner.hp < owner.max_hp * 0.5:
+        domain.hp = max(0, domain.hp - maintenance_penalty)
+        state.log.append(f"{owner.name} HP 低于 50%，领域受到维系损耗（-{maintenance_penalty} HP）。")
+
+    # 检查领域 HP
+    if domain.hp <= 0:
+        _handle_cancel_domain({"domain_id": domain_id}, state)
+        state.log.append(f"{domain.name} 破碎了！")
+
+
+def _handle_cancel_domain(action: dict, state: BattleState):
+    """解除领域（主动或被动），施加熔断"""
+    domain_id = action.get("domain_id", "")
+    domain = state.find_unit(domain_id)
+    if not domain:
+        return
+
+    owner = state.find_unit(domain.owner) if domain.owner else None
+
+    # 移除领域
+    state.units = [u for u in state.units if u.id != domain_id]
+    state.global_action_time += 20
+
+    if owner:
+        # 领域熔断
+        owner.atb = max(0, owner.atb - DOMAIN_BURNOUT_ATB_COST)
+        owner.recovery_speed = max(1, int(owner.recovery_speed * (1.0 - DOMAIN_BURNOUT_SPEED_PENALTY)))
+        state.log.append(
+            f"[{state.global_action_time} AV] 领域解除！{owner.name} 遭受熔断——"
+            f"扣除 {DOMAIN_BURNOUT_ATB_COST} ATB，补偿速度 -30%。"
+        )
+    else:
+        state.log.append(f"[{state.global_action_time} AV] 领域被解除。")
 
 def init_battle(save_data_json: str) -> str:
     if save_data_json and save_data_json != "{}":

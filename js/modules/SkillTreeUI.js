@@ -50,7 +50,7 @@ export class SkillTreeUI {
         : '<div class="skilltree-max">已达到最高等级</div>';
 
       const btnDisabled = !canUpgrade ? 'disabled' : '';
-      const effectText = effect ? ` (伤害 x${effect.damageMultiplier}, 消耗 ${effect.cost} MP)` : '';
+      const effectText = effect ? ` (Lv.${level} 伤害 x${effect.damageMultiplier}, 消耗 ${effect.cost} MP, 咏唱 ${skill.castTime}帧, 补偿 ${skill.baseRecoverySpeed}/tick)` : '';
 
       treeHTML += `
         <div class="skilltree-card ${isUnlocked ? '' : 'skilltree-locked'}">
@@ -93,7 +93,7 @@ export class SkillTreeUI {
         : '<div class="skilltree-max">已达到最高等级</div>';
 
       const btnDisabled2 = !canUpgrade ? 'disabled' : '';
-      const effectText2 = effect ? ` (伤害 x${effect.damageMultiplier})` : '';
+      const effectText2 = effect ? ` (Lv.${level} 伤害 x${effect.damageMultiplier}, 咏唱 ${skillDef.castTime}帧, 补偿 ${skillDef.baseRecoverySpeed}/tick)` : '';
 
       baseHTML += `
         <div class="skilltree-card">
@@ -123,9 +123,7 @@ export class SkillTreeUI {
           <h4>基础技能</h4>
           <div class="skilltree-grid">${baseHTML}</div>
         </div>
-        <div class="skilltree-footer">
-          <button id="btn-skilltree-close" class="btn btn-secondary">关闭</button>
-        </div>
+        <div class="skilltree-footer"></div>
       </div>
     `;
 

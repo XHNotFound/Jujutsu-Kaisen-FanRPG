@@ -549,29 +549,10 @@ export class UIManager {
         <p class="train-info">AP: ${ap}/100 | 体力: ${stamina}/100 | 残秽: ${residual}/100</p>
         <p style="color:var(--color-text-dim);font-size:0.8rem;">每次消耗 20 AP + 15 体力，属性 +1~3，残秽 +10</p>
         <div class="train-grid">${rows}</div>
-        <button id="btn-train-close" class="btn btn-secondary">关闭</button>
       </div>
     `;
 
     this.showModal(html, { confirmOnly: false, useHTML: true });
-
-    // 事件委托：修炼属性
-    setTimeout(() => {
-      document.querySelectorAll('.btn-train-action').forEach(btn => {
-        btn.onclick = () => {
-          const attrKey = btn.dataset.attr;
-          const result = this._hubSystem.train(state, attrKey);
-          if (result.success && result.updatePayload) {
-            this.saveManager.applyGrowthUpdate(result.updatePayload);
-            this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this.renderMainScreen(); } });
-          } else {
-            this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
-          }
-        };
-      });
-      document.getElementById('btn-train-close').onclick = () => { this.hideModal(); };
-    }, 50);
-  }
 
   /** 请教面板 */
   _showConsultPanel() {
@@ -581,30 +562,36 @@ export class UIManager {
     const ap = state.actionPoints || 0;
     const rel = state.relationship !== undefined ? state.relationship : 0;
 
-    let rows = '';
+    let cards = '';
     for (const npc of NPCS) {
-      for (const action of npc.actions) {
-        const canDo = ap >= (action.cost.ap || 0) && rel >= (action.cost.relationship || 0);
+      const actionRows = npc.actions.map(action => {
+        const canDo = ap >= (action.cost.ap || 0) && rel >= (action.cost.relationship || 0) && state.money >= (action.cost.money || 0);
         const costLabel = [];
         if (action.cost.ap) costLabel.push(`${action.cost.ap} AP`);
         if (action.cost.relationship) costLabel.push(`${action.cost.relationship} 人情`);
         if (action.cost.money) costLabel.push(`${action.cost.money} 金币`);
-        rows += `
-          <div class="train-row">
-            <span class="train-name">${npc.name}</span>
-            <span class="train-value">${action.name} (${costLabel.join(', ')})</span>
+        return `
+          <div class="npc-action-row">
+            <span>${action.name} (${costLabel.join(', ')})</span>
             <button class="btn btn-primary btn-consult-action" data-npc="${npc.id}" data-action="${action.id}" ${canDo ? '' : 'disabled'}>执行</button>
           </div>
         `;
-      }
+      }).join('');
+
+      cards += `
+        <div class="npc-card">
+          <div class="npc-card-name">${npc.name}</div>
+          <div class="npc-card-desc">${npc.description}</div>
+          <div class="npc-card-actions">${actionRows}</div>
+        </div>
+      `;
     }
 
     const html = `
       <div class="train-panel">
         <h3>👥 请教</h3>
         <p class="train-info">AP: ${ap}/100 | 人情: ${rel}</p>
-        <div class="train-grid">${rows}</div>
-        <button id="btn-consult-close" class="btn btn-secondary">关闭</button>
+        <div class="npc-grid">${cards}</div>
       </div>
     `;
 
@@ -622,7 +609,6 @@ export class UIManager {
           }
         };
       });
-      document.getElementById('btn-consult-close').onclick = () => { this.hideModal(); };
     }, 50);
   }
 
@@ -677,7 +663,6 @@ export class UIManager {
         <h3>📋 任务</h3>
         <p class="train-info">AP: ${ap}/100</p>
         <div class="train-grid">${rows}</div>
-        <button id="btn-quest-close" class="btn btn-secondary">关闭</button>
       </div>
     `;
 
@@ -697,7 +682,6 @@ export class UIManager {
           }
         };
       });
-      document.getElementById('btn-quest-close').onclick = () => { this.hideModal(); };
     }, 50);
   }
 

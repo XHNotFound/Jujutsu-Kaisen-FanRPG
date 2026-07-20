@@ -103,6 +103,17 @@ export class BattleUI {
 
       // 撤离按钮
       if (e.target.closest('#btn-battle-flee')) {
+        // Bugfix: 撤离时把当前战斗状态中的 HP/MP 写回存档
+        if (this.currentState && this.uiManager.saveManager) {
+          const p = this.currentState.player;
+          const sm = this.uiManager.saveManager;
+          const state = sm.getState();
+          if (state) {
+            state.hp = p.hp;
+            state.mp = p.mp;
+            sm.setState(state);
+          }
+        }
         this.uiManager.showModal('确定要撤离战斗吗？', {
           onConfirm: () => {
             this.uiManager.hideModal();
@@ -324,9 +335,11 @@ export class BattleUI {
       const distRange = (skill.type === 'movement') ? '' : ` [${minD}~${maxD}]`;
 
       const costLabel = skill.cost > 0 ? ` (MP ${skill.cost})` : '';
+      const ctLabel = skill.cast_time !== undefined ? ` 咏唱${skill.cast_time}帧` : '';
+      const rvLabel = skill.base_recovery_speed !== undefined ? ` 补偿${skill.base_recovery_speed}` : '';
       btn.innerHTML = `
         <span class="skill-name">${skill.name}${distRange}</span>
-        <span class="skill-cost">${costLabel}</span>
+        <span class="skill-cost">${costLabel}${ctLabel}${rvLabel}</span>
       `;
 
       container.appendChild(btn);

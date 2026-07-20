@@ -86,18 +86,22 @@ export class HubSystem {
     // 处理不同效果类型
     const effect = action.effect;
     if (effect.type === 'heal') {
-      // 家入硝子的治疗
+      // 家入硝子的治疗 — 恢复 HP 和 MP 到最大值，清除残秽
       const currentHp = characterState.hp || 0;
       const maxHp = characterState.maxHp || 100;
+      const currentMp = characterState.mp || 0;
+      const maxMp = characterState.maxMp || 100;
       const residual = characterState.residual || 0;
       const residualClear = Math.floor(residual * (effect.residualClearPct || 0.5));
       const hpRestore = maxHp - currentHp;
+      const mpRestore = maxMp - currentMp;
 
       return {
         success: true,
-        log: `家入硝子对你使用了反转术式。HP 恢复了 ${hpRestore} 点，清除了 ${residualClear} 点残秽。`,
+        log: `家入硝子对你使用了反转术式。HP 恢复了 ${hpRestore} 点，MP 恢复了 ${mpRestore} 点，清除了 ${residualClear} 点残秽。`,
         updatePayload: {
           hp: hpRestore,
+          mp: mpRestore,
           ap: -(action.cost.ap || 0),
           money: -(action.cost.money || 0),
           residual: -residualClear
@@ -196,6 +200,11 @@ export class HubSystem {
     const hpGain = Math.floor(maxHp * REST_CONFIG.hpRecoveryPct);
     const actualHpGain = Math.min(hpGain, maxHp - currentHp);
 
+    const maxMp = characterState.maxMp || 100;
+    const currentMp = characterState.mp || maxMp;
+    const mpGain = Math.floor(maxMp * REST_CONFIG.hpRecoveryPct);
+    const actualMpGain = Math.min(mpGain, maxMp - currentMp);
+
     const residual = characterState.residual || 0;
     const residualClear = Math.floor(residual * REST_CONFIG.residualClearPct);
 
@@ -209,9 +218,10 @@ export class HubSystem {
 
     return {
       success: true,
-      log: `你休息了一天。恢复了 ${actualHpGain} HP、${staminaGain} 体力、${apGain} AP，清除了 ${residualClear} 点残秽。`,
+      log: `你休息了一天。恢复了 ${actualHpGain} HP、${actualMpGain} MP、${staminaGain} 体力、${apGain} AP，清除了 ${residualClear} 点残秽。`,
       updatePayload: {
         hp: actualHpGain,
+        mp: actualMpGain,
         stamina: staminaGain,
         ap: apGain,
         residual: -residualClear,

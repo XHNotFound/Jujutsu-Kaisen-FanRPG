@@ -6,6 +6,7 @@ import { SkillTreeUI } from './SkillTreeUI.js';
 import { HubSystem } from './HubSystem.js';
 import { NPCS } from '../data/npcs.js';
 import { QUESTS } from '../data/quests.js';
+import { DOMAINS } from '../data/domains.js';
 
 /**
  * UIManager 职责：
@@ -513,7 +514,7 @@ export class UIManager {
   }
 
   /**
-   * Phase 7: 打开领域详情页面
+   * Phase 7: 打开领域详情页面（重写版 — 支持解锁领域展开）
    */
   _showDomainDetail() {
     const state = this.saveManager.getState();
@@ -523,55 +524,119 @@ export class UIManager {
     }
 
     const techId = state.techniqueId || 'cursedEnergyBoost';
-    const domainNames = {
-      limitless: '无量空处', tenShadows: '嵌合暗翳庭', boogieWoogie: '不义游戏·领域',
-      curseManipulation: '极之番·漩涡', pureMartial: '天与咒缚·体'
-    };
-    const domainHints = {
-      limitless: '需术式等级≥8、结界术≥8、灵感×3、咒力操控≥60 方可展开完全领域。不完全领域仅需术式 Lv.5/结界术 Lv.5/灵感×1/咒力操控≥40。',
-      tenShadows: '玉犬、鵺、满象等式神在领域内能力大幅提升。展开条件：术式 Lv.7/结界术 Lv.7/灵感×2/咒力操控≥50。',
-      boogieWoogie: '领域内一切物体可随意交换位置。展开条件：术式 Lv.6/结界术 Lv.6/灵感×2/咒力操控≥45。',
-      curseManipulation: '将所有吸收的咒灵融为毁灭性漩涡。展开条件：术式 Lv.7/结界术 Lv.6/灵感×3/咒力操控≥55。',
-      pureMartial: '无领域——以纯粹的肉体极限为终点。天与咒缚·体是另一种境界。',
-      cursedEnergyBoost: '咒力强化术没有领域，但朴实的力量同样不可小觑。',
-    };
-    const flavorTexts = {
-      limitless: '将目标拉入无限的虚空之中，所有感知信息被无限放大，使其陷入完全无法行动的状态。',
-      tenShadows: '影子覆盖一切，十种式神可以在领域中自由进出影子的世界。',
-      boogieWoogie: '领域范围内的一切物体都可以被随意交换位置，形成绝对的空间控制。',
-      curseManipulation: '将所有吸收的咒灵融为一体，化作毁灭性的诅咒漩涡。',
-      pureMartial: '以完全丧失咒力为代价，换取超越极限的肉体能力。',
-      cursedEnergyBoost: '无领域。专注修炼咒力强化，以血肉之躯对抗诅咒。',
-    };
+    const domainDef = DOMAINS[techId];
 
-    const dn = domainNames[techId] || '（该术式无领域配置）';
-    const dh = domainHints[techId] || '该术式暂无领域展开能力。';
-    const ft = flavorTexts[techId] || '';
+    if (!domainDef) {
+      this.showModal('该术式没有领域配置。', { confirmOnly: true, onConfirm: () => this.hideModal() });
+      return;
+    }
+
+    const hasDomainLearned = state.domainUnlocked === techId;
+
     const sl = state.skillLevels || {};
     let totalTech = 0;
     for (const lv of Object.values(sl)) totalTech += lv;
     const barrier = state.attributes?.cursedEnergyControl || 0;
     const insp = state.inspiration || 0;
 
+    // 计算完全领域条件满足度
+    const cr = domainDef.completeRequirements;
+    const ir = domainDef.incompleteRequirements;
+    const completeDone = totalTech >= cr.techniqueLevel && barrier >= cr.barrierLevel && insp >= cr.inspiration && barrier >= cr.cursedEnergyControl;
+    const incompleteDone = totalTech >= ir.techniqueLevel && barrier >= ir.barrierLevel && insp >= ir.inspiration && barrier >= ir.cursedEnergyControl;
+    const canLearn = incompleteDone || completeDone;
+
+    function reqRow(name, current, required) {
+      const ok = current >= required;
+      const cls = ok ? 'requirement-ok' : 'requirement-fail';
+      const mark = ok ? '✓' : '✗';
+      return `<div class="card-req ${cls}">${mark} ${name} ≥ ${required}（当前: ${current}）</div>`;
+    }
+
+    const completeReqs = `
+      ${reqRow('术式总等级', totalTech, cr.techniqueLevel)}
+      ${reqRow('结界术(咒力操控)', barrier, cr.barrierLevel)}
+      ${reqRow('灵感', insp, cr.inspiration)}
+      ${reqRow('咒力操控', barrier, cr.cursedEnergyControl)}
+    `;
+
+    const incompleteReqs = `
+      ${reqRow('术式总等级', totalTech, ir.techniqueLevel)}
+      ${reqRow('结界术(咒力操控)', barrier, ir.barrierLevel)}
+      ${reqRow('灵感', insp, ir.inspiration)}
+      ${reqRow('咒力操控', barrier, ir.cursedEnergyControl)}
+    `;
+
+    const bs = domainDef.baseStats;
+    const statsHTML = `
+      <div class="domain-stats-grid">
+        <div>每级结界术 HP</div><div><strong>${bs.hpPerBarrier}</strong></div>
+        <div>每点咒力操控 HP</div><div><strong>${bs.hpPerCEC}</strong></div>
+        <div>基础攻击间隔</div><div><strong>${bs.intervalBase} 帧</strong></div>
+        <div>每级术式伤害</div><div><strong>${bs.damagePerTech}</strong></div>
+        <div>每 tick 咒力消耗</div><div><strong>${bs.mpCostPerTick} MP</strong></div>
+      </div>
+    `;
+
+    const containerId = 'domain-panel-' + Date.now();
+
+    let learnBtnHTML = '';
+    if (hasDomainLearned) {
+      learnBtnHTML = '<div class="domain-learned-badge">✅ 已学会领域展开</div>';
+    } else if (canLearn) {
+      const tier = completeDone ? '完全领域' : '不完全领域';
+      learnBtnHTML = `<button class="btn btn-primary btn-learn-domain" data-tier="${completeDone ? 'complete' : 'incomplete'}">🔓 学会${tier}领域展开</button>`;
+    } else {
+      learnBtnHTML = '<div class="domain-cannot-learn">🔒 条件不足，无法学习</div>';
+    }
+
     const html = `
-      <div class="domain-detail-panel">
-        <h3>🏛️ ${dn}（领域展开）</h3>
-        <div class="domain-flavor">"${ft}"</div>
-        <div class="domain-req-section">
-          <h4>展开条件</h4>
-          <p>${dh}</p>
+      <div id="${containerId}" class="domain-detail-panel">
+        <h3>🏛️ ${domainDef.name}</h3>
+        <div class="domain-flavor">"${domainDef.flavorText}"</div>
+        <div class="domain-section">
+          <h4>特殊效果</h4>
+          <div class="domain-special">${domainDef.specialEffect || '标准领域效果'}</div>
         </div>
-        <div class="domain-progress-section">
-          <h4>当前进度</h4>
-          <div class="domain-stat-row">术式总等级：${totalTech}</div>
-          <div class="domain-stat-row">结界术（咒力操控）：${barrier}</div>
-          <div class="domain-stat-row">灵感点数：⚡ ${insp}</div>
+        <div class="domain-section">
+          <h4>基础数值</h4>
+          ${statsHTML}
         </div>
-        <div class="domain-note">🔒 本期（Phase 7）领域在战斗中可通过🏛️按钮临时展开。完全解锁条件将在后续版本校验。</div>
+        <div class="domain-section">
+          <h4>完全领域</h4>
+          <div class="domain-req-card ${completeDone ? 'domain-req-met' : ''}">${completeReqs}</div>
+        </div>
+        <div class="domain-section">
+          <h4>不完全领域</h4>
+          <div class="domain-req-card ${incompleteDone ? 'domain-req-met' : ''}">${incompleteReqs}</div>
+        </div>
+        <div class="domain-action-row">${learnBtnHTML}</div>
       </div>
     `;
 
     this.showModal(html, { confirmOnly: false, useHTML: true });
+
+    // 绑定学习按钮
+    setTimeout(() => {
+      const panel = document.getElementById(containerId);
+      if (!panel) return;
+      const learnBtn = panel.querySelector('.btn-learn-domain');
+      if (learnBtn) {
+        learnBtn.onclick = () => {
+          const tier = learnBtn.dataset.tier;
+          const st = this.saveManager.getState();
+          st.domainUnlocked = techId;
+          if (!st.domainLearnedTiers) st.domainLearnedTiers = {};
+          st.domainLearnedTiers[techId] = tier || 'incomplete';
+          this.saveManager.setState(st);
+          this.saveManager.saveToSlot(this.saveManager._findCurrentSlot() || 0);
+          this.showModal(
+            tier === 'complete' ? '你学会了完全领域展开「' + domainDef.name + '」！' : '你学会了不完全领域展开「' + domainDef.name + '」！（HP/伤害 ×0.6）',
+            { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showDomainDetail(); } }
+          );
+        };
+      }
+    }, 100);
   }
 
   /**

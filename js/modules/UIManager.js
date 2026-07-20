@@ -553,6 +553,7 @@ export class UIManager {
     `;
 
     this.showModal(html, { confirmOnly: false, useHTML: true });
+  }
 
   /** 请教面板 */
   _showConsultPanel() {

@@ -939,6 +939,53 @@ body {
   margin-top: 1rem;
 }
 
+/* Phase 6: Branch/Unlock Tags */
+.skilltree-branch-tag {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+.skilltree-branch-tag.base {
+  background: rgba(22, 163, 74, 0.2);
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
+}
+
+.skilltree-branch-tag.unlockable {
+  background: rgba(234, 179, 8, 0.2);
+  color: var(--color-gold);
+  border: 1px solid var(--color-gold);
+}
+
+.skilltree-branch-tag.locked {
+  background: rgba(220, 38, 38, 0.1);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
+}
+
+.skilltree-action-row {
+  margin-top: 0.4rem;
+}
+
+.skilltree-domain-card {
+  border-color: var(--color-gold) !important;
+  background: rgba(212, 168, 67, 0.05) !important;
+}
+
+.skilltree-domain-req {
+  font-size: 0.75rem;
+  color: var(--color-text-dim);
+  margin: 0.3rem 0;
+}
+
+.skilltree-domain-status {
+  font-size: 0.75rem;
+  color: var(--color-danger);
+}
+
 /* ===== Phase 5: Training / Consult / Quest Panels ===== */
 .train-panel {
   max-width: 500px;

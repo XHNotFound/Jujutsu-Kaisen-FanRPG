@@ -135,6 +135,13 @@ export class BattleUI {
         });
         return;
       }
+
+      // Phase 7: 领域展开按钮
+      const domainBtn = e.target.closest('.battle-domain-btn');
+      if (domainBtn && !domainBtn.disabled) {
+        this._handleDomainExpand(domainBtn.dataset.domainId || 'limitless_domain');
+        return;
+      }
     });
   }
 
@@ -166,6 +173,9 @@ export class BattleUI {
 
     // === 束缚按钮 ===
     this._renderVowButtons(s.player);
+
+    // Phase 7: 领域展开按钮
+    this._renderDomainButton(s);
 
     // === 黑闪特效 ===
     if (s.last_hit_was_black_flash) {
@@ -530,5 +540,84 @@ __builtins__.dict(rewards)`
     if (el) {
       el.classList.toggle('hidden', !show);
     }
+  }
+
+  /**
+   * Phase 7: 渲染领域展开按钮 + 领域 HP 条
+   */
+  _renderDomainButton(s) {
+    // 检查是否已有领域
+    const hasDomain = s.units && s.units.some(u => u.unit_type === 'domain');
+
+    // 领域展开按钮区域
+    let btnContainer = document.getElementById('battle-domain-bar');
+    if (!btnContainer) {
+      btnContainer = document.createElement('div');
+      btnContainer.id = 'battle-domain-bar';
+      btnContainer.className = 'battle-domain-bar';
+      const vowsEl = document.getElementById('battle-vows');
+      if (vowsEl && vowsEl.parentNode) {
+        vowsEl.parentNode.insertBefore(btnContainer, vowsEl.nextSibling);
+      }
+    }
+
+    if (hasDomain) {
+      const domain = s.units.find(u => u.unit_type === 'domain');
+      btnContainer.innerHTML = `
+        <div class="domain-hp-row">
+          <span class="domain-label">🏛️ ${domain.name}</span>
+          <div class="stat-bar-bg battle-bar-wide" style="margin: 0 0.5rem;">
+            <div class="stat-bar hp-bar" style="width: ${domain.max_hp > 0 ? (domain.hp / domain.max_hp) * 100 : 0}%"></div>
+          </div>
+          <span class="stat-text">${domain.hp} / ${domain.max_hp}</span>
+          <button class="btn battle-vow-btn btn-system" data-action="cancel-domain">解除领域</button>
+        </div>
+      `;
+      // 绑定解除按钮
+      setTimeout(() => {
+        const cancelBtn = btnContainer.querySelector('[data-action="cancel-domain"]');
+        if (cancelBtn) {
+          cancelBtn.onclick = () => {
+            const d = s.units.find(u => u.unit_type === 'domain');
+            if (d) {
+              this._executeAction({ type: 'cancel_domain', domain_id: d.id });
+            }
+          };
+        }
+      }, 50);
+    } else {
+      const techId = this.uiManager.saveManager?.getState()?.techniqueId || 'cursedEnergyBoost';
+      btnContainer.innerHTML = `
+        <button class="btn battle-domain-btn btn-primary" data-domain-id="${techId}_domain">🏛️ 领域展开</button>
+      `;
+    }
+  }
+
+  /**
+   * Phase 7: 处理领域展开
+   */
+  _handleDomainExpand(domainId) {
+    const state = this.uiManager.saveManager?.getState();
+    if (!state) return;
+
+    // 使用 domains.js 计算领域数值
+    const techId = state.techniqueId || 'cursedEnergyBoost';
+    // 简单默认值（Phase 7 暂不动态导入 domains.js 计算，使用固定数值）
+    const domainNames = {
+      limitless: '无量空处', tenShadows: '嵌合暗翳庭', boogieWoogie: '不义游戏·领域',
+      curseManipulation: '极之番·漩涡', pureMartial: '天与咒缚·体'
+    };
+
+    this._executeAction({
+      type: 'expand_domain',
+      actor: 'player',
+      domain_id: domainId,
+      domain_name: domainNames[techId] || '领域',
+      is_complete: true,
+      domain_hp: 500,
+      attack_interval: 15,
+      attack_damage: 50,
+      mp_cost: 5
+    });
   }
 }

@@ -147,6 +147,7 @@ def create_player_from_save(save_data: dict) -> Character:
 
 
 def _build_player_skills(technique_id: str) -> list:
+    """根据术式 ID 构建玩家技能列表（Phase 6 扩展：支持所有 9 种术式）"""
     BASE = [
         ("attack", "体术平A", 0, "martial", 1.0, 5, 30, DISTANCE_CLOSE, DISTANCE_CLOSE, "基础体术攻击"),
         ("advance", "逼近", 0, "movement", 0.0, 3, 35, DISTANCE_CLOSE, DISTANCE_FAR, "向敌人逼近 1 档距离"),
@@ -156,16 +157,61 @@ def _build_player_skills(technique_id: str) -> list:
                     damage_multiplier=mult, cast_time=ct, base_recovery_speed=rcv,
                     min_distance=min_d, max_distance=max_d, description=desc)
               for (id, name, cost, typ, mult, ct, rcv, min_d, max_d, desc) in BASE]
+    # Phase 6: 完整术式技能映射
     TECH_SKILLS = {
-        "cursedEnergyBoost": [("cursed_boost", "咒力强化拳", 10, "cursed", 1.8, 12, 28, DISTANCE_CLOSE, DISTANCE_CLOSE, "以咒力强化拳击")],
+        "cursedEnergyBoost": [
+            ("cursed_boost", "咒力强化拳", 10, "cursed", 1.8, 12, 28, DISTANCE_CLOSE, DISTANCE_CLOSE, "以咒力强化拳击"),
+        ],
         "limitless": [
             ("aoi", "苍", 15, "cursed", 2.2, 20, 25, DISTANCE_CLOSE, DISTANCE_FAR, "吸引一切的空之涡"),
             ("aka", "赫", 25, "cursed", 3.0, 30, 18, DISTANCE_NEAR, DISTANCE_FAR, "排斥一切的术式顺转"),
+            ("aoi_strike", "苍·打击", 22, "cursed", 3.0, 25, 20, DISTANCE_CLOSE, DISTANCE_CLOSE, "将苍凝缩至拳上近距离释放"),
+            ("aoi_max", "苍·最大出力", 30, "cursed", 4.0, 35, 15, DISTANCE_CLOSE, DISTANCE_FAR, "苍的极致版"),
+            ("aka_max", "赫·最大出力", 40, "cursed", 4.5, 40, 12, DISTANCE_NEAR, DISTANCE_FAR, "赫的极致版"),
+            ("murasaki", "虚式·茈", 50, "cursed", 6.0, 45, 10, DISTANCE_CLOSE, DISTANCE_FAR, "苍与赫的融合，撕裂空间"),
         ],
-        "tenShadows": [("gyokuken", "玉犬", 12, "cursed", 1.6, 15, 28, DISTANCE_CLOSE, DISTANCE_NEAR, "召唤黑白玉犬撕咬目标")],
-        "bloodManipulation": [("piercing_blood", "穿血", 14, "cursed", 2.0, 16, 24, DISTANCE_CLOSE, DISTANCE_FAR, "以高压血箭贯穿目标")],
-        "boogieWoogie": [("boogie_punch", "拍手连击", 8, "cursed", 1.5, 10, 30, DISTANCE_CLOSE, DISTANCE_CLOSE, "利用位置交换制造破绽")],
-        "strawDoll": [("doll_resonance", "共鸣", 13, "cursed", 1.9, 18, 22, DISTANCE_CLOSE, DISTANCE_FAR, "以傀儡共鸣释放远程咒力冲击")],
+        "tenShadows": [
+            ("gyokuken", "玉犬", 12, "cursed", 1.6, 15, 28, DISTANCE_CLOSE, DISTANCE_NEAR, "召唤黑白玉犬"),
+            ("nue", "鵺", 18, "cursed", 2.0, 22, 22, DISTANCE_CLOSE, DISTANCE_FAR, "从空中俯冲攻击"),
+            ("orochi", "大蛇", 16, "cursed", 1.8, 18, 24, DISTANCE_CLOSE, DISTANCE_NEAR, "巨蛇缠绕"),
+            ("max_elephant", "满象", 22, "cursed", 2.5, 25, 20, DISTANCE_CLOSE, DISTANCE_NEAR, "召唤满象碾压"),
+            ("tora_no_fun", "虎葬", 25, "cursed", 3.0, 20, 22, DISTANCE_CLOSE, DISTANCE_FAR, "虎形式神突袭"),
+            ("makora", "魔虚罗", 60, "cursed", 8.0, 60, 5, DISTANCE_CLOSE, DISTANCE_FAR, "终极式神·未调伏"),
+        ],
+        "bloodManipulation": [
+            ("blood_blade", "血刃", 8, "cursed", 1.4, 12, 28, DISTANCE_CLOSE, DISTANCE_NEAR, "血液凝结利刃"),
+            ("slicing_exorcism", "血涂", 14, "cursed", 1.8, 16, 24, DISTANCE_CLOSE, DISTANCE_NEAR, "血液化作切割线"),
+            ("piercing_blood", "穿血", 14, "cursed", 2.0, 16, 24, DISTANCE_CLOSE, DISTANCE_FAR, "高压血箭贯穿"),
+            ("supernova", "超新星", 22, "cursed", 3.0, 22, 18, DISTANCE_CLOSE, DISTANCE_FAR, "凝固血液高速射出"),
+            ("crimson_binding", "赤鳞跃动", 20, "cursed", 2.2, 18, 22, DISTANCE_CLOSE, DISTANCE_CLOSE, "全面强化身体"),
+            ("canal", "运河", 16, "cursed", 2.0, 20, 20, DISTANCE_CLOSE, DISTANCE_FAR, "血液轨迹限制移动"),
+        ],
+        "boogieWoogie": [
+            ("clap_swap", "拍手换位", 6, "cursed", 1.2, 8, 32, DISTANCE_CLOSE, DISTANCE_FAR, "拍手交换位置"),
+            ("tactical_combo", "战术连携", 12, "cursed", 2.0, 12, 28, DISTANCE_CLOSE, DISTANCE_CLOSE, "利用位置优势连续攻击"),
+        ],
+        "overtime": [
+            ("weakness", "基础弱点", 8, "cursed", 1.3, 10, 30, DISTANCE_CLOSE, DISTANCE_NEAR, "7:3制造弱点"),
+            ("ratio_strike", "咒力钝器·七三", 14, "cursed", 2.0, 15, 25, DISTANCE_CLOSE, DISTANCE_CLOSE, "精准打击弱点"),
+            ("collapse", "瓦解", 18, "cursed", 2.5, 20, 20, DISTANCE_CLOSE, DISTANCE_CLOSE, "强力打击削弱防御"),
+            ("overtime", "极之番·加班", 25, "cursed", 3.5, 25, 18, DISTANCE_CLOSE, DISTANCE_NEAR, "开启加班模式"),
+        ],
+        "curseManipulation": [
+            ("curse_absorb", "基础吞噬", 10, "cursed", 1.2, 12, 28, DISTANCE_CLOSE, DISTANCE_NEAR, "吞噬低级咒灵"),
+            ("curse_sphere", "咒灵玉储存", 20, "cursed", 2.5, 22, 20, DISTANCE_CLOSE, DISTANCE_FAR, "一次性释放咒力"),
+            ("uzumaki_pseudo", "极之番·伪", 35, "cursed", 4.0, 30, 14, DISTANCE_CLOSE, DISTANCE_FAR, "释放全部咒灵"),
+        ],
+        "strawDoll": [
+            ("doll_basic", "基础操控", 10, "cursed", 1.5, 14, 26, DISTANCE_CLOSE, DISTANCE_NEAR, "咒力操控人偶攻击"),
+            ("doll_scout", "远程侦查", 12, "cursed", 1.6, 16, 24, DISTANCE_NEAR, DISTANCE_FAR, "远程侦查干扰"),
+            ("doll_resonance", "共鸣", 13, "cursed", 1.9, 18, 22, DISTANCE_CLOSE, DISTANCE_FAR, "傀儡共鸣远程冲击"),
+            ("doll_overload", "傀儡自爆", 30, "cursed", 5.0, 30, 10, DISTANCE_NEAR, DISTANCE_NEAR, "引爆傀儡巨量伤害"),
+        ],
+        "pureMartial": [
+            ("martial_combo", "体术连击", 0, "martial", 1.2, 8, 30, DISTANCE_CLOSE, DISTANCE_CLOSE, "高速近身连击"),
+            ("black_flash_boost", "黑闪强化", 0, "martial", 1.5, 6, 32, DISTANCE_CLOSE, DISTANCE_CLOSE, "提升黑闪概率"),
+            ("rush_strike", "疾风突袭", 0, "martial", 2.0, 10, 26, DISTANCE_CLOSE, DISTANCE_NEAR, "压倒性速度突袭"),
+        ],
     }
     entries = TECH_SKILLS.get(technique_id, TECH_SKILLS.get("cursedEnergyBoost", []))
     for (id, name, cost, typ, mult, ct, rcv, min_d, max_d, desc) in entries:

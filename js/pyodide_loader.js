@@ -53,20 +53,15 @@ export class PyodideLoader {
    */
   async loadPythonFile(filePath) {
     const py = await this.load();
-    // Phase 7: 清除 Python 模块缓存，确保重新加载（支持热更新）
-    if (this._loadedFiles.has(filePath)) {
-      // 清除模块缓存
-      const moduleName = filePath.replace(/\//g, '.').replace('.py', '');
-      await py.runPythonAsync(`
+    // Phase 7: 无条件清除模块缓存+重写文件，确保始终加载最新内容
+    await py.runPythonAsync(`
 import sys
 for k in list(sys.modules.keys()):
-    if '${moduleName.split('/').pop().replace('.py','')}' in k or 'python' in k:
+    if 'python' in k:
         sys.modules.pop(k, None)
-      `.trim());
-      this._loadedFiles.delete(filePath);
-    }
+    `.trim());
 
-    const response = await fetch(filePath);
+    const response = await fetch(filePath, { cache: 'no-store' });
     if (!response.ok) {
       throw new Error(`无法加载 Python 文件: ${filePath} (${response.status})`);
     }
@@ -84,7 +79,6 @@ for k in list(sys.modules.keys()):
     // 写入到 Pyodide 虚拟文件系统
     const pyPath = dirPath + '/' + fileName;
     py.FS.writeFile(pyPath, code);
-    this._loadedFiles.add(filePath);
   }
 
   /**

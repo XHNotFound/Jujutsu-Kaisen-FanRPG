@@ -82,8 +82,10 @@ for k in list(sys.modules.keys()):
       }
     } catch (e) { console.warn('mkdir error:', e); }
 
-    // 写入到 Pyodide 虚拟文件系统
+    // 写入到 Pyodide 虚拟文件系统（使用二进制模式确保覆盖）
     const pyPath = dirPath + '/' + filePath;
+    // 先删除旧文件，确保写入的是新内容
+    try { py.FS.unlink(pyPath); } catch(e) { /* 文件可能不存在 */ }
     py.FS.writeFile(pyPath, code);
   }
 

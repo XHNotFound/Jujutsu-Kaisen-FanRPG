@@ -29,6 +29,26 @@ def update_aggro(attacker, target, damage, action_type="damage"):
     if delta > 0:
         target.aggro = (target.aggro or 0) + delta
 
+def _apply_shikigami_taunt_aggro(state):
+    """被动仇恨修正：式神初始获得额外仇恨值，使敌人优先攻击式神而非主人。
+    每次 _advance_time 推进时检查，给场上所有 shikigami 持续叠加微小的仇恨优势，
+    确保敌方 AI 的 find_enemy_target 中 shikigami 排名高于 player。
+    """
+    # 找到玩家 ID
+    player = state.find_player()
+    for u in state.units:
+        if u.unit_type == UNIT_SHIKIGAMI and u.is_alive:
+            # 给式神一个持续的基础仇恨偏置（约等于一次普攻的伤害量）
+            base_taunt = 10
+            # 如果式神仇恨低于玩家，补充到玩家仇恨 + 偏置
+            if player:
+                player_aggro = player.aggro or 0
+                shiki_aggro = u.aggro or 0
+                # 式神仇恨应至少比玩家高 20 点
+                target_min = player_aggro + 20
+                if shiki_aggro < target_min:
+                    u.aggro = target_min
+
 # ===== 距离 =====
 def calculate_move_cost(actor, frm, to):
     diff = abs(to - frm)
@@ -55,6 +75,8 @@ def _advance_time(state: BattleState, frames: int):
         state.global_action_time += FRAME_STEP
         # Phase 9: 推进召唤物持续时间
         _tick_summon_duration(state)
+        # Phase 9: 式神仇恨优势（持续使敌人优先攻击式神而非主人）
+        _apply_shikigami_taunt_aggro(state)
         # 1. 推进所有单位的 ATB
         for u in state.units:
             if u.is_alive:

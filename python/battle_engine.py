@@ -345,7 +345,7 @@ def create_default_enemy(tier="normal"):
                 is_alive=True,distance=DISTANCE_MID,active_vow=None,recovery_speed=7)
 
 def create_enemy_from_save(save_data):
-    """Phase 8: 根据玩家评定等级动态选择敌人（复刻 JS getRandomEnemy 逻辑）"""
+    """Phase 10: 根据玩家评定等级动态选择敌人（含高阶咒灵 boss 池）"""
     player_rank = save_data.get("rank", "四级")
     RANK_ORDER = ["不入流", "四级", "准三级", "三级", "准二级", "二级", "准一级", "一级", "准特级", "特级", "现代最强"]
     player_idx = RANK_ORDER.index(player_rank) if player_rank in RANK_ORDER else 1
@@ -363,22 +363,42 @@ def create_enemy_from_save(save_data):
         {"id":"enemy_cursed_womb","name":"咒胎","rank":"准一级","tier":"elite","hp":300,"mp":80,"speed":14,"con":22,"ma":24,"ce":18,"cec":18,"cee":14,"tal":16,"skills":[("enemy_womb_slam","重压",0,"martial",1.5,10,24,0,1),("enemy_womb_beam","咒胎光束",20,"cursed",2.5,28,14,0,3),("enemy_womb_roar","咒胎咆哮",15,"cursed",2.0,22,16,1,2)]},
         {"id":"enemy_vengeful_spirit","name":"怨灵","rank":"一级","tier":"elite","hp":400,"mp":100,"speed":16,"con":25,"ma":26,"ce":22,"cec":22,"cee":16,"tal":18,"skills":[("enemy_vengeful_strike","怨念击",0,"martial",1.6,8,24,0,0),("enemy_vengeful_blast","怨念爆破",25,"cursed",3.0,30,12,0,3),("enemy_vengeful_curse","深层诅咒",18,"cursed",2.2,24,14,0,2)]},
     ]
-    # boss
-    BOSS = {"id":"enemy_special_grade","name":"特级咒灵","rank":"准特级","tier":"boss","hp":600,"mp":200,"speed":18,"con":30,"ma":32,"ce":28,"cec":28,"cee":20,"tal":22,"skills":[("boss_domain_fist","领域之拳",0,"martial",2.0,12,22,0,1),("boss_cursed_beam","咒力光束",30,"cursed",3.5,30,12,0,3),("boss_catastrophe","灾厄降临",50,"cursed",4.5,40,8,0,3)]}
+    # 高阶 boss 池（与 JS enemies.js 中 boss tier 同步）
+    BOSS_POOL = [
+        {"id":"enemy_special_grade","name":"特级咒灵","rank":"准特级","tier":"boss","hp":600,"mp":200,"speed":18,"con":30,"ma":32,"ce":28,"cec":28,"cee":20,"tal":22,
+         "skills":[("boss_domain_fist","领域之拳",0,"martial",2.0,12,22,0,1),("boss_cursed_beam","咒力光束",30,"cursed",3.5,30,12,0,3),("boss_catastrophe","灾厄降临",50,"cursed",4.5,40,8,0,3)]},
+        # Phase 10: 具名高阶咒灵
+        {"id":"boss_jogo","name":"漏瑚","rank":"特级","tier":"boss","hp":700,"mp":250,"speed":20,"con":28,"ma":30,"ce":32,"cec":30,"cee":22,"tal":25,
+         "skills":[("boss_jogo_volcano","火山弹",25,"cursed",4.5,24,14,0,3),("boss_jogo_fire_eruption","火炎柱",30,"cursed",5.0,28,12,0,2),("boss_jogo_insect","火虫",18,"cursed",3.0,16,18,1,2),("boss_jogo_meteor","极之番·陨",60,"cursed",8.0,50,6,0,3),("boss_jogo_ember_slash","灼烧击",0,"martial",1.8,8,24,0,0)],
+         "domain_name":"盖棺铁围山", "domain_hp":800},
+        {"id":"boss_mahito","name":"真人","rank":"特级","tier":"boss","hp":650,"mp":280,"speed":22,"con":24,"ma":32,"ce":30,"cec":28,"cee":24,"tal":28,
+         "skills":[("boss_mahito_touch","无为转变",30,"cursed",3.5,22,16,0,0),("boss_mahito_morph","肉体变形",15,"cursed",2.5,15,22,0,1),("boss_mahito_dolls","改造人偶",25,"cursed",2.8,20,18,0,3)],
+         "domain_name":"自闭圆顿裹", "domain_hp":700},
+        {"id":"boss_dagon","name":"陀艮","rank":"准特级","tier":"boss","hp":550,"mp":200,"speed":16,"con":25,"ma":26,"ce":26,"cec":24,"cee":20,"tal":22,
+         "skills":[("boss_dagon_water","水流弹",20,"cursed",3.0,18,20,0,3),("boss_dagon_shikigami","鱼形式神",30,"cursed",3.5,24,16,0,3),("boss_dagon_swarm","鱼群吞噬",40,"cursed",4.0,30,12,0,2)],
+         "domain_name":"荡蕴平线", "domain_hp":600},
+        {"id":"boss_sukuna_3f","name":"两面宿傩（三指）","rank":"特级","tier":"boss","hp":900,"mp":300,"speed":25,"con":35,"ma":38,"ce":36,"cec":35,"cee":30,"tal":35,
+         "skills":[("boss_sukuna_cleave","解",15,"cursed",4.0,12,22,0,1),("boss_sukuna_dismantle","捌",20,"cursed",4.5,15,20,0,3),("boss_sukuna_cleave_net","解·网",35,"cursed",5.5,22,14,0,2),("boss_sukuna_slash","袈裟斩",0,"martial",3.0,8,26,0,0)],
+         "domain_name":"伏魔御厨子", "domain_hp":1000},
+        {"id":"boss_choso","name":"胀相","rank":"准特级","tier":"boss","hp":500,"mp":220,"speed":18,"con":22,"ma":28,"ce":24,"cec":22,"cee":18,"tal":20,
+         "skills":[("boss_choso_convergence","百敛·穿血",35,"cursed",5.0,25,14,0,3),("boss_choso_slicing","血星弹",15,"cursed",2.2,12,22,1,3),("piercing_blood","穿血",14,"cursed",2.4,15,25,0,3),("blood_blade","血刃",8,"cursed",2.0,10,30,0,1)],
+         "domain_name":"九血之狱（未完成）", "domain_hp":500},
+    ]
 
     roll = random.random()
-    if roll < 0.70:
-        # 70%: ±1级
+    if roll < 0.60:
+        # 60%: ±1级 (normal)
         candidates = [e for e in ENEMY_POOL if abs(RANK_ORDER.index(e["rank"]) - player_idx) <= 1]
-    elif roll < 0.90:
-        # 20%: 高1~2级 (精英池)
+    elif roll < 0.80:
+        # 20%: 精英
         elite_candidates = [e for e in ENEMY_POOL if e["tier"] == "elite" and RANK_ORDER.index(e["rank"]) - player_idx in (1,2)]
-        if not elite_candidates:
-            candidates = ENEMY_POOL
-        else:
-            candidates = elite_candidates
+        candidates = elite_candidates if elite_candidates else ENEMY_POOL
+    elif roll < 0.95:
+        # 15%: boss (准特级以上)
+        boss_candidates = [e for e in BOSS_POOL if RANK_ORDER.index(e["rank"]) - player_idx >= 2]
+        candidates = boss_candidates if boss_candidates else BOSS_POOL
     else:
-        # 10%: 低2级以上
+        # 5%: 低2级以上
         candidates = [e for e in ENEMY_POOL if player_idx - RANK_ORDER.index(e["rank"]) >= 2]
 
     if not candidates:

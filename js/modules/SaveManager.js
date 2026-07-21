@@ -358,7 +358,7 @@ export class SaveManager {
       } else if (key === 'money') {
         this.state.money = Math.max(0, (this.state.money || 0) + value);
       } else if (key === 'skillPoints') {
-        this.state.skillPoints = Math.max(0, (this.state.skillPoints || 0) + value);
+        this.state.skillPoints = Math.max(0, (this.state.skillPoints !== undefined ? this.state.skillPoints : 5) + value);
       } else if (key === 'mp') {
         const maxMp = this.state.maxMp || 100;
         this.state.mp = Math.min(maxMp, Math.max(0, (this.state.mp || maxMp) + value));

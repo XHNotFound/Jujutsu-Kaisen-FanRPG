@@ -681,7 +681,6 @@ export class UIManager {
       <div class="train-panel">
         <h3>🏋️ 修炼</h3>
         <p class="train-info">AP: ${ap}/100 | 体力: ${stamina}/100 | 技能点: 🔧 ${sp} | 残秽: ${residual}/100</p>
-        <p style="color:var(--color-text-dim);font-size:0.8rem;">消耗 20 AP + 15 体力 + 🔧技能点（随属性递增），基础 +1，天赋影响额外概率</p>
         <div class="train-grid">${rows}</div>
       </div>
     `;

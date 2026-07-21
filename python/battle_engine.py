@@ -200,6 +200,69 @@ def create_default_enemy(tier="normal"):
                         Skill(id="enemy_cursed_blast",name="诅咒弹",cost=8,type="cursed",damage_multiplier=1.3,cast_time=18,base_recovery_speed=22,min_distance=1,max_distance=3,description="诅咒能量弹")],
                 is_alive=True,distance=DISTANCE_MID,active_vow=None,recovery_speed=7)
 
+def create_enemy_from_save(save_data):
+    """Phase 8: 根据玩家评定等级动态选择敌人（复刻 JS getRandomEnemy 逻辑）"""
+    player_rank = save_data.get("rank", "四级")
+    RANK_ORDER = ["不入流", "四级", "准三级", "三级", "准二级", "二级", "准一级", "一级", "准特级", "特级", "现代最强"]
+    player_idx = RANK_ORDER.index(player_rank) if player_rank in RANK_ORDER else 1
+
+    # 敌人池（与 JS enemies.js 同步）
+    ENEMY_POOL = [
+        # normal: rank 0~5
+        {"id":"enemy_flyhead","name":"蛸头","rank":"不入流","tier":"normal","hp":50,"mp":0,"speed":7,"con":6,"ma":8,"ce":0,"cec":0,"cee":0,"tal":3,"skills":[("enemy_bite","撕咬",0,"martial",1.0,8,28,0,0)]},
+        {"id":"enemy_cursed_doll","name":"咒骸","rank":"四级","tier":"normal","hp":80,"mp":15,"speed":8,"con":10,"ma":12,"ce":6,"cec":5,"cee":5,"tal":5,"skills":[("enemy_punch","重拳",0,"martial",1.0,8,28,0,0),("enemy_cursed_bolt","诅咒弹",6,"cursed",1.3,16,22,1,3)]},
+        {"id":"enemy_centipede","name":"百足咒灵","rank":"准三级","tier":"normal","hp":100,"mp":20,"speed":9,"con":12,"ma":14,"ce":8,"cec":8,"cee":6,"tal":8,"skills":[("enemy_swipe","横扫",0,"martial",1.0,6,30,0,1),("enemy_poison_spit","毒液喷射",8,"cursed",1.5,18,20,1,3)]},
+        {"id":"enemy_shadow_beast","name":"影兽","rank":"三级","tier":"normal","hp":130,"mp":30,"speed":10,"con":14,"ma":16,"ce":10,"cec":10,"cee":8,"tal":10,"skills":[("enemy_claw","影爪",0,"martial",1.2,5,30,0,0),("enemy_shadow_bolt","暗影弹",12,"cursed",1.8,20,18,0,3)]},
+        {"id":"enemy_blood_ghost","name":"血涂灵","rank":"准二级","tier":"normal","hp":160,"mp":40,"speed":11,"con":16,"ma":18,"ce":12,"cec":12,"cee":10,"tal":12,"skills":[("enemy_blood_strike","血击",0,"martial",1.1,6,28,0,1),("enemy_blood_spear","血矛",15,"cursed",2.0,22,16,0,3)]},
+        {"id":"enemy_iron_curse","name":"铁甲咒灵","rank":"二级","tier":"normal","hp":200,"mp":50,"speed":12,"con":20,"ma":20,"ce":14,"cec":14,"cee":12,"tal":14,"skills":[("enemy_iron_fist","铁拳",0,"martial",1.3,7,26,0,0),("enemy_iron_cannon","铁甲炮",20,"cursed",2.2,25,14,0,3)]},
+        # elite: rank 6~7
+        {"id":"enemy_cursed_womb","name":"咒胎","rank":"准一级","tier":"elite","hp":300,"mp":80,"speed":14,"con":22,"ma":24,"ce":18,"cec":18,"cee":14,"tal":16,"skills":[("enemy_womb_slam","重压",0,"martial",1.5,10,24,0,1),("enemy_womb_beam","咒胎光束",20,"cursed",2.5,28,14,0,3),("enemy_womb_roar","咒胎咆哮",15,"cursed",2.0,22,16,1,2)]},
+        {"id":"enemy_vengeful_spirit","name":"怨灵","rank":"一级","tier":"elite","hp":400,"mp":100,"speed":16,"con":25,"ma":26,"ce":22,"cec":22,"cee":16,"tal":18,"skills":[("enemy_vengeful_strike","怨念击",0,"martial",1.6,8,24,0,0),("enemy_vengeful_blast","怨念爆破",25,"cursed",3.0,30,12,0,3),("enemy_vengeful_curse","深层诅咒",18,"cursed",2.2,24,14,0,2)]},
+    ]
+    # boss
+    BOSS = {"id":"enemy_special_grade","name":"特级咒灵","rank":"准特级","tier":"boss","hp":600,"mp":200,"speed":18,"con":30,"ma":32,"ce":28,"cec":28,"cee":20,"tal":22,"skills":[("boss_domain_fist","领域之拳",0,"martial",2.0,12,22,0,1),("boss_cursed_beam","咒力光束",30,"cursed",3.5,30,12,0,3),("boss_catastrophe","灾厄降临",50,"cursed",4.5,40,8,0,3)]}
+
+    roll = random.random()
+    if roll < 0.70:
+        # 70%: ±1级
+        candidates = [e for e in ENEMY_POOL if abs(RANK_ORDER.index(e["rank"]) - player_idx) <= 1]
+    elif roll < 0.90:
+        # 20%: 高1~2级 (精英池)
+        elite_candidates = [e for e in ENEMY_POOL if e["tier"] == "elite" and RANK_ORDER.index(e["rank"]) - player_idx in (1,2)]
+        if not elite_candidates:
+            candidates = ENEMY_POOL
+        else:
+            candidates = elite_candidates
+    else:
+        # 10%: 低2级以上
+        candidates = [e for e in ENEMY_POOL if player_idx - RANK_ORDER.index(e["rank"]) >= 2]
+
+    if not candidates:
+        candidates = ENEMY_POOL
+
+    # 从候选中随机抽取一只
+    chosen = candidates[random.randint(0, len(candidates)-1)]
+
+    # 构建 Unit
+    sk_list = []
+    for sk in chosen["skills"]:
+        sk_list.append(Skill(id=sk[0],name=sk[1],cost=sk[2],type=sk[3],damage_multiplier=sk[4],cast_time=sk[5],base_recovery_speed=sk[6],min_distance=sk[7],max_distance=sk[8]))
+    if not sk_list:
+        sk_list = [Skill(id="enemy_attack",name="撞击",cost=0,type="martial",damage_multiplier=1.0,cast_time=8,base_recovery_speed=28,min_distance=0,max_distance=0)]
+
+    return Unit(
+        id="enemy_1", name=chosen["name"], unit_type=UNIT_ENEMY,
+        hp=chosen["hp"], max_hp=chosen["hp"],
+        mp=chosen["mp"], max_mp=chosen["mp"],
+        atb=0, speed=chosen["speed"],
+        constitution=chosen["con"], martial_arts=chosen["ma"],
+        cursed_energy=chosen["ce"], cursed_energy_control=chosen["cec"],
+        cursed_energy_efficiency=chosen["cee"], talent=chosen["tal"],
+        skills=sk_list,
+        is_alive=True, distance=DISTANCE_MID, active_vow=None,
+        recovery_speed=chosen["speed"]
+    )
+
 # ===== 伤害 =====
 def calculate_damage(actor, skill, target, is_bf=False):
     ba = actor.martial_arts * 2; sb = skill.damage_multiplier * 10
@@ -636,7 +699,7 @@ def init_battle(save_data_json):
         try: save_data=json.loads(save_data_json)
         except json.JSONDecodeError: save_data={}
     else: save_data={}
-    player=create_player_from_save(save_data); enemy=create_default_enemy()
+    player=create_player_from_save(save_data); enemy=create_enemy_from_save(save_data)
     state=BattleState(units=[player,enemy],turn="player",phase=PHASE_WAITING)
     _log(state,"战斗开始！一股诅咒气息扑面而来。")
     _log(state,f"遭遇了 {enemy.name}！")

@@ -248,39 +248,6 @@ def _resolve_enemy_turn(state: BattleState):
     if state.turn in ("enemy_win","player_win"): return
     state.turn = "player"; _log(state, "—— 玩家回合 ——")
 
-def _resolve_domain_auto_attack(domain, state):
-    owner = state.find_unit(domain.owner) if domain.owner else None
-    if not owner: domain.is_alive = False; _log(state, "领域展开者消失，领域破碎。"); return
-    if owner.mp < domain.domain_maintenance_cost:
-        _log(state, "咒力不足，领域无法维持！"); _handle_cancel_domain({"domain_id": domain.id}, state); return
-    owner.mp -= domain.domain_maintenance_cost
-    target = state.find_enemy()
-    if not target or not target.is_alive: return
-    dmg = domain.attack_damage
-
-    # Phase 10: 检查目标的领域对抗 Buff（简易领域/落花之情/弥虚葛笼）
-    eff_dmg, absorbed, extra_mp = apply_domain_counter_to_damage(target, dmg)
-    target.hp = max(0, target.hp - eff_dmg)
-    if extra_mp > 0:
-        target.mp = max(0, target.mp - extra_mp)
-    update_aggro(domain, target, eff_dmg, "damage")  # Phase 9: aggro
-
-    if eff_dmg < dmg:
-        absorb_text = f"（减免 {dmg - eff_dmg}）" if eff_dmg > 0 else "（完全抵挡）"
-        _log(state, f"{domain.name} 自动攻击 {target.name}，但被「{target.domain_counter_buffs[0].get('name','领域对抗')}」{absorb_text}，实际造成 {eff_dmg} 点伤害。")
-        if extra_mp > 0:
-            _log(state, f"{target.name} 因落花之情额外消耗 {extra_mp} 咒力。")
-    else:
-        _log(state, f"{domain.name} 自动攻击 {target.name}，造成 {eff_dmg} 点伤害。")
-
-    _check_battle_end(state)
-    if state.turn in ("player_win","enemy_win"): return
-    if owner.hp < owner.max_hp * 0.5:
-        penalty = max(0, int(domain.max_hp * 0.05))
-        domain.hp = max(0, domain.hp - penalty)
-        _log(state, f"{owner.name} HP 低于 50%，领域维系损耗（-{penalty} HP）。")
-    if domain.hp <= 0: _handle_cancel_domain({"domain_id": domain.id}, state); _log(state, f"{domain.name} 破碎了！")
-
 # ===== 角色/技能构建 =====
 def create_player_from_save(save_data):
     name = save_data.get("characterName", "无名咒术师"); attrs = save_data.get("attributes", {})
@@ -844,7 +811,10 @@ def generate_battle_rewards(tracker, enemy_config=None, player_rank="四级", en
 def _handle_expand_domain(action, state):
     aid=action.get("actor","player"); owner=state.find_unit(aid)
     if not owner: _log(state,"[ERROR] 展开者不存在。"); return
-    if any(u.unit_type==UNIT_DOMAIN for u in state.units): _log(state,"已经存在领域，无法重复展开。"); return
+    # Phase 10: 可以存在多个领域（敌我各一个用于对拼），但同一 owner 不可重复展开
+    existing_owner = [u for u in state.units if u.unit_type==UNIT_DOMAIN and u.owner==aid]
+    if existing_owner:
+        _log(state,f"{owner.name} 已经展开了领域，无法重复展开。"); return
     did=action.get("domain_id","d"); dn=action.get("domain_name","领域")
     ic=action.get("is_complete",True); dh=action.get("domain_hp",500)
     ai=action.get("attack_interval",15); ad=action.get("attack_damage",50); mc=action.get("mp_cost",5)
@@ -852,6 +822,8 @@ def _handle_expand_domain(action, state):
     lt="完全领域" if ic else "不完全领域"
     _log(state, f"{owner.name} 展开了{lt}\"{dn}\"！领域 HP: {dh}, 攻击间隔: {ai} 帧, 伤害: {ad}")
     state.units.append(du); _advance_time(state, 10)
+    # Phase 10: 领域对拼检测
+    _check_domain_clash(state)
 
 def _handle_cancel_domain(action, state):
     did=action.get("domain_id",""); domain=state.find_unit(did)
@@ -863,6 +835,94 @@ def _handle_cancel_domain(action, state):
         owner.recovery_speed=max(1,int(owner.recovery_speed*(1.0-DOMAIN_BURNOUT_SPEED_PENALTY)))
         _log(state,f"领域解除！{owner.name} 遭受熔断——扣除 {DOMAIN_BURNOUT_ATB_COST} ATB，补偿速度 -30%。")
     else: _log(state,"领域被解除。")
+    # Phase 10: 对拼结束后重新检查
+    _check_domain_clash(state)
+
+# ===== Phase 10: 领域对拼机制 =====
+
+def _get_player_domain(state, owner_type="player"):
+    """获取指定 owner 类型的活跃领域 Unit"""
+    for u in state.units:
+        if u.unit_type == UNIT_DOMAIN and u.is_alive:
+            if owner_type == "player" and u.owner == "player":
+                return u
+            elif owner_type == "enemy":
+                owner_unit = state.find_unit(u.owner)
+                if owner_unit and owner_unit.unit_type == UNIT_ENEMY:
+                    return u
+    return None
+
+def _check_domain_clash(state):
+    """检查是否存在领域对拼（双方都展开了领域）
+    若对拼：两个领域的攻击目标互相切换为对方领域 Unit，且特殊效果失效
+    若不对拼：恢复各自对敌方本体的攻击
+    """
+    p_domain = _get_player_domain(state, "player")
+    e_domain = _get_player_domain(state, "enemy")
+
+    clash_active = p_domain is not None and e_domain is not None
+
+    if clash_active and not getattr(state, 'domain_clash_active', False):
+        state.domain_clash_active = True
+        _log(state, "⚠️ 领域对拼！「" + p_domain.name + "」VS「" + e_domain.name + "」——双方特殊效果失效，领域互相攻击！")
+    elif not clash_active and getattr(state, 'domain_clash_active', False):
+        state.domain_clash_active = False
+        _log(state, "领域对拼结束。")
+
+def _resolve_domain_auto_attack(domain, state):
+    owner = state.find_unit(domain.owner) if domain.owner else None
+    if not owner: domain.is_alive = False; _log(state, "领域展开者消失，领域破碎。"); return
+    if owner.mp < domain.domain_maintenance_cost:
+        _log(state, "咒力不足，领域无法维持！"); _handle_cancel_domain({"domain_id": domain.id}, state); return
+    owner.mp -= domain.domain_maintenance_cost
+
+    # Phase 10: 领域对拼时攻击对方领域，否则攻击敌方本体
+    if getattr(state, 'domain_clash_active', False):
+        # 找到敌对领域作为攻击目标
+        if domain.owner == "player":
+            enemy_domain = _get_player_domain(state, "enemy")
+        else:
+            enemy_domain = _get_player_domain(state, "player")
+        if enemy_domain:
+            target = enemy_domain
+        else:
+            target = state.find_enemy()
+    else:
+        target = state.find_enemy()
+
+    if not target or not target.is_alive: return
+    dmg = domain.attack_damage
+
+    # Phase 10: 对拼状态下特殊效果被中和
+    if getattr(state, 'domain_clash_active', False) and target.unit_type == UNIT_DOMAIN:
+        _log(state, f"「{domain.name}」攻击「{target.name}」！（领域对拼中——特殊效果失效）")
+        target.hp = max(0, target.hp - dmg)
+    else:
+        # Phase 10: 非对拼状态 — 应用领域对抗 Buff
+        eff_dmg, absorbed, extra_mp = apply_domain_counter_to_damage(target, dmg)
+        target.hp = max(0, target.hp - eff_dmg)
+        if extra_mp > 0:
+            target.mp = max(0, target.mp - extra_mp)
+        update_aggro(domain, target, eff_dmg, "damage")  # Phase 9: aggro
+        if eff_dmg < dmg:
+            absorb_text = f"（减免 {dmg - eff_dmg}）" if eff_dmg > 0 else "（完全抵挡）"
+            counter_name = target.domain_counter_buffs[0].get('name','领域对抗') if target.domain_counter_buffs else '未知'
+            _log(state, f"{domain.name} 自动攻击 {target.name}，但被「{counter_name}」{absorb_text}，实际造成 {eff_dmg} 点伤害。")
+            if extra_mp > 0:
+                _log(state, f"{target.name} 因落花之情额外消耗 {extra_mp} 咒力。")
+        else:
+            _log(state, f"{domain.name} 自动攻击 {target.name}，造成 {eff_dmg} 点伤害。")
+
+    _check_battle_end(state)
+    if state.turn in ("player_win","enemy_win"): return
+    if owner.hp < owner.max_hp * 0.5:
+        penalty = max(0, int(domain.max_hp * 0.05))
+        domain.hp = max(0, domain.hp - penalty)
+        _log(state, f"{owner.name} HP 低于 50%，领域维系损耗（-{penalty} HP）。")
+    if domain.hp <= 0:
+        _handle_cancel_domain({"domain_id": domain.id}, state)
+        _log(state, f"{domain.name} 破碎了！")
+        _check_domain_clash(state)
 
 def _handle_domain_attack(action, state):
     did=action.get("domain_id",""); domain=state.find_unit(did)

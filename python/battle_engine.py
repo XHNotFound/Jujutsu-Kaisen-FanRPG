@@ -86,7 +86,9 @@ def _resolve_enemy_turn(state: BattleState):
     dmg = apply_damage_variance(dmg, is_bf)
     cost = calculate_mp_cost(enemy, es)
     enemy.mp = max(0, enemy.mp - cost); enemy.atb = 0; p.hp = max(0, p.hp - dmg)
+    ct=es.cast_time; rv=es.base_recovery_speed
     _log(state, f"{enemy.name} 使用 {es.name}{'【黑闪！】' if is_bf else ''}，造成 {dmg} 点伤害。")
+    _log(state, f"{enemy.name} 咏唱 {ct} 帧，补偿速度 {rv}，ATB 已清空。")
     if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
     if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
     state.last_hit_was_black_flash = is_bf
@@ -160,7 +162,11 @@ def _build_player_skills(tid, skill_levels=None):
     return sk
 
 def create_default_enemy(tier="normal"):
-    return Unit(id="enemy_1",name="蛸头",unit_type=UNIT_ENEMY,hp=120,max_hp=120,mp=0,max_mp=0,atb=0,speed=7,constitution=10,martial_arts=12,cursed_energy=0,cursed_energy_control=0,cursed_energy_efficiency=0,talent=5,skills=[Skill(id="enemy_attack",name="撞击",cost=0,type="martial",damage_multiplier=1.0,cast_time=8,base_recovery_speed=28,min_distance=0,max_distance=0,description="撞击目标")],is_alive=True,distance=DISTANCE_MID,active_vow=None,recovery_speed=7)
+    """Phase 8: 根据玩家评定动态生成中低级咒灵"""
+    return Unit(id="enemy_1",name="蛸头",unit_type=UNIT_ENEMY,hp=80,max_hp=80,mp=20,max_mp=20,atb=0,speed=7,constitution=10,martial_arts=12,cursed_energy=8,cursed_energy_control=8,cursed_energy_efficiency=6,talent=5,
+                skills=[Skill(id="enemy_attack",name="撞击",cost=0,type="martial",damage_multiplier=1.0,cast_time=8,base_recovery_speed=28,min_distance=0,max_distance=0,description="身体撞击"),
+                        Skill(id="enemy_cursed_blast",name="诅咒弹",cost=8,type="cursed",damage_multiplier=1.3,cast_time=18,base_recovery_speed=22,min_distance=1,max_distance=3,description="诅咒能量弹")],
+                is_alive=True,distance=DISTANCE_MID,active_vow=None,recovery_speed=7)
 
 # ===== 伤害 =====
 def calculate_damage(actor, skill, target, is_bf=False):

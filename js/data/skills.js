@@ -171,49 +171,95 @@ export const SKILL_TREES = {
     },
     nodes: [
       {
-        id: "gyokuken", name: "玉犬", description: "召唤黑白玉犬撕咬目标。",
-        type: "cursed", isBaseSkill: true, maxLevel: 6,
+        id: "gyokuken", name: "玉犬", description: "召唤黑白玉犬协助战斗。玉犬会自动撕咬敌人，是最忠诚的式神伙伴。",
+        type: "summon", isBaseSkill: true, maxLevel: 6,
         requires: null, requiresLevel: 0, branches: ["nue", "orochi"],
-        cost: 12, damageMultiplier: 1.6, castTime: 15, baseRecoverySpeed: 28,
-        minDistance: 0, maxDistance: 1,
+        cost: 30, damageMultiplier: 0, castTime: 25, baseRecoverySpeed: 20,
+        minDistance: 0, maxDistance: 3,
+        summonConfig: {
+          unitType: "shikigami",
+          name: "玉犬",
+          baseStats: { hp: 80, max_hp: 80, mp: 20, max_mp: 20, speed: 15, constitution: 12, martialArts: 25, cursedEnergy: 5, cursedEnergyControl: 5, cursedEnergyEfficiency: 5, talent: 8 },
+          skills: [
+            { id: "shikigami_bite", name: "撕咬", type: "martial", damageMultiplier: 1.5, cost: 0, castTime: 10, baseRecoverySpeed: 25, minDistance: 0, maxDistance: 0, description: "用利齿撕咬目标" }
+          ],
+          duration: 300
+        },
         levelUpCosts: [C(2,2,25), C(3,3,70), C(4,4,140), C(5,6,220), C(6,8,380)],
-        levelEffects: [L(1,1.6,12,15,28,""), L(2,1.9,11,14,29,""), L(3,2.2,10,14,30,""), L(4,2.5,9,13,31,""), L(5,2.9,8,12,32,""), L(6,3.4,7,11,33,"")]
+        levelEffects: [L(1,0,30,25,20,"召唤玉犬"), L(2,0,28,23,21,"玉犬HP+10%"), L(3,0,26,21,22,"玉犬攻击+10%"), L(4,0,24,19,23,"玉犬HP+20%"), L(5,0,22,17,24,"玉犬攻击+20%"), L(6,0,20,15,25,"玉犬全属性+25%")]
       },
       {
-        id: "nue", name: "鵺", description: "召唤鵺从空中俯冲攻击，全距离适用。",
-        type: "cursed", isBaseSkill: false, maxLevel: 5,
+        id: "nue", name: "鵺", description: "召唤鵺从空中俯冲攻击。鵺是具备飞行能力的式神，可全距离攻击并附带雷电。",
+        type: "summon", isBaseSkill: false, maxLevel: 5,
         requires: "gyokuken", requiresLevel: 1, branches: ["max_elephant"],
-        cost: 18, damageMultiplier: 2.0, castTime: 22, baseRecoverySpeed: 22,
+        cost: 35, damageMultiplier: 0, castTime: 30, baseRecoverySpeed: 18,
         minDistance: 0, maxDistance: 3,
+        summonConfig: {
+          unitType: "shikigami",
+          name: "鵺",
+          baseStats: { hp: 60, max_hp: 60, mp: 30, max_mp: 30, speed: 20, constitution: 8, martialArts: 20, cursedEnergy: 15, cursedEnergyControl: 12, cursedEnergyEfficiency: 10, talent: 12 },
+          skills: [
+            { id: "shikigami_dive", name: "俯冲", type: "martial", damageMultiplier: 2.0, cost: 0, castTime: 12, baseRecoverySpeed: 22, minDistance: 0, maxDistance: 3, description: "从空中俯冲攻击" },
+            { id: "shikigami_shock", name: "电击", type: "cursed", damageMultiplier: 1.8, cost: 10, castTime: 16, baseRecoverySpeed: 18, minDistance: 1, maxDistance: 3, description: "释放雷电攻击远处目标" }
+          ],
+          duration: 300
+        },
         levelUpCosts: [C(2,3,40), C(3,4,100), C(4,6,180), C(5,8,300)],
-        levelEffects: [L(1,2.0,18,22,22,""), L(2,2.4,16,20,23,""), L(3,2.8,14,18,24,""), L(4,3.3,12,17,25,""), L(5,3.9,10,15,26,"")]
+        levelEffects: [L(1,0,35,30,18,"召唤鵺"), L(2,0,33,28,19,"鵺速度+10%"), L(3,0,31,26,20,"鵺攻击+10%"), L(4,0,29,24,21,"鵺HP+15%"), L(5,0,27,22,23,"鵺电击强化+20%")]
       },
       {
-        id: "orochi", name: "大蛇", description: "召唤巨蛇缠住对手，每回合造成持续伤害。",
-        type: "cursed", isBaseSkill: false, maxLevel: 4,
+        id: "orochi", name: "大蛇", description: "召唤巨蛇缠住对手，每回合造成持续伤害并限制目标移动。",
+        type: "summon", isBaseSkill: false, maxLevel: 4,
         requires: "gyokuken", requiresLevel: 2, branches: [],
-        cost: 16, damageMultiplier: 1.8, castTime: 18, baseRecoverySpeed: 24,
+        cost: 30, damageMultiplier: 0, castTime: 25, baseRecoverySpeed: 20,
         minDistance: 0, maxDistance: 2,
+        summonConfig: {
+          unitType: "shikigami",
+          name: "大蛇",
+          baseStats: { hp: 100, max_hp: 100, mp: 15, max_mp: 15, speed: 10, constitution: 16, martialArts: 22, cursedEnergy: 8, cursedEnergyControl: 8, cursedEnergyEfficiency: 5, talent: 8 },
+          skills: [
+            { id: "shikigami_constrict", name: "缠绕", type: "martial", damageMultiplier: 1.5, cost: 0, castTime: 14, baseRecoverySpeed: 22, minDistance: 0, maxDistance: 1, description: "缠绕目标造成持续伤害", dotDamage: 8, dotTurns: 2 }
+          ],
+          duration: 350
+        },
         levelUpCosts: [C(2,3,50), C(3,5,120), C(4,7,220)],
-        levelEffects: [L(1,1.8,16,18,24,"持续伤害2回合"), L(2,2.1,14,17,25,"持续伤害2回合"), L(3,2.5,12,16,26,"持续伤害3回合"), L(4,3.0,10,14,27,"持续伤害3回合")]
+        levelEffects: [L(1,0,30,25,20,"召唤大蛇"), L(2,0,28,23,21,"大蛇缠绕伤害+20%"), L(3,0,26,21,22,"缠绕持续3回合"), L(4,0,24,19,23,"大蛇HP+20%&缠绕强化")]
       },
       {
-        id: "max_elephant", name: "满象", description: "召唤满象以巨大的体重碾压对手。",
-        type: "cursed", isBaseSkill: false, maxLevel: 4,
+        id: "max_elephant", name: "满象", description: "召唤满象以巨大的体重碾压对手，是十种影法术中体型最大的式神之一。",
+        type: "summon", isBaseSkill: false, maxLevel: 4,
         requires: "nue", requiresLevel: 2, branches: ["tora_no_fun"],
-        cost: 22, damageMultiplier: 2.5, castTime: 25, baseRecoverySpeed: 20,
+        cost: 40, damageMultiplier: 0, castTime: 35, baseRecoverySpeed: 15,
         minDistance: 0, maxDistance: 2,
+        summonConfig: {
+          unitType: "shikigami",
+          name: "满象",
+          baseStats: { hp: 150, max_hp: 150, mp: 10, max_mp: 10, speed: 8, constitution: 22, martialArts: 30, cursedEnergy: 5, cursedEnergyControl: 5, cursedEnergyEfficiency: 3, talent: 6 },
+          skills: [
+            { id: "shikigami_crush", name: "碾压", type: "martial", damageMultiplier: 2.5, cost: 0, castTime: 18, baseRecoverySpeed: 16, minDistance: 0, maxDistance: 2, description: "以巨大身躯碾压目标，无视30%防御" }
+          ],
+          duration: 300
+        },
         levelUpCosts: [C(2,4,80), C(3,6,160), C(4,8,280)],
-        levelEffects: [L(1,2.5,22,25,20,""), L(2,3.0,20,23,21,""), L(3,3.6,18,21,22,""), L(4,4.3,16,19,23,"")]
+        levelEffects: [L(1,0,40,35,15,"召唤满象"), L(2,0,38,33,16,"满象防御+15%"), L(3,0,36,31,17,"碾压伤害+15%"), L(4,0,34,29,18,"满象HP+20%&无视40%防御")]
       },
       {
-        id: "tora_no_fun", name: "虎葬", description: "召唤虎形式神，以闪电般的速度突袭对手。",
-        type: "cursed", isBaseSkill: false, maxLevel: 3,
+        id: "tora_no_fun", name: "虎葬", description: "召唤虎形式神，以闪电般的速度突袭对手。虎葬是十种影法术中速度最快的式神。",
+        type: "summon", isBaseSkill: false, maxLevel: 3,
         requires: "max_elephant", requiresLevel: 2, branches: [],
-        cost: 25, damageMultiplier: 3.0, castTime: 20, baseRecoverySpeed: 22,
+        cost: 35, damageMultiplier: 0, castTime: 25, baseRecoverySpeed: 18,
         minDistance: 0, maxDistance: 3,
+        summonConfig: {
+          unitType: "shikigami",
+          name: "虎葬",
+          baseStats: { hp: 70, max_hp: 70, mp: 20, max_mp: 20, speed: 25, constitution: 10, martialArts: 28, cursedEnergy: 10, cursedEnergyControl: 10, cursedEnergyEfficiency: 8, talent: 14 },
+          skills: [
+            { id: "shikigami_rush", name: "突袭", type: "martial", damageMultiplier: 2.2, cost: 0, castTime: 8, baseRecoverySpeed: 26, minDistance: 0, maxDistance: 3, description: "闪电突袭目标，先制攻击" }
+          ],
+          duration: 250
+        },
         levelUpCosts: [C(2,5,100), C(3,8,200)],
-        levelEffects: [L(1,3.0,25,20,22,"先制攻击"), L(2,3.6,22,18,23,"先制攻击"), L(3,4.3,19,16,24,"先制攻击")]
+        levelEffects: [L(1,0,35,25,18,"召唤虎葬·先制"), L(2,0,32,23,19,"虎葬速度+15%"), L(3,0,29,21,21,"突袭伤害+20%")]
       },
       {
         id: "makora", name: "魔虚罗（未降伏）", description: "十种影法术的终极式神。调伏失败——每次使用可能反噬自身。",

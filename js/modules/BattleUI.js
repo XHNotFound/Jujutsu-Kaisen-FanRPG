@@ -2,6 +2,9 @@
 // 唯一负责战斗画面的 DOM 渲染和事件绑定
 // 严禁在 JS 中写战斗计算逻辑！
 // Phase 7: 使用 exec 直接执行 Python 源码彻底绕过 import 缓存
+// Phase 9: 召唤物 UI + 仇恨热力图
+
+import { getActiveSummons, getAggroRanking } from './summonSystem.js';
 
 export class BattleUI {
   constructor(pyodideLoader, uiManager) {
@@ -10,6 +13,7 @@ export class BattleUI {
     this.currentState = null;
     this._processing = false;
     this._delegationBound = false;
+    this._controlledShikigami = null;  // Phase 9: 当前手动控制的式神 ID
   }
 
   async start() {
@@ -122,6 +126,28 @@ init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
         if (d) this._executeAction({ type: 'cancel_domain', domain_id: d.id });
         return;
       }
+      // Phase 9: shikigami auto/manual toggle
+      const shAutoBtn = e.target.closest('[data-action="shikigami-auto"]');
+      if (shAutoBtn) {
+        this._controlledShikigami = null;
+        this._renderAll();
+        return;
+      }
+      const shManualBtn = e.target.closest('[data-action="shikigami-manual"]');
+      if (shManualBtn) {
+        this._controlledShikigami = shManualBtn.dataset.sid || null;
+        this._renderAll();
+        return;
+      }
+      // Phase 9: shikigami manual skill use
+      const shSkillBtn = e.target.closest('[data-action="shikigami-use-skill"]');
+      if (shSkillBtn && !shSkillBtn.disabled) {
+        const shSid = shSkillBtn.dataset.sid;
+        const shSkillId = shSkillBtn.dataset.skill;
+        const shTarget = shSkillBtn.dataset.target || 'enemy_1';
+        this._executeAction({ type: 'shikigami_skill', actor: shSid, skill_id: shSkillId, target: shTarget });
+        return;
+      }
     });
   }
 
@@ -132,6 +158,8 @@ init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
     this._renderCharCard('enemy', s.enemy);
     this._renderDistance(s);
     this._renderLog(s.log);
+    this._renderSummons(s);  // Phase 9: 召唤物状态栏
+    this._renderShikigamiSkillPanel(s);  // Phase 9: 式神手动技能面板
     this._renderCollapsibleSection('battle-attack-section', 'battle-attack-body', '⚔️ 攻击', () => this._renderSkillButtons(s.player));
     this._renderCollapsibleSection('battle-vow-section', 'battle-vow-body', '🔗 束缚', () => this._renderVowButtons(s.player));
     this._renderDomainButton(s);
@@ -203,6 +231,98 @@ init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
     distEl.innerHTML = html;
   }
 
+  // ===== Phase 9: 召唤物 UI =====
+
+  _renderSummons(s) {
+    const container = document.getElementById('battle-summons');
+    if (!container) return;
+    const summons = getActiveSummons(s.units || []);
+    if (summons.length === 0) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = 'flex';
+    const ranking = getAggroRanking(s.units || []);
+    const maxAggro = ranking.length > 0 ? (ranking[0].aggro || 0) : 0;
+    container.innerHTML = summons.map(sh => {
+      const isControlled = this._controlledShikigami === sh.id;
+      const isExpiring = (sh.summon_duration || 0) < 60;
+      const hpPct = sh.max_hp > 0 ? (sh.hp / sh.max_hp) * 100 : 0;
+      const atbPct = (sh.atb / 300) * 100;
+      const durPct = sh.summon_duration > 0 ? Math.floor(sh.summon_duration / 10) : 0;
+      // Aggro indicator
+      const agg = sh.aggro || 0;
+      let aggClass = 'aggro-none';
+      if (agg > 0 && maxAggro > 0) {
+        const ratio = agg / maxAggro;
+        if (ratio >= 0.7) aggClass = 'aggro-high';
+        else if (ratio >= 0.3) aggClass = 'aggro-mid';
+        else aggClass = 'aggro-low';
+      }
+      let ctls = '';
+      if (isControlled) {
+        ctls = `<div class="battle-summon-ctrls">
+          <button class="btn btn-shikigami-auto" data-action="shikigami-auto" data-sid="${sh.id}">切换 AI 自动</button>
+        </div>`;
+      } else {
+        ctls = `<div class="battle-summon-ctrls">
+          <button class="btn btn-shikigami-manual" data-action="shikigami-manual" data-sid="${sh.id}">手动控制</button>
+        </div>`;
+      }
+      return `<div class="battle-summon-card${isControlled ? ' summon-controllable' : ''}${isExpiring ? ' summon-expiring' : ''}">
+        <div class="battle-summon-header">
+          <span class="battle-summon-name"><span class="aggro-indicator ${aggClass}" title="仇恨:${agg}"></span>${sh.name}</span>
+          <span class="battle-summon-type">式神</span>
+        </div>
+        <div class="battle-summon-stat-row">
+          <span class="stat-label">HP</span>
+          <div class="stat-bar-bg battle-bar-wide"><div class="stat-bar hp-bar" style="width:${hpPct}%"></div></div>
+          <span class="stat-text">${sh.hp}/${sh.max_hp}</span>
+        </div>
+        <div class="battle-summon-stat-row">
+          <span class="stat-label">ATB</span>
+          <div class="stat-bar-bg battle-bar-wide"><div class="stat-bar" style="width:${atbPct}%;background:#eab308;"></div></div>
+          <span class="stat-text">${sh.atb}/300</span>
+        </div>
+        <div class="battle-summon-duration">⏱ 剩余 <span class="${isExpiring ? 'duration-low' : ''}">${durPct}</span>s</div>
+        ${ctls}
+      </div>`;
+    }).join('');
+  }
+
+  _renderShikigamiSkillPanel(s) {
+    let panel = document.getElementById('battle-shikigami-skills-panel');
+    // Only show if player is controlling a shikigami
+    if (!this._controlledShikigami) {
+      if (panel) panel.style.display = 'none';
+      return;
+    }
+    const shiki = (s.units || []).find(u => u.id === this._controlledShikigami && u.is_alive);
+    if (!shiki) {
+      this._controlledShikigami = null;
+      if (panel) panel.style.display = 'none';
+      return;
+    }
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'battle-shikigami-skills-panel';
+      const vowsEl = document.getElementById('battle-vows');
+      if (vowsEl && vowsEl.parentNode) {
+        vowsEl.parentNode.insertBefore(panel, vowsEl.nextSibling);
+      }
+    }
+    panel.style.display = '';
+    const skills = shiki.skills || [];
+    panel.innerHTML = `<div class="battle-shikigami-skills-title">🐺 ${shiki.name} 手动控制</div>
+      <div class="battle-shikigami-skills">${skills.map(sk => {
+        const canUse = shiki.mp >= (sk.cost || 0);
+        return `<button class="btn btn-shikigami-skill${canUse ? '' : ' cost-too-high'}" data-action="shikigami-use-skill" data-sid="${shiki.id}" data-skill="${sk.id}" data-target="enemy_1" ${canUse ? '' : 'disabled'}>
+          <span class="skill-name">${sk.name}</span>
+          <span class="skill-cost">${sk.cost > 0 ? 'MP ' + sk.cost : '免费'}</span>
+        </button>`;
+      }).join('')}</div>`;
+  }
+
   _renderLog(logs) {
     const container = document.getElementById('battle-log');
     if (!container) return;
@@ -241,6 +361,7 @@ init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
       if (skill.type === 'martial') btn.classList.add('skill-martial');
       else if (skill.type === 'cursed') btn.classList.add('skill-cursed');
       else if (skill.type === 'movement') btn.classList.add('skill-movement');
+      else if (skill.type === 'summon') btn.classList.add('skill-summon');
       if (skill.cost > 0 && playerData.mp < skill.cost) btn.classList.add('cost-too-high');
       const dn = ['贴身', '近', '中', '远'];
       const minD = skill.min_distance !== undefined ? dn[skill.min_distance] : '?';

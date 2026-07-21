@@ -48,14 +48,18 @@ class Skill:
     max_distance: int = DISTANCE_FAR
     cast_time: int = 5
     base_recovery_speed: int = 30
+    summon_config: Optional[dict] = None  # Phase 9: summon skill config
 
     def to_dict(self):
-        return {
+        d = {
             "id": self.id, "name": self.name, "cost": self.cost, "type": self.type,
             "damage_multiplier": self.damage_multiplier,
             "min_distance": self.min_distance, "max_distance": self.max_distance,
             "cast_time": self.cast_time, "base_recovery_speed": self.base_recovery_speed
         }
+        if self.summon_config:
+            d["summon_config"] = self.summon_config
+        return d
 
 
 # ===== Phase 7: 通用战斗单位 (取代单一 Character) =====
@@ -88,6 +92,8 @@ class Unit:
     attack_damage: int = 0             # 领域专属：单次伤害
     status_effects: list = field(default_factory=list)  # 状态效果
     domain_maintenance_cost: int = 0   # 领域继承消耗
+    summon_duration: int = 0           # Phase 9: 召唤物剩余持续时间（行动值）
+    aggro: int = 0                     # Phase 9: 仇恨值
 
     def to_dict(self):
         d = {
@@ -106,6 +112,8 @@ class Unit:
             "attack_damage": self.attack_damage,
             "status_effects": list(self.status_effects),
             "domain_maintenance_cost": self.domain_maintenance_cost,
+            "summon_duration": self.summon_duration,
+            "aggro": self.aggro,
             "skills": [s.to_dict() for s in self.skills]
         }
         return d
@@ -188,6 +196,17 @@ class BattleState:
             if u.unit_type == UNIT_ENEMY:
                 return u
         return None
+
+    # Phase 9: aggro-based target selection
+    def find_enemy_target(self, acting_unit=None):
+        """敌人从友方单位中选择仇恨最高者攻击"""
+        friendlies = [u for u in self.units
+                      if u.unit_type in (UNIT_PLAYER, UNIT_SHIKIGAMI) and u.is_alive]
+        if not friendlies:
+            return self.find_player()
+        # 选 aggro 最高的；同值优先 player
+        target = max(friendlies, key=lambda u: (u.aggro or 0))
+        return target
 
     # ===== 向后兼容属性 =====
     @property

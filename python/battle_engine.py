@@ -18,6 +18,17 @@ def _log(state: BattleState, msg: str):
 def _capped(v, lo, hi): return max(lo, min(hi, v))
 def _check_black_flash(actor): return random.random() < (BLACK_FLASH_BASE_RATE + actor.talent * BLACK_FLASH_TALENT_RATE)
 
+# ===== Phase 9: 仇恨机制 =====
+def update_aggro(attacker, target, damage, action_type="damage"):
+    """纯函数：更新目标对攻击者的仇恨值。
+    - damage: 伤害/治疗量 = aggro * 1.0
+    - heal: aggro * 0.5
+    """
+    mult = 0.5 if action_type == "heal" else 1.0
+    delta = int(damage * mult)
+    if delta > 0:
+        target.aggro = (target.aggro or 0) + delta
+
 # ===== 距离 =====
 def calculate_move_cost(actor, frm, to):
     diff = abs(to - frm)
@@ -39,9 +50,11 @@ def _resolve_distance(actor, skill, target, state):
 FRAME_STEP = 1
 
 def _advance_time(state: BattleState, frames: int):
-    """推进 global_action_time 并逐帧检查领域/敌人中断"""
+    """推进 global_action_time 并逐帧检查领域/敌人/式神中断"""
     for _ in range(frames):
         state.global_action_time += FRAME_STEP
+        # Phase 9: 推进召唤物持续时间
+        _tick_summon_duration(state)
         # 1. 推进所有单位的 ATB
         for u in state.units:
             if u.is_alive:
@@ -50,8 +63,12 @@ def _advance_time(state: BattleState, frames: int):
                     if u.atb >= ATB_MAX:
                         _resolve_domain_auto_attack(u, state)
                         u.atb = 0
-                elif u.unit_type in (UNIT_PLAYER, UNIT_ENEMY):
+                elif u.unit_type in (UNIT_PLAYER, UNIT_ENEMY, UNIT_SHIKIGAMI):
                     u.atb = min(ATB_MAX, u.atb + u.speed)
+        # Phase 9: 式神 ATB 满时自动行动
+        _resolve_shikigami_turns(state)
+        # Phase 9: ally NPC auto-action
+        _resolve_ally_turns(state)
         # 2. 检查敌人是否满 ATB 且当前非敌回合
         e = state.find_enemy()
         if e and e.atb >= ATB_MAX and state.turn == "player" and e.is_alive:
@@ -73,23 +90,28 @@ def _check_battle_end(state: BattleState):
             if u.unit_type == UNIT_DOMAIN: _handle_cancel_domain({"domain_id": u.id}, state)
 
 def _resolve_enemy_turn(state: BattleState):
-    """敌人回合（中断或正常）— Phase 8: AI-driven skill choice"""
-    enemy = state.find_enemy(); p = state.find_player()
-    if not enemy or not p: return
+    """敌人回合（中断或正常）— Phase 9: aggro-based target selection"""
+    enemy = state.find_enemy()
+    if not enemy: return
     state.turn = "enemy"; _log(state, "—— 敌人回合 ——")
     # Phase 8: 敌人 AI 决策 — 优先使用咒术技能(70%)，否则体术
     es = _decide_enemy_action(enemy, state)
     if not es: _log(state, f"{enemy.name} 无法行动！"); enemy.atb = 0; state.turn = "player"; _log(state, "—— 玩家回合 ——"); return
-    _resolve_distance(enemy, es, p, state)
-    is_bf = _check_black_flash(enemy); dmg = calculate_damage(enemy, es, p, is_bf)
+    # Phase 9: aggro-based target instead of hardcoded player
+    target = state.find_enemy_target()
+    if not target: target = state.find_player()
+    if not target: enemy.atb = 0; state.turn = "player"; return
+    _resolve_distance(enemy, es, target, state)
+    is_bf = _check_black_flash(enemy); dmg = calculate_damage(enemy, es, target, is_bf)
     # Phase 8: 伤害偏移 ±20%
     dmg = apply_damage_variance(dmg, is_bf)
     cost = calculate_mp_cost(enemy, es)
-    enemy.mp = max(0, enemy.mp - cost); enemy.atb = 0; p.hp = max(0, p.hp - dmg)
+    enemy.mp = max(0, enemy.mp - cost); enemy.atb = 0; target.hp = max(0, target.hp - dmg)
+    # Phase 9: update aggro — target resents the enemy
+    update_aggro(enemy, target, dmg, "damage")
     ct=es.cast_time; rv=es.base_recovery_speed
-    _log(state, f"{enemy.name} 使用 {es.name}{'【黑闪！】' if is_bf else ''}，造成 {dmg} 点伤害。")
+    _log(state, f"{enemy.name} 使用 {es.name}{'【黑闪！】' if is_bf else ''} → {target.name}，造成 {dmg} 点伤害。")
     _log(state, f"{enemy.name} 咏唱 {ct} 帧，补偿速度 {rv}，ATB 已清空。")
-    if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
     if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
     state.last_hit_was_black_flash = is_bf
     _check_battle_end(state)
@@ -105,6 +127,7 @@ def _resolve_domain_auto_attack(domain, state):
     target = state.find_enemy()
     if not target or not target.is_alive: return
     dmg = domain.attack_damage; target.hp = max(0, target.hp - dmg)
+    update_aggro(domain, target, dmg, "damage")  # Phase 9: aggro
     _log(state, f"{domain.name} 自动攻击 {target.name}，造成 {dmg} 点伤害。")
     _check_battle_end(state)
     if state.turn in ("player_win","enemy_win"): return
@@ -139,7 +162,17 @@ def _build_player_skills(tid, skill_levels=None):
     sk=[Skill(id=i,name=n,cost=c,type=t,damage_multiplier=m,cast_time=ct,base_recovery_speed=r,min_distance=mn,max_distance=mx,description=d) for (i,n,c,t,m,ct,r,mn,mx,d) in B]
     TS={"cursedEnergyBoost":[("cursed_boost","咒力强化拳",10,"cursed",1.8,12,28,0,0,"以咒力强化拳击")],
         "limitless":[("aoi","苍",15,"cursed",2.2,20,25,0,3,"空之涡"),("aka","赫",25,"cursed",3.0,30,18,1,3,"排斥一切"),("aoi_strike","苍·打击",22,"cursed",3.0,25,20,0,0,"近身苍"),("aoi_max","苍·最大出力",30,"cursed",4.0,35,15,0,3,"极致苍"),("aka_max","赫·最大出力",40,"cursed",4.5,40,12,1,3,"极致赫"),("murasaki","虚式·茈",50,"cursed",6.0,45,10,0,3,"撕裂空间")],
-        "tenShadows":[("gyokuken","玉犬",12,"cursed",1.6,15,28,0,1,"召唤双犬"),("nue","鵺",18,"cursed",2.0,22,22,0,3,"俯冲攻击"),("orochi","大蛇",16,"cursed",1.8,18,24,0,1,"巨蛇缠绕"),("max_elephant","满象",22,"cursed",2.5,25,20,0,1,"召唤满象"),("tora_no_fun","虎葬",25,"cursed",3.0,20,22,0,3,"虎形式神"),("makora","魔虚罗",60,"cursed",8.0,60,5,0,3,"终极式神")],
+        "tenShadows":[("gyokuken","玉犬",30,"summon",0,25,20,0,3,"召唤黑白玉犬",
+                    {"unitType":"shikigami","name":"玉犬","baseStats":{"hp":80,"max_hp":80,"mp":20,"max_mp":20,"speed":15,"constitution":12,"martialArts":25,"cursedEnergy":5,"cursedEnergyControl":5,"cursedEnergyEfficiency":5,"talent":8},"skills":[{"id":"shikigami_bite","name":"撕咬","type":"martial","damageMultiplier":1.5,"cost":0,"castTime":10,"baseRecoverySpeed":25,"minDistance":0,"maxDistance":0,"description":"用利齿撕咬目标"}],"duration":300}),
+                   ("nue","鵺",35,"summon",0,30,18,0,3,"召唤鵺",
+                    {"unitType":"shikigami","name":"鵺","baseStats":{"hp":60,"max_hp":60,"mp":30,"max_mp":30,"speed":20,"constitution":8,"martialArts":20,"cursedEnergy":15,"cursedEnergyControl":12,"cursedEnergyEfficiency":10,"talent":12},"skills":[{"id":"shikigami_dive","name":"俯冲","type":"martial","damageMultiplier":2.0,"cost":0,"castTime":12,"baseRecoverySpeed":22,"minDistance":0,"maxDistance":3,"description":"从空中俯冲攻击"},{"id":"shikigami_shock","name":"电击","type":"cursed","damageMultiplier":1.8,"cost":10,"castTime":16,"baseRecoverySpeed":18,"minDistance":1,"maxDistance":3,"description":"释放雷电攻击远处目标"}],"duration":300}),
+                   ("orochi","大蛇",30,"summon",0,25,20,0,2,"召唤巨蛇",
+                    {"unitType":"shikigami","name":"大蛇","baseStats":{"hp":100,"max_hp":100,"mp":15,"max_mp":15,"speed":10,"constitution":16,"martialArts":22,"cursedEnergy":8,"cursedEnergyControl":8,"cursedEnergyEfficiency":5,"talent":8},"skills":[{"id":"shikigami_constrict","name":"缠绕","type":"martial","damageMultiplier":1.5,"cost":0,"castTime":14,"baseRecoverySpeed":22,"minDistance":0,"maxDistance":1,"description":"缠绕目标造成持续伤害","dotDamage":8,"dotTurns":2}],"duration":350}),
+                   ("max_elephant","满象",40,"summon",0,35,15,0,2,"召唤满象",
+                    {"unitType":"shikigami","name":"满象","baseStats":{"hp":150,"max_hp":150,"mp":10,"max_mp":10,"speed":8,"constitution":22,"martialArts":30,"cursedEnergy":5,"cursedEnergyControl":5,"cursedEnergyEfficiency":3,"talent":6},"skills":[{"id":"shikigami_crush","name":"碾压","type":"martial","damageMultiplier":2.5,"cost":0,"castTime":18,"baseRecoverySpeed":16,"minDistance":0,"maxDistance":2,"description":"以巨大身躯碾压目标，无视30%防御"}],"duration":300}),
+                   ("tora_no_fun","虎葬",35,"summon",0,25,18,0,3,"召唤虎形神",
+                    {"unitType":"shikigami","name":"虎葬","baseStats":{"hp":70,"max_hp":70,"mp":20,"max_mp":20,"speed":25,"constitution":10,"martialArts":28,"cursedEnergy":10,"cursedEnergyControl":10,"cursedEnergyEfficiency":8,"talent":14},"skills":[{"id":"shikigami_rush","name":"突袭","type":"martial","damageMultiplier":2.2,"cost":0,"castTime":8,"baseRecoverySpeed":26,"minDistance":0,"maxDistance":3,"description":"闪电突袭目标，先制攻击"}],"duration":250}),
+                   ("makora","魔虚罗",60,"cursed",8.0,60,5,0,3,"终极式神")],
         "bloodManipulation":[("blood_blade","血刃",8,"cursed",1.4,12,28,0,1,"血液利刃"),("slicing_exorcism","血涂",14,"cursed",1.8,16,24,0,1,"切割线"),("piercing_blood","穿血",14,"cursed",2.0,16,24,0,3,"高压血箭"),("supernova","超新星",22,"cursed",3.0,22,18,0,3,"凝固血液"),("crimson_binding","赤鳞跃动",20,"cursed",2.2,18,22,0,0,"强化身体"),("canal","运河",16,"cursed",2.0,20,20,0,3,"血液轨迹")],
         "boogieWoogie":[("clap_swap","拍手换位",6,"cursed",1.2,8,32,0,3,"交换位置"),("tactical_combo","战术连携",12,"cursed",2.0,12,28,0,0,"连续攻击")],
         "overtime":[("weakness","基础弱点",8,"cursed",1.3,10,30,0,1,"7:3弱点"),("ratio_strike","咒力钝器·七三",14,"cursed",2.0,15,25,0,0,"精准打击"),("collapse","瓦解",18,"cursed",2.5,20,20,0,0,"削弱防御"),("overtime","极之番·加班",25,"cursed",3.5,25,18,0,1,"加班模式")],
@@ -147,18 +180,17 @@ def _build_player_skills(tid, skill_levels=None):
         "strawDoll":[("doll_basic","基础操控",10,"cursed",1.5,14,26,0,1,"人偶攻击"),("doll_scout","远程侦查",12,"cursed",1.6,16,24,1,3,"远程侦查"),("doll_resonance","共鸣",13,"cursed",1.9,18,22,0,3,"远程冲击"),("doll_overload","傀儡自爆",30,"cursed",5.0,30,10,1,1,"引爆傀儡")],
         "pureMartial":[("martial_combo","体术连击",0,"martial",1.2,8,30,0,0,"高速连击"),("black_flash_boost","黑闪强化",0,"martial",1.5,6,32,0,0,"提升黑闪"),("rush_strike","疾风突袭",0,"martial",2.0,10,26,0,1,"速度突袭")]}
     for e in TS.get(tid, TS.get("cursedEnergyBoost",[])):
-        # Fix: only include branch skills if unlocked in skillLevels (not all skills)
         skill_id = e[0]
-        # Base skills (aoi/aka/gyokuken etc.) are always available.
-        # Branch skills require skillLevels[skill_id] >= 1
         branch_skills = {"aoi_strike","aoi_max","aka_max","murasaki","nue","orochi","max_elephant","tora_no_fun","makora",
                          "slicing_exorcism","supernova","crimson_binding","canal",
                          "tactical_combo","ratio_strike","collapse","overtime",
                          "curse_sphere","uzumaki_pseudo","doll_scout","doll_overload",
                          "black_flash_boost","rush_strike"}
         if skill_id in branch_skills and skill_levels.get(skill_id, 0) < 1:
-            continue  # skip unlocked branch skills
-        sk.append(Skill(id=e[0],name=e[1],cost=e[2],type=e[3],damage_multiplier=e[4],cast_time=e[5],base_recovery_speed=e[6],min_distance=e[7],max_distance=e[8],description=e[9]))
+            continue
+        # Phase 9: handle optional summon_config (11th element)
+        sc = e[10] if len(e) > 10 else None
+        sk.append(Skill(id=e[0],name=e[1],cost=e[2],type=e[3],damage_multiplier=e[4],cast_time=e[5],base_recovery_speed=e[6],min_distance=e[7],max_distance=e[8],description=e[9],summon_config=sc))
     return sk
 
 def create_default_enemy(tier="normal"):
@@ -214,6 +246,10 @@ def execute_action(action_json, state_json):
     elif at == "apply_vow": _handle_apply_vow(action, state)
     elif at == "expand_domain": _handle_expand_domain(action, state)
     elif at == "cancel_domain": _handle_cancel_domain(action, state)
+    # Phase 9: shikigami manual control
+    elif at == "shikigami_skill": _handle_shikigami_skill(action, state, tracker)
+    # Phase 9: add ally NPC to battle
+    elif at == "add_ally": _handle_add_ally(action, state)
     result = state.to_dict(); result["_tracker"] = tracker.to_dict()
     return json.dumps(result, ensure_ascii=False)
 
@@ -229,10 +265,13 @@ def _handle_use_skill(action, state, tracker=None):
     for s in actor.skills:
         if s.id == sid: skill = s; break
     if not skill: _log(state, f"[ERROR] 未找到技能: {sid}"); return
-    if actor.mp < skill.cost and skill.type == "cursed":
+    if actor.mp < skill.cost and skill.type in ("cursed","summon"):
         _log(state, f"咒力不足！需要 {skill.cost} MP，当前 {actor.mp} MP。"); return
     if tracker: tracker.record_skill_use(sid)
-    if skill.type == "movement": _execute_movement(actor, skill, state)
+    # Phase 9: summon skill
+    if skill.type == "summon":
+        _execute_summon(actor, skill, state)
+    elif skill.type == "movement": _execute_movement(actor, skill, state)
     elif skill.type in ("martial","cursed"):
         _execute_attack_framed(actor, skill, target, state)
     enemy = state.find_enemy()
@@ -256,6 +295,8 @@ def _execute_attack_framed(actor, skill, target, state):
     dmg = apply_damage_variance(dmg, is_bf)  # Phase 8: 伤害偏移
     cost = calculate_mp_cost(actor, skill)
     actor.mp = max(0, actor.mp - cost); target.hp = max(0, target.hp - dmg)
+    # Phase 9: aggro — enemy resents attacker
+    update_aggro(actor, target, dmg, "damage")
     actor.atb = 0
     bf_text = "【黑闪！】" if is_bf else ""
     cost_text = f"（消耗 {cost} MP）" if cost > 0 else ""
@@ -290,6 +331,218 @@ def _execute_movement(actor, skill, state):
     dir_txt = "逼近" if nd < cur else "后退"
     _log(state, f"{actor.name} {dir_txt}至{DISTANCE_NAMES[nd]}距离（消耗 {cost} ATB）。")
 
+# ===== Phase 9: 召唤系统 =====
+
+def _execute_summon(summoner, skill, state):
+    """执行召唤 — 判定同类型式神是否已存在，消耗 MP，生成召唤物 Unit"""
+    sc = skill.summon_config
+    if not sc: _log(state, f"[ERROR] 技能 {skill.id} 缺少 summonConfig。"); return
+    sname = sc.get("name", "召唤物")
+    utype = sc.get("unitType", UNIT_SHIKIGAMI)
+    # 检查同名式神是否已存在
+    existing = [u for u in state.units if u.unit_type == UNIT_SHIKIGAMI and u.owner == summoner.id and u.is_alive]
+    if existing:
+        _log(state, f"{summoner.name} 的式神 {existing[0].name} 仍在场，无法重复召唤。")
+        return
+    duration = sc.get("duration", 300)
+    # 根据玩家等级施展召唤 — 帧级流程
+    ct = skill.cast_time
+    cost = calculate_mp_cost(summoner, skill)
+    summoner.mp = max(0, summoner.mp - cost)
+    summoner.atb = 0
+    _log(state, f"{summoner.name} 开始咏唱召唤 {sname}（{ct} 帧）…")
+    _advance_time(state, ct)
+    st = sc.get("baseStats", {})
+    summon_unit = Unit(
+        id=f"{utype}_{summoner.id}_{sc.get('name','')}_{int(state.global_action_time)}",
+        name=sname,
+        unit_type=utype,
+        hp=st.get("hp", 80), max_hp=st.get("max_hp", st.get("hp", 80)),
+        mp=st.get("mp", 20), max_mp=st.get("max_mp", st.get("mp", 20)),
+        atb=0, speed=st.get("speed", 15),
+        constitution=st.get("constitution", 10),
+        martial_arts=st.get("martialArts", 20),
+        cursed_energy=st.get("cursedEnergy", 5),
+        cursed_energy_control=st.get("cursedEnergyControl", 5),
+        cursed_energy_efficiency=st.get("cursedEnergyEfficiency", 5),
+        talent=st.get("talent", 8),
+        skills=[Skill(
+            id=sk.get("id",""), name=sk.get("name",""), cost=sk.get("cost",0),
+            type=sk.get("type","martial"), damage_multiplier=sk.get("damageMultiplier",1.0),
+            cast_time=sk.get("castTime",10), base_recovery_speed=sk.get("baseRecoverySpeed",25),
+            min_distance=sk.get("minDistance",0), max_distance=sk.get("maxDistance",0)
+        ) for sk in sc.get("skills", [])],
+        is_alive=True, distance=summoner.distance, owner=summoner.id,
+        recovery_speed=st.get("speed", 15), summon_duration=duration
+    )
+    state.units.append(summon_unit)
+    _log(state, f"{summoner.name} 召唤了 {sname}！（HP: {summon_unit.hp}, ATK: {summon_unit.martial_arts}, 持续: {duration} AV）")
+
+def _tick_summon_duration(state):
+    """推进所有召唤物的持续时间，超时则移除"""
+    expired = []
+    for u in state.units:
+        if u.unit_type in (UNIT_SHIKIGAMI,) and u.is_alive and u.summon_duration > 0:
+            u.summon_duration -= FRAME_STEP
+            if u.summon_duration <= 0:
+                u.is_alive = False
+                expired.append(u)
+    for u in expired:
+        _log(state, f"{u.name} 的持续时间已到，消失在影子中。")
+        state.units = [x for x in state.units if x.id != u.id]
+
+def _resolve_shikigami_turns(state):
+    """检查所有 shikigami 的 ATB，满则自动执行 AI 行动"""
+    for u in list(state.units):
+        if u.unit_type == UNIT_SHIKIGAMI and u.is_alive and u.atb >= ATB_MAX:
+            _resolve_shikigami_action(u, state)
+
+def _resolve_shikigami_action(shiki, state):
+    """式神 AI：优先攻击最近的敌对目标"""
+    target = state.find_enemy()
+    if not target or not target.is_alive:
+        shiki.atb = 0
+        return
+    # 选择可用技能 — 优先体术
+    avail = [s for s in shiki.skills if s.type in ("martial","cursed") and shiki.mp >= s.cost
+             and s.min_distance <= shiki.distance <= s.max_distance]
+    if not avail:
+        shiki.atb = 0
+        _log(state, f"{shiki.name} 没有可用技能，略过行动。")
+        return
+    # 优先高伤害技能
+    avail.sort(key=lambda s: -s.damage_multiplier)
+    skill = avail[0]
+    _resolve_distance(shiki, skill, target, state)
+    is_bf = _check_black_flash(shiki)
+    dmg = calculate_damage(shiki, skill, target, is_bf)
+    dmg = apply_damage_variance(dmg, is_bf)
+    cost = calculate_mp_cost(shiki, skill)
+    shiki.mp = max(0, shiki.mp - cost)
+    shiki.atb = 0
+    target.hp = max(0, target.hp - dmg)
+    update_aggro(shiki, target, dmg, "damage")  # Phase 9: aggro
+    _log(state, f"[{shiki.name}] 自动使用 {skill.name}{'【黑闪！】' if is_bf else ''}，造成 {dmg} 点伤害。")
+    if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
+    _check_battle_end(state)
+
+def _handle_shikigami_skill(action, state, tracker=None):
+    """手动控制式神使用技能"""
+    sid = action.get("skill_id", "")
+    tid = action.get("target", "")
+    actor = state.find_unit(action.get("actor", ""))
+    target = state.find_unit(tid)
+    if not actor or not target or actor.unit_type != UNIT_SHIKIGAMI:
+        _log(state, "[ERROR] 无效的式神行动。"); return
+    skill = None
+    for s in actor.skills:
+        if s.id == sid: skill = s; break
+    if not skill: _log(state, f"[ERROR] 式神 {actor.name} 未找到技能: {sid}"); return
+    if actor.mp < skill.cost:
+        _log(state, f"式神咒力不足！需要 {skill.cost} MP，当前 {actor.mp} MP。"); return
+    if tracker: tracker.record_skill_use(sid)
+    _resolve_distance(actor, skill, target, state)
+    is_bf = _check_black_flash(actor)
+    dmg = calculate_damage(actor, skill, target, is_bf)
+    dmg = apply_damage_variance(dmg, is_bf)
+    cost = calculate_mp_cost(actor, skill)
+    actor.mp = max(0, actor.mp - cost)
+    actor.atb = 0
+    target.hp = max(0, target.hp - dmg)
+    update_aggro(actor, target, dmg, "damage")  # Phase 9: aggro
+    _log(state, f"[手动] {actor.name} 使用 {skill.name}{'【黑闪！】' if is_bf else ''}，造成 {dmg} 点伤害。")
+    if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
+    _check_battle_end(state)
+
+# ===== Phase 9: add_ally handler =====
+
+def _handle_add_ally(action, state):
+    """运行时从 JS 侧传入 ally 配置 JSON，创建 ally Unit 并加入战斗"""
+    ally_config = action.get("ally_config", {})
+    if not ally_config:
+        _log(state, "[ERROR] add_ally 缺少 ally_config。")
+        return
+    add_ally_to_battle(state, ally_config)
+
+# ===== Phase 9: 友方 NPC 助战 AI =====
+
+def _resolve_ally_turns(state):
+    """检查所有 ally 的 ATB，满则自动执行预设 AI 行动"""
+    for u in list(state.units):
+        if u.unit_type == "ally" and u.is_alive and u.atb >= ATB_MAX:
+            _resolve_ally_action(u, state)
+
+def _resolve_ally_action(ally, state):
+    """友方 NPC AI：选定敌人 → 选择最优技能 → 攻击。
+    aiBehavior 优先级: aggressive(高伤害) > balanced(兼顾距离) > defensive(节约MP) > support(预留)"
+    """
+    target = state.find_enemy()
+    if not target or not target.is_alive:
+        ally.atb = 0
+        return
+    avail = [s for s in ally.skills
+             if s.type in ("martial","cursed") and ally.mp >= s.cost
+             and s.min_distance <= ally.distance <= s.max_distance]
+    if not avail:
+        ally.atb = 0
+        _log(state, f"[{ally.name}] 没有可用技能，略过。")
+        return
+    # 简单 AI: 优先高伤害技能
+    avail.sort(key=lambda s: -s.damage_multiplier)
+    skill = avail[0]
+    _resolve_distance(ally, skill, target, state)
+    is_bf = _check_black_flash(ally)
+    dmg = calculate_damage(ally, skill, target, is_bf)
+    dmg = apply_damage_variance(dmg, is_bf)
+    cost = calculate_mp_cost(ally, skill)
+    ally.mp = max(0, ally.mp - cost)
+    ally.atb = 0
+    target.hp = max(0, target.hp - dmg)
+    update_aggro(ally, target, dmg, "damage")
+    _log(state, f"[{ally.name}] 使用 {skill.name}{'【黑闪！】' if is_bf else ''} → {target.name}，造成 {dmg} 点伤害。")
+    if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
+    _check_battle_end(state)
+
+def create_ally_unit(ally_config):
+    """从 NPC_ALLY_CONFIGS 配置创建 ally Unit（纯数据 → Unit）"""
+    st = ally_config.get("baseStats", {})
+    sk = [Skill(
+        id=s.get("id",""), name=s.get("name",""), cost=s.get("cost",0),
+        type=s.get("type","martial"), damage_multiplier=s.get("damageMultiplier",1.0),
+        cast_time=s.get("castTime",10), base_recovery_speed=s.get("baseRecoverySpeed",25),
+        min_distance=s.get("minDistance",0), max_distance=s.get("maxDistance",0)
+    ) for s in ally_config.get("skills", [])]
+    return Unit(
+        id=f"ally_{ally_config.get('unitType','')}_{ally_config.get('name','')}",
+        name=ally_config.get("name","友方NPC"),
+        unit_type="ally",
+        hp=st.get("hp",200), max_hp=st.get("max_hp",st.get("hp",200)),
+        mp=st.get("mp",60), max_mp=st.get("max_mp",st.get("mp",60)),
+        atb=ATB_MAX, speed=st.get("speed",14),
+        constitution=st.get("constitution",18),
+        martial_arts=st.get("martialArts",20),
+        cursed_energy=st.get("cursedEnergy",14),
+        cursed_energy_control=st.get("cursedEnergyControl",14),
+        cursed_energy_efficiency=st.get("cursedEnergyEfficiency",12),
+        talent=st.get("talent",14),
+        skills=sk, is_alive=True,
+        distance=DISTANCE_MID, owner=None,
+        recovery_speed=st.get("speed",14)
+    )
+
+def add_ally_to_battle(state, ally_config):
+    """向战斗 state 中添加友方 NPC 助战 Unit"""
+    # 检查是否已存在
+    ally_name = ally_config.get("name","")
+    existing = [u for u in state.units if u.unit_type == "ally" and u.name == ally_name]
+    if existing:
+        _log(state, f"{ally_name} 已在场上。")
+        return None
+    ally = create_ally_unit(ally_config)
+    state.units.append(ally)
+    _log(state, f"{ally_name} 加入战斗！（HP: {ally.hp}, ATK: {ally.martial_arts}）")
+    return ally
+
 # ===== 束缚 =====
 VOWS = {"offense_boost":{"id":"offense_boost","name":"攻击强化之缚","description":"攻击伤害+50%，承受伤害+30%","forbidden_type":None,"bonus_damage_pct":0.50,"penalty_dmg_taken_pct":0.30,"speed_bonus":0,"violation_hp_loss_pct":0.20},"no_cursed_speed":{"id":"no_cursed_speed","name":"禁咒加速之缚","description":"禁用咒术，体术速度+30%","forbidden_type":"cursed","bonus_damage_pct":0,"penalty_dmg_taken_pct":0,"speed_bonus":0.30,"recovery_bonus":0.30,"violation_hp_loss_pct":0.20}}
 def get_available_vows(): return [{"id":v["id"],"name":v["name"],"description":v["description"],"forbidden_type":v.get("forbidden_type")} for v in VOWS.values()]
@@ -313,8 +566,8 @@ def _deserialize_state(d):
     pd=d.get("player",{}); ed=d.get("enemy",{})
     extra=[u for u in d.get("units",[]) if u.get("id") not in (pd.get("id"), ed.get("id"))]
     def _u(cd):
-        sks=[Skill(id=s.get("id",""),name=s.get("name",""),cost=s.get("cost",0),type=s.get("type","martial"),damage_multiplier=s.get("damage_multiplier",1.0),min_distance=s.get("min_distance",0),max_distance=s.get("max_distance",3),cast_time=s.get("cast_time",5),base_recovery_speed=s.get("base_recovery_speed",30)) for s in cd.get("skills",[])]
-        return Unit(id=cd.get("id",""),name=cd.get("name",""),unit_type=cd.get("unit_type","player"),hp=cd.get("hp",0),max_hp=cd.get("max_hp",0),mp=cd.get("mp",0),max_mp=cd.get("max_mp",0),atb=cd.get("atb",0),speed=cd.get("speed",10),is_alive=cd.get("is_alive",True),skills=sks,constitution=cd.get("constitution",10),martial_arts=cd.get("martial_arts",10),cursed_energy=cd.get("cursed_energy",10),cursed_energy_control=cd.get("cursed_energy_control",10),cursed_energy_efficiency=cd.get("cursed_energy_efficiency",10),talent=cd.get("talent",10),distance=cd.get("distance",2),active_vow=cd.get("active_vow"),recovery_speed=cd.get("recovery_speed",cd.get("speed",10)),owner=cd.get("owner"),attack_interval=cd.get("attack_interval",0),attack_damage=cd.get("attack_damage",0),status_effects=cd.get("status_effects",[]),domain_maintenance_cost=cd.get("domain_maintenance_cost",0))
+        sks=[Skill(id=s.get("id",""),name=s.get("name",""),cost=s.get("cost",0),type=s.get("type","martial"),damage_multiplier=s.get("damage_multiplier",1.0),min_distance=s.get("min_distance",0),max_distance=s.get("max_distance",3),cast_time=s.get("cast_time",5),base_recovery_speed=s.get("base_recovery_speed",30),summon_config=s.get("summon_config")) for s in cd.get("skills",[])]
+        return Unit(id=cd.get("id",""),name=cd.get("name",""),unit_type=cd.get("unit_type","player"),hp=cd.get("hp",0),max_hp=cd.get("max_hp",0),mp=cd.get("mp",0),max_mp=cd.get("max_mp",0),atb=cd.get("atb",0),speed=cd.get("speed",10),is_alive=cd.get("is_alive",True),skills=sks,constitution=cd.get("constitution",10),martial_arts=cd.get("martial_arts",10),cursed_energy=cd.get("cursed_energy",10),cursed_energy_control=cd.get("cursed_energy_control",10),cursed_energy_efficiency=cd.get("cursed_energy_efficiency",10),talent=cd.get("talent",10),distance=cd.get("distance",2),active_vow=cd.get("active_vow"),recovery_speed=cd.get("recovery_speed",cd.get("speed",10)),owner=cd.get("owner"),attack_interval=cd.get("attack_interval",0),attack_damage=cd.get("attack_damage",0),status_effects=cd.get("status_effects",[]),domain_maintenance_cost=cd.get("domain_maintenance_cost",0),summon_duration=cd.get("summon_duration",0),aggro=cd.get("aggro",0))
     return BattleState(units=[_u(pd),_u(ed)]+[_u(x) for x in extra],turn=d.get("turn","player"),log=d.get("log",[]),round_number=d.get("round_number",1),phase=d.get("phase",PHASE_WAITING),last_hit_was_black_flash=d.get("last_hit_was_black_flash",False),global_action_time=d.get("global_action_time",0))
 
 def generate_battle_rewards(tracker, enemy_config=None, player_rank="四级", enemy_rank="四级", is_low_hp=False):

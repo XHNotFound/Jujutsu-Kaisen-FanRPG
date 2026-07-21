@@ -311,13 +311,26 @@ def _deserialize_state(d):
         return Unit(id=cd.get("id",""),name=cd.get("name",""),unit_type=cd.get("unit_type","player"),hp=cd.get("hp",0),max_hp=cd.get("max_hp",0),mp=cd.get("mp",0),max_mp=cd.get("max_mp",0),atb=cd.get("atb",0),speed=cd.get("speed",10),is_alive=cd.get("is_alive",True),skills=sks,constitution=cd.get("constitution",10),martial_arts=cd.get("martial_arts",10),cursed_energy=cd.get("cursed_energy",10),cursed_energy_control=cd.get("cursed_energy_control",10),cursed_energy_efficiency=cd.get("cursed_energy_efficiency",10),talent=cd.get("talent",10),distance=cd.get("distance",2),active_vow=cd.get("active_vow"),recovery_speed=cd.get("recovery_speed",cd.get("speed",10)),owner=cd.get("owner"),attack_interval=cd.get("attack_interval",0),attack_damage=cd.get("attack_damage",0),status_effects=cd.get("status_effects",[]),domain_maintenance_cost=cd.get("domain_maintenance_cost",0))
     return BattleState(units=[_u(pd),_u(ed)]+[_u(x) for x in extra],turn=d.get("turn","player"),log=d.get("log",[]),round_number=d.get("round_number",1),phase=d.get("phase",PHASE_WAITING),last_hit_was_black_flash=d.get("last_hit_was_black_flash",False),global_action_time=d.get("global_action_time",0))
 
-def generate_battle_rewards(tracker, enemy_config=None):
-    if enemy_config is None: enemy_config={"money":{"min":20,"max":50},"skillPoints":1,"inspirationChance":0.05}
-    money=enemy_config["money"]["min"]+random.randint(0,enemy_config["money"]["max"]-enemy_config["money"]["min"])
-    sp=enemy_config.get("skillPoints",1); insp=random.random()<enemy_config.get("inspirationChance",0.05)
-    pg={sid:count*5 for sid,count in tracker.skill_usage.items()}
+def generate_battle_rewards(tracker, enemy_config=None, player_rank="四级", enemy_rank="四级", is_low_hp=False):
+    """Phase 8: 细化奖励 — 金币/技能经验/技能点/灵感按等级差和残血加成"""
+    if enemy_config is None: enemy_config={"money":{"min":20,"max":50},"skillPoints":1,"inspirationChance":0.05,"skillExp":5}
+    # 等级差缩放
+    RANKS=["不入流","四级","准三级","三级","准二级","二级","准一级","一级","准特级","特级","现代最强"]
+    pi=RANKS.index(player_rank) if player_rank in RANKS else 1
+    ei=RANKS.index(enemy_rank) if enemy_rank in RANKS else 1
+    ld=ei-pi
+    scale=max(0.1,1-ld*0.2)
+    money_base=enemy_config["money"]["min"]+random.randint(0,enemy_config["money"]["max"]-enemy_config["money"]["min"])
+    money=max(1,int(money_base*scale))
+    sp=enemy_config.get("skillPoints",1)
+    skill_exp=enemy_config.get("skillExp",5)
+    insp_chance=enemy_config.get("inspirationChance",0.05)
+    if ld>0: insp_chance=min(1.0,insp_chance+0.30)
+    if is_low_hp: insp_chance=min(1.0,insp_chance*2)
+    insp=random.random()<insp_chance
+    pg={sid:count*skill_exp for sid,count in tracker.skill_usage.items()}
     tracker.set_rewards(money,sp,insp)
-    return {"money":money,"skillPoints":sp,"inspirationGained":insp,"proficiencyGains":pg}
+    return {"money":money,"skillPoints":sp,"inspirationGained":insp,"proficiencyGains":pg,"skillExp":skill_exp}
 
 # ===== 领域 =====
 def _handle_expand_domain(action, state):

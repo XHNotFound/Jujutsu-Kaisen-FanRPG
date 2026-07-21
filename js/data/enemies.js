@@ -126,6 +126,96 @@ export const ENEMIES = {
         { id: "boss_catastrophe", name: "灾厄降临", cost: 50, type: "cursed", damageMultiplier: 4.5, castTime: 40, baseRecoverySpeed: 8, minDistance: 0, maxDistance: 3 }
       ],
       rewards: { money: { min: 500, max: 1000 }, skillExp: 60, skillPoints: 8, inspirationChance: 0.50 }
+    },
+    // ================================================================
+    //  Phase 10: 高阶具名咒灵
+    //  技能通过 refId 引用 data/skills.js 中的玩家技能树
+    //  level 表示等效等级，由引擎根据 levelEffects 换算实际数值
+    //  领域配置 domainId 映射 data/domains.js
+    // ================================================================
+    {
+      id: "boss_jogo",
+      name: "漏瑚",
+      rank: "特级",
+      tier: "boss",
+      baseStats: { hp: 700, max_hp: 700, mp: 250, max_mp: 250, speed: 20, constitution: 28, martial_arts: 30, cursed_energy: 32, cursed_energy_control: 30, cursed_energy_efficiency: 22, talent: 25 },
+      skills: [
+        { refId: "murasaki", level: 3 },                  // 引用虚式·茈 (Lv.3)
+        { refId: "aoi_max", level: 3 },                   // 引用苍·最大出力 (Lv.3)
+        { id: "boss_jogo_volcano", name: "火山弹", cost: 35, type: "cursed", damageMultiplier: 5.0, castTime: 28, baseRecoverySpeed: 12, minDistance: 0, maxDistance: 3 },
+        { id: "boss_jogo_insect", name: "火虫", cost: 20, type: "cursed", damageMultiplier: 3.0, castTime: 18, baseRecoverySpeed: 18, minDistance: 1, maxDistance: 2 }
+      ],
+      domainId: "jogo_coffin",
+      domainName: "盖棺铁围山",
+      domainHp: 800,
+      rewards: { money: { min: 800, max: 1500 }, skillExp: 80, skillPoints: 10, inspirationChance: 0.60 }
+    },
+    {
+      id: "boss_mahito",
+      name: "真人",
+      rank: "特级",
+      tier: "boss",
+      baseStats: { hp: 650, max_hp: 650, mp: 280, max_mp: 280, speed: 22, constitution: 24, martial_arts: 32, cursed_energy: 30, cursed_energy_control: 28, cursed_energy_efficiency: 24, talent: 28 },
+      skills: [
+        { id: "boss_mahito_touch", name: "无为转变", cost: 30, type: "cursed", damageMultiplier: 3.5, castTime: 22, baseRecoverySpeed: 16, minDistance: 0, maxDistance: 0 },
+        { id: "boss_mahito_morph", name: "肉体变形", cost: 15, type: "cursed", damageMultiplier: 2.5, castTime: 15, baseRecoverySpeed: 22, minDistance: 0, maxDistance: 1 },
+        { id: "boss_mahito_dolls", name: "改造人偶", cost: 25, type: "cursed", damageMultiplier: 2.8, castTime: 20, baseRecoverySpeed: 18, minDistance: 0, maxDistance: 3 }
+      ],
+      domainId: "mahito_self_embodiment",
+      domainName: "自闭圆顿裹",
+      domainHp: 700,
+      rewards: { money: { min: 800, max: 1500 }, skillExp: 80, skillPoints: 10, inspirationChance: 0.60 }
+    },
+    {
+      id: "boss_dagon",
+      name: "陀艮",
+      rank: "准特级",
+      tier: "boss",
+      baseStats: { hp: 550, max_hp: 550, mp: 200, max_mp: 200, speed: 16, constitution: 25, martial_arts: 26, cursed_energy: 26, cursed_energy_control: 24, cursed_energy_efficiency: 20, talent: 22 },
+      skills: [
+        { id: "boss_dagon_water", name: "水流弹", cost: 20, type: "cursed", damageMultiplier: 3.0, castTime: 18, baseRecoverySpeed: 20, minDistance: 0, maxDistance: 3 },
+        { id: "boss_dagon_shikigami", name: "鱼形式神", cost: 30, type: "cursed", damageMultiplier: 3.5, castTime: 24, baseRecoverySpeed: 16, minDistance: 0, maxDistance: 3 },
+        { id: "boss_dagon_swarm", name: "鱼群吞噬", cost: 40, type: "cursed", damageMultiplier: 4.0, castTime: 30, baseRecoverySpeed: 12, minDistance: 0, maxDistance: 2 }
+      ],
+      domainId: "dagon_horizon",
+      domainName: "荡蕴平线",
+      domainHp: 600,
+      rewards: { money: { min: 600, max: 1200 }, skillExp: 60, skillPoints: 8, inspirationChance: 0.50 }
+    },
+    {
+      id: "boss_sukuna_3f",
+      name: "两面宿傩（三指）",
+      rank: "特级",
+      tier: "boss",
+      baseStats: { hp: 900, max_hp: 900, mp: 300, max_mp: 300, speed: 25, constitution: 35, martial_arts: 38, cursed_energy: 36, cursed_energy_control: 35, cursed_energy_efficiency: 30, talent: 35 },
+      skills: [
+        { id: "boss_sukuna_cleave", name: "解", cost: 15, type: "cursed", damageMultiplier: 4.0, castTime: 12, baseRecoverySpeed: 22, minDistance: 0, maxDistance: 1 },
+        { id: "boss_sukuna_dismantle", name: "捌", cost: 20, type: "cursed", damageMultiplier: 4.5, castTime: 15, baseRecoverySpeed: 20, minDistance: 0, maxDistance: 3 },
+        { id: "boss_sukuna_cleave_net", name: "解·网", cost: 35, type: "cursed", damageMultiplier: 5.5, castTime: 22, baseRecoverySpeed: 14, minDistance: 0, maxDistance: 2 },
+        { id: "boss_sukuna_slash", name: "袈裟斩", cost: 0, type: "martial", damageMultiplier: 3.0, castTime: 8, baseRecoverySpeed: 26, minDistance: 0, maxDistance: 0 }
+      ],
+      domainId: "sukuna_shrine",
+      domainName: "伏魔御厨子",
+      domainHp: 1000,
+      rewards: { money: { min: 1500, max: 3000 }, skillExp: 120, skillPoints: 15, inspirationChance: 0.80 }
+    },
+    {
+      id: "boss_choso",
+      name: "胀相",
+      rank: "准特级",
+      tier: "boss",
+      baseStats: { hp: 500, max_hp: 500, mp: 220, max_mp: 220, speed: 18, constitution: 22, martial_arts: 28, cursed_energy: 24, cursed_energy_control: 22, cursed_energy_efficiency: 18, talent: 20 },
+      skills: [
+        { refId: "piercing_blood", level: 4 },           // 引用穿血 (Lv.4)
+        { refId: "supernova", level: 3 },                 // 引用超新星 (Lv.3)
+        { refId: "blood_blade", level: 4 },               // 引用血刃 (Lv.4)
+        { id: "boss_choso_convergence", name: "百敛·穿血", cost: 35, type: "cursed", damageMultiplier: 5.0, castTime: 25, baseRecoverySpeed: 14, minDistance: 0, maxDistance: 3 },
+        { id: "boss_choso_slicing", name: "血星弹", cost: 15, type: "cursed", damageMultiplier: 2.2, castTime: 12, baseRecoverySpeed: 22, minDistance: 1, maxDistance: 3 }
+      ],
+      domainId: "choso_nineblood",
+      domainName: "九血之狱（未完成）",
+      domainHp: 500,
+      rewards: { money: { min: 600, max: 1200 }, skillExp: 60, skillPoints: 8, inspirationChance: 0.50 }
     }
   ]
 };
@@ -143,6 +233,7 @@ export function rankIndex(rankName) {
 // ================================================================
 //  getRandomEnemy: 根据玩家评定动态选择敌人
 //  70%: 相当±1级, 20%: 高1-2级, 10%: 低2级以上
+//  Phase 10: 扩展至 boss/elite 全池
 // ================================================================
 export function getRandomEnemy(playerRank, tier) {
   if (tier && ENEMIES[tier]) {
@@ -151,18 +242,32 @@ export function getRandomEnemy(playerRank, tier) {
   }
   // 动态选择
   const allNormals = ENEMIES.normal || [];
+  const allElites = ENEMIES.elite || [];
+  const allBosses = ENEMIES.boss || [];
   const playerIdx = rankIndex(playerRank);
   const roll = Math.random();
   let candidates;
-  if (roll < 0.70) {
-    // 70%: ±1级
+  if (roll < 0.60) {
+    // 60%: ±1级 (normal)
     candidates = allNormals.filter(e => Math.abs(rankIndex(e.rank) - playerIdx) <= 1);
-  } else if (roll < 0.90) {
-    // 20%: 高1-2级（精英/boss）
-    const elites = (ENEMIES.elite || []).filter(e => rankIndex(e.rank) - playerIdx >= 1 && rankIndex(e.rank) - playerIdx <= 2);
-    candidates = elites.length > 0 ? elites : allNormals;
+  } else if (roll < 0.80) {
+    // 20%: 高1~2级 elite
+    candidates = allElites.filter(e => {
+      const eIdx = rankIndex(e.rank);
+      return eIdx - playerIdx >= 1 && eIdx - playerIdx <= 2;
+    });
+    if (!candidates || candidates.length === 0) candidates = allNormals;
+  } else if (roll < 0.95) {
+    // 15%: boss (准特级以上)
+    candidates = allBosses.filter(e => {
+      const eIdx = rankIndex(e.rank);
+      return eIdx - playerIdx >= 2;
+    });
+    if (!candidates || candidates.length === 0) {
+      candidates = allBosses;
+    }
   } else {
-    // 10%: 低2级以上
+    // 5%: 低2级以上
     candidates = allNormals.filter(e => playerIdx - rankIndex(e.rank) >= 2);
   }
   if (!candidates || candidates.length === 0) candidates = allNormals;

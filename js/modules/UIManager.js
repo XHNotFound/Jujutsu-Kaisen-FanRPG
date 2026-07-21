@@ -389,6 +389,9 @@ export class UIManager {
   renderMainScreen() {
     this.showScreen('screen-main');
 
+    // clean up any stale train panel delegation
+    this._unbindTrainDelegation();
+
     const state = this.saveManager.getState();
     if (!state) {
       this.renderTitleScreen();

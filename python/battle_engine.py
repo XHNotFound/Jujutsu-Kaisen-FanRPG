@@ -108,9 +108,12 @@ def create_player_from_save(save_data):
                 atb=ATB_MAX,speed=spd,constitution=con,martial_arts=attrs.get("martialArts",10),
                 cursed_energy=ce,cursed_energy_control=attrs.get("cursedEnergyControl",10),
                 cursed_energy_efficiency=attrs.get("cursedEnergyEfficiency",10),talent=attrs.get("talent",10),
-                skills=_build_player_skills(tid),is_alive=True,distance=DISTANCE_MID,active_vow=None,recovery_speed=spd)
+                skills=_build_player_skills(tid, save_data.get("skillLevels", {})),
+                is_alive=True,distance=DISTANCE_MID,active_vow=None,recovery_speed=spd)
 
-def _build_player_skills(tid):
+def _build_player_skills(tid, skill_levels=None):
+    """Build skills based on unlocked skills in skillLevels. Only base + unlocked branch skills are included."""
+    if skill_levels is None: skill_levels = {}
     B=[("attack","体术平A",0,"martial",1.0,5,30,0,0,"基础体术"),("advance","逼近",0,"movement",0.0,3,35,0,3,"逼近1档"),("retreat","后退",0,"movement",0.0,3,35,0,3,"后退1档")]
     sk=[Skill(id=i,name=n,cost=c,type=t,damage_multiplier=m,cast_time=ct,base_recovery_speed=r,min_distance=mn,max_distance=mx,description=d) for (i,n,c,t,m,ct,r,mn,mx,d) in B]
     TS={"cursedEnergyBoost":[("cursed_boost","咒力强化拳",10,"cursed",1.8,12,28,0,0,"以咒力强化拳击")],
@@ -123,6 +126,17 @@ def _build_player_skills(tid):
         "strawDoll":[("doll_basic","基础操控",10,"cursed",1.5,14,26,0,1,"人偶攻击"),("doll_scout","远程侦查",12,"cursed",1.6,16,24,1,3,"远程侦查"),("doll_resonance","共鸣",13,"cursed",1.9,18,22,0,3,"远程冲击"),("doll_overload","傀儡自爆",30,"cursed",5.0,30,10,1,1,"引爆傀儡")],
         "pureMartial":[("martial_combo","体术连击",0,"martial",1.2,8,30,0,0,"高速连击"),("black_flash_boost","黑闪强化",0,"martial",1.5,6,32,0,0,"提升黑闪"),("rush_strike","疾风突袭",0,"martial",2.0,10,26,0,1,"速度突袭")]}
     for e in TS.get(tid, TS.get("cursedEnergyBoost",[])):
+        # Fix: only include branch skills if unlocked in skillLevels (not all skills)
+        skill_id = e[0]
+        # Base skills (aoi/aka/gyokuken etc.) are always available.
+        # Branch skills require skillLevels[skill_id] >= 1
+        branch_skills = {"aoi_strike","aoi_max","aka_max","murasaki","nue","orochi","max_elephant","tora_no_fun","makora",
+                         "slicing_exorcism","supernova","crimson_binding","canal",
+                         "tactical_combo","ratio_strike","collapse","overtime",
+                         "curse_sphere","uzumaki_pseudo","doll_scout","doll_overload",
+                         "black_flash_boost","rush_strike"}
+        if skill_id in branch_skills and skill_levels.get(skill_id, 0) < 1:
+            continue  # skip unlocked branch skills
         sk.append(Skill(id=e[0],name=e[1],cost=e[2],type=e[3],damage_multiplier=e[4],cast_time=e[5],base_recovery_speed=e[6],min_distance=e[7],max_distance=e[8],description=e[9]))
     return sk
 
@@ -277,9 +291,9 @@ def _handle_expand_domain(action, state):
     ic=action.get("is_complete",True); dh=action.get("domain_hp",500)
     ai=action.get("attack_interval",15); ad=action.get("attack_damage",50); mc=action.get("mp_cost",5)
     du=Unit(id=f"{aid}_domain_{did}",name=dn,unit_type=UNIT_DOMAIN,hp=dh,max_hp=dh,mp=0,max_mp=0,atb=0,speed=0,owner=aid,attack_interval=ai,attack_damage=ad,domain_maintenance_cost=mc)
-    state.units.append(du); _advance_time(state, 10)
     lt="完全领域" if ic else "不完全领域"
-    _log(state,f"{owner.name} 展开了{lt}「{dn}」！领域 HP: {dh}, 攻击间隔: {ai} 帧, 伤害: {ad}")
+    _log(state, f"{owner.name} 展开了{lt}\"{dn}\"！领域 HP: {dh}, 攻击间隔: {ai} 帧, 伤害: {ad}")
+    state.units.append(du); _advance_time(state, 10)
 
 def _handle_cancel_domain(action, state):
     did=action.get("domain_id",""); domain=state.find_unit(did)

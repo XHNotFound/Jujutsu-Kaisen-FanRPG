@@ -29,6 +29,114 @@ def update_aggro(attacker, target, damage, action_type="damage"):
     if delta > 0:
         target.aggro = (target.aggro or 0) + delta
 
+# ===== Phase 10: 弱者防御手段（领域对抗 Buff）=====
+
+# 领域对抗 Buff 配置
+DOMAIN_COUNTER_BUFFS = {
+    "simple_domain": {
+        "id": "simple_domain",
+        "name": "简易领域",
+        "type": "domain_counter",
+        "shield_hp": 200,              # 护盾 HP
+        "negate_domain_special": True, # 抵消敌方领域特殊效果
+        "domain_damage_reduction": 0.0,# 不减免，靠护盾扛
+        "mp_drain_per_10av": 2,        # 每 10 AV 消耗 2 咒力
+        "extra_mp_drain_on_hit": False # 受击不额外扣咒力
+    },
+    "falling_blossom": {
+        "id": "falling_blossom",
+        "name": "落花之情",
+        "type": "domain_counter",
+        "shield_hp": 0,                # 无护盾
+        "negate_domain_special": True, # 抵消敌方领域特殊效果
+        "domain_damage_reduction": 1.0,# 100% 免伤
+        "mp_drain_per_10av": 5,        # 每 10 AV 消耗 5 咒力
+        "extra_mp_drain_on_hit": True  # 受击按伤害量额外扣咒力
+    },
+    "hollow_wicker": {
+        "id": "hollow_wicker",
+        "name": "弥虚葛笼",
+        "type": "domain_counter",
+        "shield_hp": 0,
+        "negate_domain_special": True,
+        "domain_damage_reduction": 0.8,# 减少 80% 伤害
+        "mp_drain_per_10av": 8,        # 每 10 AV 消耗 8 咒力（高消耗）
+        "extra_mp_drain_on_hit": False
+    }
+}
+
+def activate_domain_counter(unit, buff_id):
+    """为指定 Unit 激活领域对抗 Buff。返回激活的 Buff 配置或 None。"""
+    buff_cfg = DOMAIN_COUNTER_BUFFS.get(buff_id)
+    if not buff_cfg:
+        return None
+    # 检查是否已有同类 Buff
+    existing = [b for b in unit.domain_counter_buffs if b.get("id") == buff_id]
+    if existing:
+        return None  # 已有，不重复激活
+    # 创建 Buff 实例
+    buff_instance = dict(buff_cfg)  # 浅拷贝
+    buff_instance["current_shield_hp"] = buff_cfg.get("shield_hp", 0)
+    buff_instance["activated_at"] = 0  # 由调用方设置
+    unit.domain_counter_buffs.append(buff_instance)
+    return buff_instance
+
+def has_domain_counter(unit):
+    """检查 Unit 是否有任何激活的领域对抗 Buff"""
+    return len(unit.domain_counter_buffs) > 0
+
+def _tick_domain_counter_buffs(state):
+    """每帧推进领域对抗 Buff 的咒力消耗（每 10 AV 扣一次）"""
+    for u in state.units:
+        if not u.is_alive or not u.domain_counter_buffs:
+            continue
+        expired = []
+        for buf in u.domain_counter_buffs:
+            # 每 10 AV 扣咒力
+            drain_rate = buf.get("mp_drain_per_10av", 0)
+            if drain_rate > 0 and state.global_action_time % 10 == 0:
+                u.mp = max(0, u.mp - drain_rate)
+                if u.mp <= 0:
+                    expired.append(buf)
+            # 护盾耗尽
+            shield_current = buf.get("current_shield_hp", 0)
+            if buf.get("shield_hp", 0) > 0 and shield_current <= 0:
+                expired.append(buf)
+        for buf in expired:
+            u.domain_counter_buffs.remove(buf)
+            _log(state, f"{u.name} 的「{buf['name']}」效果消失了。")
+
+def apply_domain_counter_to_damage(unit, raw_dmg):
+    """对原始领域伤害应用领域对抗 Buff 的减免。
+    返回值: (effective_dmg, absorbed_by_shield, extra_mp_cost)
+    """
+    if not unit.domain_counter_buffs:
+        return (raw_dmg, 0, 0)
+
+    remaining_dmg = raw_dmg
+    absorbed = 0
+    extra_mp = 0
+
+    for buf in unit.domain_counter_buffs:
+        # 减免
+        reduction = buf.get("domain_damage_reduction", 0)
+        if reduction > 0:
+            reduced = int(remaining_dmg * reduction)
+            remaining_dmg -= reduced
+            absorbed += reduced
+        # 护盾吸收
+        shield = buf.get("current_shield_hp", 0)
+        if shield > 0 and remaining_dmg > 0:
+            absorbed_by_shield = min(shield, remaining_dmg)
+            remaining_dmg -= absorbed_by_shield
+            buf["current_shield_hp"] = shield - absorbed_by_shield
+            absorbed += absorbed_by_shield
+        # 受击额外扣咒力（落花之情）
+        if buf.get("extra_mp_drain_on_hit"):
+            extra_mp += raw_dmg  # 按原始伤害量扣咒力
+
+    return (remaining_dmg, absorbed, extra_mp)
+
 def _apply_shikigami_taunt_aggro(state):
     """被动仇恨修正：式神初始获得额外仇恨值，使敌人优先攻击式神而非主人。
     每次 _advance_time 推进时检查，给场上所有 shikigami 持续叠加微小的仇恨优势，
@@ -73,6 +181,8 @@ def _advance_time(state: BattleState, frames: int):
         _tick_summon_duration(state)
         # Phase 9: 式神仇恨优势（持续使敌人优先攻击式神而非主人）
         _apply_shikigami_taunt_aggro(state)
+        # Phase 10: 领域对抗 Buff 咒力消耗
+        _tick_domain_counter_buffs(state)
         # 1. 推进所有单位的 ATB
         for u in state.units:
             if u.is_alive:
@@ -146,9 +256,23 @@ def _resolve_domain_auto_attack(domain, state):
     owner.mp -= domain.domain_maintenance_cost
     target = state.find_enemy()
     if not target or not target.is_alive: return
-    dmg = domain.attack_damage; target.hp = max(0, target.hp - dmg)
-    update_aggro(domain, target, dmg, "damage")  # Phase 9: aggro
-    _log(state, f"{domain.name} 自动攻击 {target.name}，造成 {dmg} 点伤害。")
+    dmg = domain.attack_damage
+
+    # Phase 10: 检查目标的领域对抗 Buff（简易领域/落花之情/弥虚葛笼）
+    eff_dmg, absorbed, extra_mp = apply_domain_counter_to_damage(target, dmg)
+    target.hp = max(0, target.hp - eff_dmg)
+    if extra_mp > 0:
+        target.mp = max(0, target.mp - extra_mp)
+    update_aggro(domain, target, eff_dmg, "damage")  # Phase 9: aggro
+
+    if eff_dmg < dmg:
+        absorb_text = f"（减免 {dmg - eff_dmg}）" if eff_dmg > 0 else "（完全抵挡）"
+        _log(state, f"{domain.name} 自动攻击 {target.name}，但被「{target.domain_counter_buffs[0].get('name','领域对抗')}」{absorb_text}，实际造成 {eff_dmg} 点伤害。")
+        if extra_mp > 0:
+            _log(state, f"{target.name} 因落花之情额外消耗 {extra_mp} 咒力。")
+    else:
+        _log(state, f"{domain.name} 自动攻击 {target.name}，造成 {eff_dmg} 点伤害。")
+
     _check_battle_end(state)
     if state.turn in ("player_win","enemy_win"): return
     if owner.hp < owner.max_hp * 0.5:
@@ -333,6 +457,8 @@ def execute_action(action_json, state_json):
     elif at == "shikigami_skill": _handle_shikigami_skill(action, state, tracker)
     # Phase 9: add ally NPC to battle
     elif at == "add_ally": _handle_add_ally(action, state)
+    # Phase 10: activate domain counter buff (simple domain / falling blossom / hollow wicker)
+    elif at == "activate_domain_counter": _handle_activate_domain_counter(action, state)
     result = state.to_dict(); result["_tracker"] = tracker.to_dict()
     return json.dumps(result, ensure_ascii=False)
 
@@ -546,6 +672,26 @@ def _handle_add_ally(action, state):
         _log(state, "[ERROR] add_ally 缺少 ally_config。")
         return
     add_ally_to_battle(state, ally_config)
+
+# ===== Phase 10: 领域对抗 Buff 激活 =====
+
+def _handle_activate_domain_counter(action, state):
+    """玩家或敌人激活领域对抗 Buff（简易领域/落花之情/弥虚葛笼）"""
+    actor_id = action.get("actor", "player")
+    buff_id = action.get("buff_id", "")
+    actor = state.find_unit(actor_id)
+    if not actor:
+        _log(state, "[ERROR] 无效的行动者。")
+        return
+    buff = activate_domain_counter(actor, buff_id)
+    if buff:
+        _log(state, f"{actor.name} 开启了「{buff['name']}」！")
+        if buff.get("shield_hp", 0) > 0:
+            _log(state, f"护盾 HP: {buff['shield_hp']}")
+        if buff.get("mp_drain_per_10av", 0) > 0:
+            _log(state, f"每 10 AV 消耗 {buff['mp_drain_per_10av']} 咒力")
+    else:
+        _log(state, f"[ERROR] 无法激活 Buff: {buff_id}（不存在或已有同类 Buff）")
 
 # ===== Phase 9: 友方 NPC 助战 AI =====
 

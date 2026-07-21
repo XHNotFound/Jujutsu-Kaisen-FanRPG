@@ -94,6 +94,8 @@ class Unit:
     domain_maintenance_cost: int = 0   # 领域继承消耗
     summon_duration: int = 0           # Phase 9: 召唤物剩余持续时间（行动值）
     aggro: int = 0                     # Phase 9: 仇恨值
+    # Phase 10: 弱者防御手段 / 领域对抗 Buff
+    domain_counter_buffs: list = field(default_factory=list)  # [{id, name, type, hp, mpDrainRate, ...}]
 
     def to_dict(self):
         d = {
@@ -114,6 +116,7 @@ class Unit:
             "domain_maintenance_cost": self.domain_maintenance_cost,
             "summon_duration": self.summon_duration,
             "aggro": self.aggro,
+            "domain_counter_buffs": list(self.domain_counter_buffs),
             "skills": [s.to_dict() for s in self.skills]
         }
         return d

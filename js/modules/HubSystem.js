@@ -25,7 +25,14 @@ export class HubSystem {
 
     const ap = characterState.actionPoints || 0;
     const stamina = characterState.stamina || 0;
+    const sp = characterState.skillPoints || 0;
+    const curVal = (characterState.attributes && characterState.attributes[attrKey]) || 0;
 
+    // 技能点消耗 = 基础 2 + floor(当前值 / 5)，随属性增长递增
+    const spCost = 2 + Math.floor(curVal / 5);
+    if (sp < spCost) {
+      return { success: false, log: `技能点不足！需要 ${spCost} 技能点，当前 ${sp}。`, updatePayload: null };
+    }
     if (ap < TRAIN_CONFIG.apCost) {
       return { success: false, log: `行动力不足！需要 ${TRAIN_CONFIG.apCost} AP，当前 ${ap} AP。`, updatePayload: null };
     }
@@ -33,18 +40,21 @@ export class HubSystem {
       return { success: false, log: `体力不足！需要 ${TRAIN_CONFIG.staminaCost} 体力，当前 ${stamina} 体力。`, updatePayload: null };
     }
 
-    // 属性提升量：受天赋影响（天赋高则偏向高值）
+    // 基础提升 1 点，天赋影响额外概率
     const talent = (characterState.attributes && characterState.attributes.talent) || 10;
-    const talentBonus = Math.floor(talent / 10); // 每 10 点天赋 +1
-    const gain = Math.min(TRAIN_CONFIG.attrGainMax, TRAIN_CONFIG.attrGainMin + talentBonus + Math.floor(Math.random() * 2));
+    let gain = 1;
+    // 天赋每 10 点提供 10% 额外提升 1 点的概率（上限 50%）
+    const extraChance = Math.min(0.5, talent * 0.01);
+    if (Math.random() < extraChance) gain += 1;
 
     return {
       success: true,
-      log: `你闭关修炼了${attrDef.name}，${attrDef.name}提升了 ${gain} 点，但积累了 ${TRAIN_CONFIG.residualGain} 点咒力残秽。`,
+      log: `你闭关修炼了${attrDef.name}，${attrDef.name}提升了 ${gain} 点（消耗 ${spCost} 技能点），但积累了 ${TRAIN_CONFIG.residualGain} 点咒力残秽。`,
       updatePayload: {
         [`attributes.${attrKey}`]: gain,
         ap: -TRAIN_CONFIG.apCost,
         stamina: -TRAIN_CONFIG.staminaCost,
+        skillPoints: -spCost,
         residual: TRAIN_CONFIG.residualGain
       }
     };

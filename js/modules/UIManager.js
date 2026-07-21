@@ -660,16 +660,18 @@ export class UIManager {
 
     const ap = state.actionPoints || 0;
     const stamina = state.stamina !== undefined ? state.stamina : 100;
+    const sp = state.skillPoints || 0;
 
     let rows = '';
     for (const [key, cfg] of Object.entries(ATTRIBUTES)) {
       const curVal = (state.attributes && state.attributes[key]) || 0;
-      const canTrain = ap >= 20 && stamina >= 15;
+      const spCost = 2 + Math.floor(curVal / 5);
+      const canTrain = ap >= 20 && stamina >= 15 && sp >= spCost;
       rows += `
         <div class="train-row">
           <span class="train-name">${cfg.name}</span>
-          <span class="train-value">当前: ${curVal}</span>
-          <button class="btn btn-primary btn-train-action" data-attr="${key}" ${canTrain ? '' : 'disabled'}>修炼 (+1~3)</button>
+          <span class="train-value">当前: ${curVal} （🔧 ${spCost} SP）</span>
+          <button class="btn btn-primary btn-train-action" data-attr="${key}" ${canTrain ? '' : 'disabled'}>修炼 (+1)</button>
         </div>
       `;
     }
@@ -678,13 +680,29 @@ export class UIManager {
     const html = `
       <div class="train-panel">
         <h3>🏋️ 修炼</h3>
-        <p class="train-info">AP: ${ap}/100 | 体力: ${stamina}/100 | 残秽: ${residual}/100</p>
-        <p style="color:var(--color-text-dim);font-size:0.8rem;">每次消耗 20 AP + 15 体力，属性 +1~3，残秽 +10</p>
+        <p class="train-info">AP: ${ap}/100 | 体力: ${stamina}/100 | 技能点: 🔧 ${sp} | 残秽: ${residual}/100</p>
+        <p style="color:var(--color-text-dim);font-size:0.8rem;">消耗 20 AP + 15 体力 + 🔧技能点（随属性递增），基础 +1，天赋影响额外概率</p>
         <div class="train-grid">${rows}</div>
       </div>
     `;
 
     this.showModal(html, { confirmOnly: false, useHTML: true });
+
+    // 绑定修炼按钮
+    setTimeout(() => {
+      document.querySelectorAll('.btn-train-action').forEach(btn => {
+        btn.onclick = () => {
+          const attrKey = btn.dataset.attr;
+          const result = this._hubSystem.train(state, attrKey);
+          if (result.success && result.updatePayload) {
+            this.saveManager.applyGrowthUpdate(result.updatePayload);
+            this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this.renderMainScreen(); } });
+          } else {
+            this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+          }
+        };
+      });
+    }, 50);
   }
 
   /** 请教面板 */

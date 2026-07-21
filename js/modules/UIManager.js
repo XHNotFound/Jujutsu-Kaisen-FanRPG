@@ -695,12 +695,20 @@ export class UIManager {
 
     this.showModal(html, { confirmOnly: false, useHTML: true });
 
-    // Phase 5 fix: bind via event delegation pattern (use addEventListener, not onclick)
+    // Phase 5 fix: bind via event delegation — remove old listener first to avoid stacking
+    this._unbindTrainDelegation();
     this._bindTrainDelegation();
   }
 
+  _unbindTrainDelegation() {
+    if (this._trainDelegationHandler) {
+      document.removeEventListener('click', this._trainDelegationHandler, true);
+      this._trainDelegationHandler = null;
+    }
+  }
+
   _bindTrainDelegation() {
-    document.addEventListener('click', this._trainDelegationHandler = (e) => {
+    this._trainDelegationHandler = (e) => {
       const btn = e.target.closest('.btn-train-action');
       if (!btn || btn.disabled) return;
       e.preventDefault();
@@ -715,7 +723,8 @@ export class UIManager {
       } else {
         this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
       }
-    }, true);
+    };
+    document.addEventListener('click', this._trainDelegationHandler, true);
   }
 
   /** 请教面板 */

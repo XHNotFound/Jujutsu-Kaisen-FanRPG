@@ -1007,6 +1007,50 @@ body {
   margin-top: 1.2rem;
 }
 
+/* ===== Phase 10: 领域对抗 Buff UI ===== */
+.battle-domain-counter-buffs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem;
+  background: rgba(139, 26, 255, 0.06);
+  border: 1px solid rgba(139, 26, 255, 0.2);
+  border-radius: 4px;
+}
+
+.domain-counter-buff-badge {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  background: rgba(212, 168, 67, 0.12);
+  border: 1px solid var(--color-gold);
+  border-radius: 3px;
+  color: var(--color-gold);
+  cursor: help;
+}
+
+.domain-counter-actions {
+  display: flex;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+.btn-domain-counter {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-color: var(--color-gold);
+  color: var(--color-gold);
+  background: rgba(212, 168, 67, 0.08);
+}
+
+.btn-domain-counter:hover:not(:disabled) {
+  background: rgba(212, 168, 67, 0.2);
+}
+
+.btn-domain-counter:disabled {
+  opacity: 0.35;
+}
+
 /* ===== Phase 9: Summon Cards ===== */
 .battle-summons {
   display: flex;

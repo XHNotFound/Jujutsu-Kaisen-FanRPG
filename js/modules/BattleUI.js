@@ -148,6 +148,16 @@ init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
         this._executeAction({ type: 'shikigami_skill', actor: shSid, skill_id: shSkillId, target: shTarget });
         return;
       }
+      // Phase 10: activate domain counter buff
+      const dcBtn = e.target.closest('.btn-domain-counter');
+      if (dcBtn && !dcBtn.disabled) {
+        const action = dcBtn.dataset.action;
+        let buffId = 'simple_domain';
+        if (action === 'activate-falling-blossom') buffId = 'falling_blossom';
+        else if (action === 'activate-hollow-wicker') buffId = 'hollow_wicker';
+        this._executeAction({ type: 'activate_domain_counter', actor: 'player', buff_id: buffId });
+        return;
+      }
     });
   }
 
@@ -160,6 +170,7 @@ init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
     this._renderLog(s.log);
     this._renderSummons(s);  // Phase 9: 召唤物状态栏
     this._renderShikigamiSkillPanel(s);  // Phase 9: 式神手动技能面板
+    this._renderDomainCounterBuffs(s);  // Phase 10: 领域对抗 Buff 状态显示
     this._renderCollapsibleSection('battle-attack-section', 'battle-attack-body', '⚔️ 攻击', () => this._renderSkillButtons(s.player));
     this._renderCollapsibleSection('battle-vow-section', 'battle-vow-body', '🔗 束缚', () => this._renderVowButtons(s.player));
     this._renderDomainButton(s);
@@ -321,6 +332,49 @@ init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
           <span class="skill-cost">${sk.cost > 0 ? 'MP ' + sk.cost : '免费'}</span>
         </button>`;
       }).join('')}</div>`;
+  }
+
+  // ===== Phase 10: 领域对抗 Buff 状态显示 =====
+
+  _renderDomainCounterBuffs(s) {
+    let container = document.getElementById('battle-domain-counter-buffs');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'battle-domain-counter-buffs';
+      container.className = 'battle-domain-counter-buffs';
+      const summonsEl = document.getElementById('battle-summons');
+      if (summonsEl && summonsEl.parentNode) {
+        summonsEl.parentNode.insertBefore(container, summonsEl.nextSibling);
+      }
+    }
+    // Check player's domain_counter_buffs
+    const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    const buffs = (player && player.domain_counter_buffs) || [];
+    if (buffs.length === 0) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = 'flex';
+    container.innerHTML = buffs.map(b => {
+      const mpDrain = b.mp_drain_per_10av || 0;
+      const shield = b.shield_hp ? ` 护盾${b.current_shield_hp}` : '';
+      const reduction = b.domain_damage_reduction ? ` -${Math.round(b.domain_damage_reduction*100)}%领域伤害` : '';
+      const drainText = mpDrain > 0 ? ` ⚡${mpDrain}/10AV` : '';
+      return `<div class="domain-counter-buff-badge" title="${b.name}: ${b.negate_domain_special ? '抵消领域特殊效果 ' : ''}${shield}${reduction}${drainText}">
+        🛡️ ${b.name}${drainText}
+      </div>`;
+    }).join('');
+
+    // Phase 10: 激活领域对抗 Buff 的按钮
+    const domainExists = (s.units || []).some(u => u.unit_type === 'domain');
+    if (domainExists && player && player.mp > 10) {
+      container.innerHTML += `
+        <div class="domain-counter-actions">
+          <button class="btn btn-primary btn-domain-counter" data-action="activate-falling-blossom" ${buffs.length > 0 ? 'disabled' : ''}>🌸 落花之情</button>
+          <button class="btn btn-primary btn-domain-counter" data-action="activate-simple-domain" ${buffs.length > 0 ? 'disabled' : ''}>🗡️ 简易领域</button>
+          <button class="btn btn-primary btn-domain-counter" data-action="activate-hollow-wicker" ${buffs.length > 0 ? 'disabled' : ''}>🏺 弥虚葛笼</button>
+        </div>`;
+    }
   }
 
   _renderLog(logs) {

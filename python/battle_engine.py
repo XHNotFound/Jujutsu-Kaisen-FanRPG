@@ -55,25 +55,42 @@ def _advance_time(state: BattleState, frames: int):
         # 2. 检查敌人是否满 ATB 且当前非敌回合
         e = state.find_enemy()
         if e and e.atb >= ATB_MAX and state.turn == "player" and e.is_alive:
-            _interrupt_enemy_turn(state)
+            _resolve_enemy_turn(state)
             break  # 敌人回合结束后停止推进
 
 def _check_battle_end(state: BattleState):
-    """Fix 1: 统一伤亡检查 — 任何地方需要检查胜负时调用此函数"""
+    """Fix 1: 统一伤亡检查"""
     p = state.find_player(); e = state.find_enemy()
     if e and e.hp <= 0 and e.is_alive:
         e.is_alive = False; state.turn = "player_win"
         _log(state, f"{e.name} 被击败了！")
-        # 如果有领域，自动解除
         for u in list(state.units):
-            if u.unit_type == UNIT_DOMAIN:
-                _handle_cancel_domain({"domain_id": u.id}, state)
+            if u.unit_type == UNIT_DOMAIN: _handle_cancel_domain({"domain_id": u.id}, state)
     if p and p.hp <= 0 and p.is_alive:
         p.is_alive = False; state.turn = "enemy_win"
         _log(state, f"{p.name} 倒下了…")
         for u in list(state.units):
-            if u.unit_type == UNIT_DOMAIN:
-                _handle_cancel_domain({"domain_id": u.id}, state)
+            if u.unit_type == UNIT_DOMAIN: _handle_cancel_domain({"domain_id": u.id}, state)
+
+def _resolve_enemy_turn(state: BattleState):
+    """敌人回合（中断或正常）"""
+    enemy = state.find_enemy(); p = state.find_player()
+    if not enemy or not p: return
+    state.turn = "enemy"; _log(state, "—— 敌人回合 ——")
+    es = None
+    for s in enemy.skills:
+        if s.type in ("martial","cursed") and enemy.mp >= s.cost: es = s; break
+    if not es: _log(state, f"{enemy.name} 无法行动！"); enemy.atb = 0; state.turn = "player"; _log(state, "—— 玩家回合 ——"); return
+    _resolve_distance(enemy, es, p, state)
+    is_bf = _check_black_flash(enemy); dmg = calculate_damage(enemy, es, p, is_bf)
+    cost = calculate_mp_cost(enemy, es)
+    enemy.mp = max(0, enemy.mp - cost); enemy.atb = 0; p.hp = max(0, p.hp - dmg)
+    _log(state, f"{enemy.name} 使用 {es.name}{'【黑闪！】' if is_bf else ''}，造成 {dmg} 点伤害。")
+    if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
+    state.last_hit_was_black_flash = is_bf
+    _check_battle_end(state)
+    if state.turn in ("enemy_win","player_win"): return
+    state.turn = "player"; _log(state, "—— 玩家回合 ——")
 
 def _resolve_domain_auto_attack(domain, state):
     owner = state.find_unit(domain.owner) if domain.owner else None

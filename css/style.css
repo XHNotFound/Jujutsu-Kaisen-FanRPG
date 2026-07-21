@@ -757,6 +757,18 @@ body {
   background: rgba(212, 168, 67, 0.15) !important;
 }
 
+/* Phase 8: Status Badge */
+.status-badge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  background: rgba(139, 26, 255, 0.15);
+  border: 1px solid var(--color-primary);
+  border-radius: 3px;
+  color: var(--color-primary-glow);
+  margin-left: 0.5rem;
+  cursor: help;
+}
+
 /* Phase 7: Domain Detail Page */
 .domain-detail-panel {
   max-width: 500px;

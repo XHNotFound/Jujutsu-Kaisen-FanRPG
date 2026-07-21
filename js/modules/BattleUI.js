@@ -173,6 +173,10 @@ init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
       if (mpBar) mpBar.style.width = mpPct + '%';
       if (mpText) mpText.textContent = data.mp + ' / ' + data.max_mp;
     }
+    // Phase 8: 敌人 MP 条
+    if (prefix === 'enemy' && data.max_mp > 0) {
+      this._renderEnemyMp(data);
+    }
     const atbPct = (data.atb / 300) * 100;
     const atbBar = document.getElementById(prefix + '-atb-bar');
     const atbText = document.getElementById(prefix + '-atb-text');
@@ -357,6 +361,28 @@ execute_action('${actionJson.replace(/'/g, "\\'")}', '''${stateJson.replace(/'/g
   _showLoading(show) {
     const el = document.getElementById('battle-loading');
     if (el) el.classList.toggle('hidden', !show);
+  }
+
+  /**
+   * Phase 8: 渲染敌人 MP 条 + 状态效果标记
+   */
+  _renderEnemyMp(data) {
+    let mpRow = document.getElementById('enemy-mp-row');
+    if (!mpRow) {
+      mpRow = document.createElement('div');
+      mpRow.id = 'enemy-mp-row';
+      mpRow.className = 'battle-stat-row';
+      const atbRow = document.getElementById('enemy-atb-text')?.parentElement;
+      if (atbRow && atbRow.parentNode) atbRow.parentNode.insertBefore(mpRow, atbRow);
+    }
+    const mpPct = data.max_mp > 0 ? (data.mp / data.max_mp) * 100 : 0;
+    mpRow.innerHTML = '<span class="stat-label">MP</span><div class="stat-bar-bg battle-bar-wide"><div class="stat-bar mp-bar" style="width:' + mpPct + '%"></div></div><span class="stat-text">' + data.mp + ' / ' + data.max_mp + '</span>';
+    // 状态效果
+    const se = data.status_effects || [];
+    if (se.length > 0) {
+      const labels = se.map(s => s.name || s.id).join(', ');
+      mpRow.innerHTML += '<span class="status-badge" title="' + labels + '">' + labels + '</span>';
+    }
   }
 
   _handleDomainExpand(domainId) {

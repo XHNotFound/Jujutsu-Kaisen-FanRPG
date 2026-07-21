@@ -670,17 +670,22 @@ export class UIManager {
       rows += `
         <div class="train-row">
           <span class="train-name">${cfg.name}</span>
-          <span class="train-value">当前: ${curVal} （🔧 ${spCost} SP）</span>
-          <button class="btn btn-primary btn-train-action" data-attr="${key}" ${canTrain ? '' : 'disabled'}>修炼 (+1)</button>
+          <span class="train-value">当前: ${curVal}  (🔧 ${spCost} SP)</span>
+          <button class="btn btn-primary btn-train-action" data-attr="${key}" ${canTrain ? '' : 'disabled'}>修炼 (+1~2)</button>
         </div>
       `;
     }
+
+    const talent = (state.attributes && state.attributes.talent) || 10;
+    const extraChance = Math.min(0.5, talent * 0.01);
+    const extraText = talent >= 10 ? `（天赋${talent}→${Math.round(extraChance*100)}%概率+2）` : '';
 
     const residual = state.residual || 0;
     const html = `
       <div class="train-panel">
         <h3>🏋️ 修炼</h3>
         <p class="train-info">AP: ${ap}/100 | 体力: ${stamina}/100 | 技能点: 🔧 ${sp} | 残秽: ${residual}/100</p>
+        <p style="color:var(--color-text-dim);font-size:0.8rem;margin-bottom:0.5rem;">消耗 20 AP + 15 体力 + 🔧技能点(2+⌊值/5⌋)，基础提升1点 ${extraText}</p>
         <div class="train-grid">${rows}</div>
       </div>
     `;

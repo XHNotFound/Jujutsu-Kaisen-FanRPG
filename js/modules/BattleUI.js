@@ -396,8 +396,16 @@ init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
       bc.innerHTML = '<div class="domain-hp-row"><span class="domain-label">🏛️ ' + d.name + '</span><div class="stat-bar-bg battle-bar-wide" style="margin:0 0.5rem;"><div class="stat-bar hp-bar" style="width:' + (d.max_hp > 0 ? (d.hp / d.max_hp) * 100 : 0) + '%"></div></div><span class="stat-text">' + d.hp + ' / ' + d.max_hp + '</span><button class="btn battle-domain-btn btn-system" data-action="cancel-domain">取消领域</button></div>';
     } else {
       const st = this.uiManager.saveManager?.getState();
-      const hl = st && st.domainUnlocked === st.techniqueId;
+      // 领域按钮必须满足两个条件：1) domainUnlocked === techniqueId  2) 该术式确实有领域
+      const hasDomainUnlocked = st && st.domainUnlocked === st.techniqueId;
+      let hasDomainConfig = false;
+      if (st && st.techniqueId) {
+        const TECHNIQUES_WITH_DOMAIN = ['limitless', 'tenShadows', 'boogieWoogie', 'curseManipulation', 'pureMartial'];
+        hasDomainConfig = TECHNIQUES_WITH_DOMAIN.includes(st.techniqueId);
+      }
+      const hl = hasDomainUnlocked && hasDomainConfig;
       bc.innerHTML = '<button class="btn battle-domain-btn btn-primary" data-domain-id="' + (st?.techniqueId || 'cursedEnergyBoost') + '_domain" ' + (hl ? '' : 'disabled') + '>🏛️ 领域展开' + (hl ? '' : ' (未学习)') + '</button>';
+
     }
   }
 

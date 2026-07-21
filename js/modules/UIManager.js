@@ -688,21 +688,25 @@ export class UIManager {
 
     this.showModal(html, { confirmOnly: false, useHTML: true });
 
-    // 绑定修炼按钮
-    setTimeout(() => {
-      document.querySelectorAll('.btn-train-action').forEach(btn => {
-        btn.onclick = () => {
-          const attrKey = btn.dataset.attr;
-          const result = this._hubSystem.train(state, attrKey);
-          if (result.success && result.updatePayload) {
-            this.saveManager.applyGrowthUpdate(result.updatePayload);
-            this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this.renderMainScreen(); } });
-          } else {
-            this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
-          }
-        };
-      });
-    }, 50);
+    // 绑定修炼按钮 — 使用事件委托而非循环 onclick
+    const trainBody = document.querySelector('.train-grid');
+    if (trainBody) {
+      trainBody.onclick = (e) => {
+        const btn = e.target.closest('.btn-train-action');
+        if (!btn || btn.disabled) return;
+        const attrKey = btn.dataset.attr;
+        // 每次从 SaveManager 获取最新状态
+        const state = this.saveManager.getState();
+        if (!state) return;
+        const result = this._hubSystem.train(state, attrKey);
+        if (result.success && result.updatePayload) {
+          this.saveManager.applyGrowthUpdate(result.updatePayload);
+          this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this.renderMainScreen(); } });
+        } else {
+          this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+        }
+      };
+    }
   }
 
   /** 请教面板 */

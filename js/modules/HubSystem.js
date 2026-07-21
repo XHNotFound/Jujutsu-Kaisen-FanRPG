@@ -44,7 +44,7 @@ export class HubSystem {
     const talent = (characterState.attributes && characterState.attributes.talent) || 10;
     let gain = 1;
     const bonusChance = Math.min(0.5, Math.floor(talent / 10) * 0.1);
-    if (Math.random() < bonusChance) gain += 1;
+    if (Math.random() < bonusChance) gain = 2;
 
     return {
       success: true,

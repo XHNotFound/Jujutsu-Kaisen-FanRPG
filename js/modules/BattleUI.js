@@ -47,8 +47,12 @@ export class BattleUI {
       // Phase 7 fix: 强制清除 Pyodide FS 中可能缓存的旧文件
       const py = await this.pyodideLoader.load();
       await py.runPythonAsync('import sys; [sys.modules.pop(k,None) for k in list(sys.modules.keys()) if \"python\" in k]');
+      // 递归删除 python/ 目录（清空旧文件）
       try { py.FS.rmdir('/home/pyodide/python'); } catch(e) {}
+      // 重建目录
       try { py.FS.mkdir('/home/pyodide/python'); } catch(e) {}
+      // 也清除可能的 __pycache__
+      try { py.FS.rmdir('/home/pyodide/python/__pycache__'); } catch(e) {}
       // 加载 Python 依赖
       const pyFiles = [
         'python/__init__.py',

@@ -67,17 +67,23 @@ for k in list(sys.modules.keys()):
     }
     const code = await response.text();
 
-    // 确保虚拟 FS 中的目录存在
+    // 确保虚拟 FS 中的目录存在（使用 mkdirTree 递归创建）
     const parts = filePath.replace(/\\/g, '/').split('/');
     const fileName = parts.pop();
     let dirPath = '/home/pyodide';
-    for (const part of parts) {
-      dirPath += '/' + part;
-      try { py.FS.mkdir(dirPath); } catch (e) { /* 目录已存在 */ }
-    }
+    try {
+      // 递归创建所有需要的目录
+      const fullDir = dirPath + '/' + parts.join('/');
+      const allParts = fullDir.split('/').filter(Boolean);
+      let current = '';
+      for (const p of allParts) {
+        current += '/' + p;
+        try { py.FS.mkdir(current); } catch (e) { /* 目录已存在 */ }
+      }
+    } catch (e) { console.warn('mkdir error:', e); }
 
     // 写入到 Pyodide 虚拟文件系统
-    const pyPath = dirPath + '/' + fileName;
+    const pyPath = dirPath + '/' + filePath;
     py.FS.writeFile(pyPath, code);
   }
 

@@ -73,19 +73,21 @@ def _check_battle_end(state: BattleState):
             if u.unit_type == UNIT_DOMAIN: _handle_cancel_domain({"domain_id": u.id}, state)
 
 def _resolve_enemy_turn(state: BattleState):
-    """敌人回合（中断或正常）"""
+    """敌人回合（中断或正常）— Phase 8: AI-driven skill choice"""
     enemy = state.find_enemy(); p = state.find_player()
     if not enemy or not p: return
     state.turn = "enemy"; _log(state, "—— 敌人回合 ——")
-    es = None
-    for s in enemy.skills:
-        if s.type in ("martial","cursed") and enemy.mp >= s.cost: es = s; break
+    # Phase 8: 敌人 AI 决策 — 优先使用咒术技能(70%)，否则体术
+    es = _decide_enemy_action(enemy, state)
     if not es: _log(state, f"{enemy.name} 无法行动！"); enemy.atb = 0; state.turn = "player"; _log(state, "—— 玩家回合 ——"); return
     _resolve_distance(enemy, es, p, state)
     is_bf = _check_black_flash(enemy); dmg = calculate_damage(enemy, es, p, is_bf)
+    # Phase 8: 伤害偏移 ±20%
+    dmg = apply_damage_variance(dmg, is_bf)
     cost = calculate_mp_cost(enemy, es)
     enemy.mp = max(0, enemy.mp - cost); enemy.atb = 0; p.hp = max(0, p.hp - dmg)
     _log(state, f"{enemy.name} 使用 {es.name}{'【黑闪！】' if is_bf else ''}，造成 {dmg} 点伤害。")
+    if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
     if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
     state.last_hit_was_black_flash = is_bf
     _check_battle_end(state)
@@ -170,6 +172,23 @@ def calculate_damage(actor, skill, target, is_bf=False):
     cb = 1.0 + min(0.5, actor.cursed_energy_control * 0.01)
     return max(1, int(dmg * cb))
 
+def apply_damage_variance(dmg, is_bf=False):
+    """Phase 8: 伤害偏移 ±20%. 黑闪保底不低于基础伤害的2.0倍"""
+    varied = max(1, int(dmg * (0.8 + random.random() * 0.4)))
+    if is_bf: varied = max(int(dmg * 0.8 * 2.0), varied)  # 保底
+    return varied
+
+def _decide_enemy_action(enemy, state):
+    """Phase 8: 敌人 AI 决策 — 70%概率使用咒术技能(如有MP), 否则体术"""
+    available = [s for s in enemy.skills if s.type in ("martial","cursed") and enemy.mp >= s.cost]
+    if not available: return None
+    cursed = [s for s in available if s.type == "cursed"]
+    if cursed and random.random() < 0.7:
+        cursed.sort(key=lambda s: -s.damage_multiplier)
+        return cursed[0]
+    martial = [s for s in available if s.type == "martial"]
+    return martial[0] if martial else (available[0] if available else None)
+
 def calculate_mp_cost(actor, skill):
     if skill.cost <= 0: return 0
     return max(0, int(skill.cost * max(0.3, 1.0 - actor.cursed_energy_efficiency * 0.005)))
@@ -228,6 +247,7 @@ def _execute_attack_framed(actor, skill, target, state):
     is_bf = False
     if skill.type == "martial" and _check_black_flash(actor): is_bf = True
     dmg = calculate_damage(actor, skill, target, is_bf)
+    dmg = apply_damage_variance(dmg, is_bf)  # Phase 8: 伤害偏移
     cost = calculate_mp_cost(actor, skill)
     actor.mp = max(0, actor.mp - cost); target.hp = max(0, target.hp - dmg)
     actor.atb = 0

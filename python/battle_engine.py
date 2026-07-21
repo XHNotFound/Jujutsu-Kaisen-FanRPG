@@ -220,13 +220,37 @@ def _check_battle_end(state: BattleState):
             if u.unit_type == UNIT_DOMAIN: _handle_cancel_domain({"domain_id": u.id}, state)
 
 def _resolve_enemy_turn(state: BattleState):
-    """敌人回合（中断或正常）— Phase 9: aggro-based target selection"""
+    """敌人回合（中断或正常）— Phase 10: aggro-based target + 领域展开 AI"""
     enemy = state.find_enemy()
     if not enemy: return
     state.turn = "enemy"; _log(state, "—— 敌人回合 ——")
-    # Phase 8: 敌人 AI 决策 — 优先使用咒术技能(70%)，否则体术
-    es = _decide_enemy_action(enemy, state)
-    if not es: _log(state, f"{enemy.name} 无法行动！"); enemy.atb = 0; state.turn = "player"; _log(state, "—— 玩家回合 ——"); return
+    # Phase 10: 敌人 AI 决策 — 含领域展开判断
+    decision = _decide_enemy_action(enemy, state)
+    if not decision: _log(state, f"{enemy.name} 无法行动！"); enemy.atb = 0; state.turn = "player"; _log(state, "—— 玩家回合 ——"); return
+
+    # Phase 10: 如果敌人决定展开领域
+    if decision == "expand_domain":
+        domain_name = getattr(enemy, 'domain_name', '领域')
+        domain_hp = getattr(enemy, 'domain_hp', 500)
+        # 构建领域展开 action 并委托给 _handle_expand_domain
+        fake_action = {
+            "actor": enemy.id,
+            "domain_id": f"{enemy.id}_domain",
+            "domain_name": domain_name,
+            "is_complete": True,
+            "domain_hp": domain_hp,
+            "attack_interval": 12,
+            "attack_damage": max(30, enemy.cursed_energy * 3),
+            "mp_cost": 5
+        }
+        _handle_expand_domain(fake_action, state)
+        enemy.atb = 0
+        _check_battle_end(state)
+        if state.turn in ("enemy_win","player_win"): return
+        state.turn = "player"; _log(state, "—— 玩家回合 ——")
+        return
+
+    es = decision
     # Phase 9: aggro-based target instead of hardcoded player
     target = state.find_enemy_target()
     if not target: target = state.find_player()
@@ -391,7 +415,9 @@ def create_enemy_from_save(save_data):
         cursed_energy_efficiency=chosen["cee"], talent=chosen["tal"],
         skills=sk_list,
         is_alive=True, distance=DISTANCE_MID, active_vow=None,
-        recovery_speed=chosen["speed"]
+        recovery_speed=chosen["speed"],
+        domain_name=chosen.get("domain_name"),  # Phase 10: 领域展开 AI 使用
+        domain_hp=chosen.get("domain_hp", 500)  # Phase 10: 领域 HP
     )
 
 # ===== 伤害 =====
@@ -411,9 +437,23 @@ def apply_damage_variance(dmg, is_bf=False):
     return varied
 
 def _decide_enemy_action(enemy, state):
-    """Phase 8: 敌人 AI 决策 — 70%概率使用咒术技能(如有MP), 否则体术"""
+    """Phase 10: 敌人 AI — 含领域展开判断 + 70%概率使用咒术技能"""
     available = [s for s in enemy.skills if s.type in ("martial","cursed") and enemy.mp >= s.cost]
     if not available: return None
+
+    # Phase 10: 领域展开判断（HP健康 + MP充足 + 有domain_name配置 + 尚未展开领域）
+    domain_name = getattr(enemy, 'domain_name', None)
+    has_existing_domain = any(u.unit_type == UNIT_DOMAIN and u.owner == enemy.id for u in state.units)
+    if domain_name and not has_existing_domain:
+        hp_ratio = enemy.hp / max(1, enemy.max_hp)
+        mp_ratio = enemy.mp / max(1, enemy.max_mp)
+        # 高阶敌人(HP>500)在HP>60%+MP>50%时有25%概率展开领域
+        if enemy.max_hp >= 500 and hp_ratio > 0.6 and mp_ratio > 0.5 and random.random() < 0.25:
+            return "expand_domain"
+        # 普通敌人在HP>40%+MP>40%时有8%概率展开领域
+        elif hp_ratio > 0.4 and mp_ratio > 0.4 and random.random() < 0.08:
+            return "expand_domain"
+
     cursed = [s for s in available if s.type == "cursed"]
     if cursed and random.random() < 0.7:
         cursed.sort(key=lambda s: -s.damage_multiplier)
@@ -837,6 +877,11 @@ def _handle_cancel_domain(action, state):
     else: _log(state,"领域被解除。")
     # Phase 10: 对拼结束后重新检查
     _check_domain_clash(state)
+    # Phase 10: 清理敌人领域 Unit 上的 domain_name/hp 引用
+    owner_unit = state.find_unit(domain.owner) if domain.owner else None
+    if owner_unit:
+        if hasattr(owner_unit, 'domain_name'): owner_unit.domain_name = None
+        if hasattr(owner_unit, 'domain_hp'): owner_unit.domain_hp = 0
 
 # ===== Phase 10: 领域对拼机制 =====
 

@@ -395,6 +395,10 @@ export class UIManager {
       return;
     }
 
+    state.hp = (state.hp !== undefined && state.hp !== null) ? state.hp : (state.maxHp || 100);
+    state.mp = (state.mp !== undefined && state.mp !== null) ? state.mp : (state.maxMp || 100);
+    state.skillPoints = (state.skillPoints !== undefined && state.skillPoints !== null) ? state.skillPoints : 5;
+
     this._updateHUD(state);
     this._bindMainMenuEvents();
   }

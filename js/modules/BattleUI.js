@@ -377,8 +377,9 @@ export class BattleUI {
       const state = this.uiManager.saveManager?.getState();
       const hasLearned = state && state.domainUnlocked === state.techniqueId;
       const techId = state?.techniqueId || 'cursedEnergyBoost';
+      const disabledAttr = hasLearned ? '' : 'disabled';
       btnContainer.innerHTML = `
-        <button class="btn battle-domain-btn btn-primary" data-domain-id="${techId}_domain" ${hasLearned ? '' : 'disabled'}>🏛️ 领域展开${hasLearned ? '' : ' (未学习)'}</button>
+        <button class="btn battle-domain-btn btn-primary" data-domain-id="${techId}_domain" ${disabledAttr}>🏛️ 领域展开${hasLearned ? '' : ' (未学习)'}</button>
       `;
     }
   }

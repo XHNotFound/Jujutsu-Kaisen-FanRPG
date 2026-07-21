@@ -32,8 +32,9 @@ export const TRAIN_CONFIG = {
   apCost: 20,           // 每次修炼消耗 AP
   staminaCost: 15,      // 每次修炼消耗体力
   residualGain: 10,     // 每次修炼增加残秽
-  attrGainMin: 1,       // 属性最小提升
-  attrGainMax: 3,       // 属性最大提升
+  attrGainBase: 1,      // 属性基础提升（固定 1 点）
+  attrGainBonusChancePer10Talent: 0.10, // 每 10 点天赋提供 10% 概率额外 +1
+  attrGainMax: 2,       // 属性最大提升（基础 1 + 天赋 1）
 };
 
 /** 请教消耗与效果 */

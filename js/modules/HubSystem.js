@@ -40,12 +40,11 @@ export class HubSystem {
       return { success: false, log: `体力不足！需要 ${TRAIN_CONFIG.staminaCost} 体力，当前 ${stamina} 体力。`, updatePayload: null };
     }
 
-    // 基础提升 1 点，天赋影响额外概率
+    // 基础提升 1 点，天赋每 10 点提供 10% 概率额外 +1（上限 50%，即最多 +2）
     const talent = (characterState.attributes && characterState.attributes.talent) || 10;
     let gain = 1;
-    // 天赋每 10 点提供 10% 额外提升 1 点的概率（上限 50%）
-    const extraChance = Math.min(0.5, talent * 0.01);
-    if (Math.random() < extraChance) gain += 1;
+    const bonusChance = Math.min(0.5, Math.floor(talent / 10) * 0.1);
+    if (Math.random() < bonusChance) gain += 1;
 
     return {
       success: true,

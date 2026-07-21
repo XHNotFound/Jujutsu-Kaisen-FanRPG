@@ -96,6 +96,9 @@ class Unit:
     aggro: int = 0                     # Phase 9: 仇恨值
     # Phase 10: 弱者防御手段 / 领域对抗 Buff
     domain_counter_buffs: list = field(default_factory=list)  # [{id, name, type, hp, mpDrainRate, ...}]
+    # Phase 10: 敌人领域展开 AI 暂存字段（非 dataclass 字段，运行时动态设置）
+    domain_name: Optional[str] = None
+    domain_hp: int = 500
 
     def to_dict(self):
         d = {

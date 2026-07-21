@@ -175,7 +175,7 @@ export class SaveManager {
       // Phase 4: 技能等级与熟练度
       skillLevels: {},       // { "aoi": 2, "attack": 3, ... }
       skillProficiency: {},  // { "aoi": 45, "attack": 80, ... }
-      skillPoints: 0,        // 可用技能点
+      skillPoints: 5,        // 可用技能点（Phase 5: 默认 5，修炼消耗 2+floor(值/5)，初始够用）
       inspiration: 0         // 灵感点数
     };
   }
@@ -293,7 +293,7 @@ export class SaveManager {
     if (this.state.residual === undefined) this.state.residual = 0;
     if (this.state.relationship === undefined) this.state.relationship = 0;
     if (this.state.gameDay === undefined) this.state.gameDay = 1;
-    if (this.state.skillPoints === undefined) this.state.skillPoints = 3;
+    if (this.state.skillPoints === undefined) this.state.skillPoints = 5;
     if (this.state.inspiration === undefined) this.state.inspiration = 0;
     if (!this.state.skillLevels) this.state.skillLevels = {};
     if (!this.state.skillProficiency) this.state.skillProficiency = {};

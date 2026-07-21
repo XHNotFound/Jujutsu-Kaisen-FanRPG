@@ -666,51 +666,52 @@ export class UIManager {
     for (const [key, cfg] of Object.entries(ATTRIBUTES)) {
       const curVal = (state.attributes && state.attributes[key]) || 0;
       const spCost = 2 + Math.floor(curVal / 5);
+      const talent = (state.attributes && state.attributes.talent) || 10;
+      const extraChance = Math.min(0.5, talent * 0.01);
+      const extraPct = Math.round(extraChance * 100);
       const canTrain = ap >= 20 && stamina >= 15 && sp >= spCost;
       rows += `
         <div class="train-row">
           <span class="train-name">${cfg.name}</span>
-          <span class="train-value">当前: ${curVal}  (🔧 ${spCost} SP)</span>
-          <button class="btn btn-primary btn-train-action" data-attr="${key}" ${canTrain ? '' : 'disabled'}>修炼 (+1~2)</button>
+          <span class="train-value">当前: ${curVal} （🔧 ${spCost} SP）</span>
+          <button class="btn btn-primary btn-train-action" data-attr="${key}" ${canTrain ? '' : 'disabled'}>修炼 (+1${extraPct > 0 ? '~2, ' + extraPct + '%概率' : ''})</button>
         </div>
       `;
     }
-
-    const talent = (state.attributes && state.attributes.talent) || 10;
-    const extraChance = Math.min(0.5, talent * 0.01);
-    const extraText = talent >= 10 ? `（天赋${talent}→${Math.round(extraChance*100)}%概率+2）` : '';
 
     const residual = state.residual || 0;
     const html = `
       <div class="train-panel">
         <h3>🏋️ 修炼</h3>
         <p class="train-info">AP: ${ap}/100 | 体力: ${stamina}/100 | 技能点: 🔧 ${sp} | 残秽: ${residual}/100</p>
-        <p style="color:var(--color-text-dim);font-size:0.8rem;margin-bottom:0.5rem;">消耗 20 AP + 15 体力 + 🔧技能点(2+⌊值/5⌋)，基础提升1点 ${extraText}</p>
+        <p style="color:var(--color-text-dim);font-size:0.8rem;margin-bottom:0.5rem;">消耗 20 AP + 15 体力 + 🔧技能点（2+⌊当前值/5⌋），基础 +1，天赋每10点提供10%概率额外+1（上限50%）</p>
         <div class="train-grid">${rows}</div>
       </div>
     `;
 
     this.showModal(html, { confirmOnly: false, useHTML: true });
 
-    // 绑定修炼按钮 — 使用事件委托而非循环 onclick
-    const trainBody = document.querySelector('.train-grid');
-    if (trainBody) {
-      trainBody.onclick = (e) => {
-        const btn = e.target.closest('.btn-train-action');
-        if (!btn || btn.disabled) return;
-        const attrKey = btn.dataset.attr;
-        // 每次从 SaveManager 获取最新状态
-        const state = this.saveManager.getState();
-        if (!state) return;
-        const result = this._hubSystem.train(state, attrKey);
-        if (result.success && result.updatePayload) {
-          this.saveManager.applyGrowthUpdate(result.updatePayload);
-          this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this.renderMainScreen(); } });
-        } else {
-          this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
-        }
-      };
-    }
+    // Phase 5 fix: bind via event delegation pattern (use addEventListener, not onclick)
+    this._bindTrainDelegation();
+  }
+
+  _bindTrainDelegation() {
+    document.addEventListener('click', this._trainDelegationHandler = (e) => {
+      const btn = e.target.closest('.btn-train-action');
+      if (!btn || btn.disabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const attrKey = btn.dataset.attr;
+      const state = this.saveManager.getState();
+      if (!state) return;
+      const result = this._hubSystem.train(state, attrKey);
+      if (result.success && result.updatePayload) {
+        this.saveManager.applyGrowthUpdate(result.updatePayload);
+        this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this.renderMainScreen(); } });
+      } else {
+        this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+      }
+    }, true);
   }
 
   /** 请教面板 */

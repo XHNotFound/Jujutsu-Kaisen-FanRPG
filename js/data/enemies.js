@@ -140,10 +140,11 @@ export const ENEMIES = {
       tier: "boss",
       baseStats: { hp: 700, max_hp: 700, mp: 250, max_mp: 250, speed: 20, constitution: 28, martial_arts: 30, cursed_energy: 32, cursed_energy_control: 30, cursed_energy_efficiency: 22, talent: 25 },
       skills: [
-        { refId: "murasaki", level: 3 },                  // 引用虚式·茈 (Lv.3)
-        { refId: "aoi_max", level: 3 },                   // 引用苍·最大出力 (Lv.3)
-        { id: "boss_jogo_volcano", name: "火山弹", cost: 35, type: "cursed", damageMultiplier: 5.0, castTime: 28, baseRecoverySpeed: 12, minDistance: 0, maxDistance: 3 },
-        { id: "boss_jogo_insect", name: "火虫", cost: 20, type: "cursed", damageMultiplier: 3.0, castTime: 18, baseRecoverySpeed: 18, minDistance: 1, maxDistance: 2 }
+        { id: "boss_jogo_volcano", name: "火山弹", cost: 25, type: "cursed", damageMultiplier: 4.5, castTime: 24, baseRecoverySpeed: 14, minDistance: 0, maxDistance: 3 },
+        { id: "boss_jogo_fire_eruption", name: "火炎柱", cost: 30, type: "cursed", damageMultiplier: 5.0, castTime: 28, baseRecoverySpeed: 12, minDistance: 0, maxDistance: 2 },
+        { id: "boss_jogo_insect", name: "火虫", cost: 18, type: "cursed", damageMultiplier: 3.0, castTime: 16, baseRecoverySpeed: 18, minDistance: 1, maxDistance: 2 },
+        { id: "boss_jogo_meteor", name: "极之番·陨", cost: 60, type: "cursed", damageMultiplier: 8.0, castTime: 50, baseRecoverySpeed: 6, minDistance: 0, maxDistance: 3 },
+        { id: "boss_jogo_ember_slash", name: "灼烧击", cost: 0, type: "martial", damageMultiplier: 1.8, castTime: 8, baseRecoverySpeed: 24, minDistance: 0, maxDistance: 0 }
       ],
       domainId: "jogo_coffin",
       domainName: "盖棺铁围山",

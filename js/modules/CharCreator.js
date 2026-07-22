@@ -20,8 +20,14 @@ export class CharCreator {
   constructor() {
     /** @type {object|null} 当前掷出的属性值 */
     this.currentAttributes = null;
+    /** @type {object|null} 储存的属性值（用于选择） */
+    this.savedAttributes = null;
     /** @type {number} 剩余重掷次数 */
     this.rerollsLeft = 3;
+    /** @type {number} Phase 11: 剩余自由点数 */
+    this.bonusPoints = 3;
+    /** @type {object|null} 自由加点前的原始属性（用于回退） */
+    this._bonusBaseAttributes = null;
     /** @type {string|null} 选中的术式 ID */
     this.selectedTechniqueId = null;
     /** @type {string} 选中的咒缚 ID */
@@ -209,6 +215,63 @@ export class CharCreator {
    */
   getBindings() {
     return BINDINGS;
+  }
+
+  /**
+   * Phase 11: 储存当前六维
+   */
+  saveAttributes() {
+    if (this.currentAttributes) {
+      this.savedAttributes = { ...this.currentAttributes };
+    }
+  }
+
+  /**
+   * Phase 11: 使用储存的六维替换当前
+   * @returns {boolean} 是否成功
+   */
+  useSavedAttributes() {
+    if (!this.savedAttributes) return false;
+    this.currentAttributes = { ...this.savedAttributes };
+    return true;
+  }
+
+  /**
+   * Phase 11: 给当前属性添加自由点数
+   * @param {string} attrKey — 属性 key
+   * @returns {{ success: boolean, used: number, remaining: number }}
+   */
+  addBonusPoint(attrKey) {
+    if (this.bonusPoints <= 0) return { success: false, used: 0, remaining: this.bonusPoints };
+    if (!ATTRIBUTES[attrKey]) return { success: false, used: 0, remaining: this.bonusPoints };
+    if (!this.currentAttributes) return { success: false, used: 0, remaining: this.bonusPoints };
+    this.bonusPoints--;
+    this.currentAttributes[attrKey] = (this.currentAttributes[attrKey] || 0) + 1;
+    return { success: true, used: 1, remaining: this.bonusPoints };
+  }
+
+  /**
+   * Phase 11: 撤消最后一个自由加点
+   * @param {string} attrKey
+   * @returns {{ success: boolean, remaining: number }}
+   */
+  removeBonusPoint(attrKey) {
+    if (!this._bonusBaseAttributes) return { success: false, remaining: this.bonusPoints };
+    const base = this._bonusBaseAttributes[attrKey];
+    if (base === undefined) return { success: false, remaining: this.bonusPoints };
+    const current = this.currentAttributes[attrKey];
+    if (current <= base) return { success: false, remaining: this.bonusPoints };
+    this.bonusPoints++;
+    this.currentAttributes[attrKey] = current - 1;
+    return { success: true, remaining: this.bonusPoints };
+  }
+
+  /**
+   * Phase 11: 标记当前属性为加点基准
+   */
+  markBonusBase() {
+    this._bonusBaseAttributes = { ...this.currentAttributes };
+    this.bonusPoints = 3;
   }
 
   /**

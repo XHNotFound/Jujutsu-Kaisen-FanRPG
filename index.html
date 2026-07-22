@@ -50,13 +50,39 @@
       <div id="roll-rank" class="roll-rank">
         <!-- 动态渲染 -->
       </div>
+      </div>
       <p id="roll-flavor" class="flavor-text"></p>
-      <div class="create-buttons">
-        <button id="btn-reroll" class="btn btn-primary">重掷</button>
-        <button id="btn-roll-next" class="btn btn-secondary">下一步</button>
+      <!-- 储存结果展示区 -->
+      <div id="saved-roll-area" class="saved-roll-area hidden">
+        <h3>📦 已储存的六维</h3>
+        <div id="saved-roll-attrs" class="roll-attributes"></div>
+        <p id="saved-roll-rank" class="saved-roll-rank"></p>
+      </div>
+      <div class="create-buttons" id="roll-buttons">
+        <button id="btn-reroll" class="btn btn-primary">舍弃并重掷</button>
+        <button id="btn-save-reroll" class="btn btn-secondary" disabled>储存并重掷</button>
+        <button id="btn-use-current" class="btn btn-secondary">直接选择该六维</button>
       </div>
     </div>
   </div>
+
+  <!-- ===== 角色创建 - Step 2.5: 自由加点 ===== -->
+  <div id="screen-create-bonus" class="screen hidden">
+    <div class="create-container">
+      <h2 class="create-title">自由加点</h2>
+      <div class="step-indicator">Step 2.5 / 3</div>
+      <p class="roll-hint">剩余自由点数：<span id="bonus-points">3</span></p>
+      <p class="flavor-text">你可以将这 3 点自由分配到任意属性上，以解锁心仪的术式。</p>
+      <div id="bonus-attributes" class="roll-attributes">
+        <!-- 动态渲染 -->
+      </div>
+      <div class="create-buttons">
+        <button id="btn-bonus-prev" class="btn btn-secondary">返回重掷</button>
+        <button id="btn-bonus-next" class="btn btn-primary" disabled>确认（剩余点数必须用完）</button>
+      </div>
+    </div>
+  </div>
+
 
   <!-- ===== 角色创建 - Step 3: 术式与咒缚 ===== -->
   <div id="screen-create-choices" class="screen hidden">

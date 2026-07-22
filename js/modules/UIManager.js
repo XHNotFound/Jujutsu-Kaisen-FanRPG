@@ -167,34 +167,31 @@ export class UIManager {
   renderCreateRoll() {
     this.showScreen('screen-create-roll');
 
+    // 首次掷骰
+    if (!this.charCreator.currentAttributes) {
+      this.charCreator.rollAllAttributes();
+    }
     this._updateRollDisplay();
   }
 
   /**
-   * 更新 Roll 画面（属性、评定、风味文本、重掷次数）
+   * 更新 Roll 画面（属性、评定、风味文本、重掷次数、储存状态）
    */
   _updateRollDisplay() {
     const attrs = this.charCreator.currentAttributes;
     const rerolls = this.charCreator.rerollsLeft;
     const rank = this.charCreator.calculateRank(attrs);
     const flavor = this.charCreator.getFlavorText(attrs);
+    const saved = this.charCreator.savedAttributes;
 
     // 剩余次数
     document.getElementById('reroll-count').textContent = rerolls;
+    // 更新 step indicator
+    document.querySelector('#screen-create-roll .step-indicator').textContent =
+      `Step 2 / 3（剩余重掷: ${rerolls}次${saved ? '，已储存 1 套六维' : ''}）`;
 
     // 属性列表
-    const attrContainer = document.getElementById('roll-attributes');
-    attrContainer.innerHTML = '';
-    for (const [key, cfg] of Object.entries(ATTRIBUTES)) {
-      const value = attrs[key];
-      const item = document.createElement('div');
-      item.className = 'roll-attr-item';
-      item.innerHTML = `
-        <span class="roll-attr-name">${cfg.name}</span>
-        <span class="roll-attr-value">${value}</span>
-      `;
-      attrContainer.appendChild(item);
-    }
+    this._renderAttrList('roll-attributes', attrs);
 
     // 评定
     document.getElementById('roll-rank').innerHTML = `
@@ -205,20 +202,177 @@ export class UIManager {
     // 风味文本
     document.getElementById('roll-flavor').textContent = flavor;
 
-    // 按钮状态
-    const btnReroll = document.getElementById('btn-reroll');
-    btnReroll.disabled = rerolls <= 0;
+    // 储存区域
+    const savedArea = document.getElementById('saved-roll-area');
+    if (saved) {
+      savedArea.classList.remove('hidden');
+      this._renderAttrList('saved-roll-attrs', saved);
+      const savedRank = this.charCreator.calculateRank(saved);
+      document.getElementById('saved-roll-rank').textContent =
+        `评定: ${savedRank.name}（平均值: ${savedRank.avg}）`;
+    } else {
+      savedArea.classList.add('hidden');
+    }
 
-    // 绑定事件（每次渲染重新绑定，因为按钮可能被销毁重建）
+    // 按钮逻辑
+    const btnReroll = document.getElementById('btn-reroll');
+    const btnSaveReroll = document.getElementById('btn-save-reroll');
+    const btnUseCurrent = document.getElementById('btn-use-current');
+
+    btnReroll.disabled = rerolls <= 0;
     btnReroll.onclick = () => {
       const result = this.charCreator.rollAllAttributes();
       if (result) {
         this._updateRollDisplay();
+      } else {
+        // 没有重掷次数了 — 进入最终选择模式
+        this._enterFinalSelection();
       }
     };
 
-    document.getElementById('btn-roll-next').onclick = () => {
+    // 储存按钮：有剩余次数才能储存，没有储存过才能用
+    btnSaveReroll.disabled = rerolls <= 0 || saved !== null;
+    btnSaveReroll.onclick = () => {
+      this.charCreator.saveAttributes();
+      const r = this.charCreator.rollAllAttributes();
+      if (r) this._updateRollDisplay();
+    };
+
+    // 直接选择
+    btnUseCurrent.onclick = () => {
+      if (saved) {
+        // 如果有储存结果，进入最终选择
+        this._enterFinalSelection();
+      } else {
+        // 直接进入自由加点
+        this.charCreator.markBonusBase();
+        this._renderBonusScreen();
+      }
+    };
+
+    // 如果没有剩余次数且有储存结果，立即进入最终选择
+    if (rerolls <= 0) {
+      if (saved) {
+        this._enterFinalSelection();
+      } else {
+        // 没有储存，强制使用当前结果 → 进入自由加点
+        this.charCreator.markBonusBase();
+        setTimeout(() => this._renderBonusScreen(), 300);
+        this.showModal('重掷次数已用完。将使用当前六维继续。', { confirmOnly: true, onConfirm: () => this.hideModal() });
+      }
+    }
+  }
+
+  /**
+   * Phase 11: 最后一次投掷 — 在当前和储存之间最终选择
+   */
+  _enterFinalSelection() {
+    const saved = this.charCreator.savedAttributes;
+    const current = this.charCreator.currentAttributes;
+    if (!saved || !current) return;
+
+    const container = document.getElementById('screen-create-roll');
+    const savedRank = this.charCreator.calculateRank(saved);
+    const curRank = this.charCreator.calculateRank(current);
+
+    // 隐藏常规按钮，显示两个选择按钮
+    document.getElementById('roll-buttons').innerHTML = `
+      <button id="btn-pick-saved" class="btn btn-primary">⬆️ 选择储存的六维开始游戏</button>
+      <button id="btn-pick-current" class="btn btn-secondary">⬇️ 选择当前的六维开始游戏</button>
+    `;
+
+    document.getElementById('btn-pick-saved').onclick = () => {
+      this.charCreator.useSavedAttributes();
+      this.charCreator.markBonusBase();
+      this._renderBonusScreen();
+    };
+
+    document.getElementById('btn-pick-current').onclick = () => {
+      this.charCreator.markBonusBase();
+      this._renderBonusScreen();
+    };
+  }
+
+  /**
+   * 渲染属性列表到指定容器
+   */
+  _renderAttrList(containerId, attrs) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '';
+    for (const [key, cfg] of Object.entries(ATTRIBUTES)) {
+      const value = attrs[key];
+      const item = document.createElement('div');
+      item.className = 'roll-attr-item';
+      item.innerHTML = `
+        <span class="roll-attr-name">${cfg.name}</span>
+        <span class="roll-attr-value">${value}</span>
+      `;
+      container.appendChild(item);
+    }
+  }
+
+  // ================================================================
+  //  角色创建 — Step 2.5: 自由加点
+  // ================================================================
+
+  _renderBonusScreen() {
+    this.showScreen('screen-create-bonus');
+    const attrs = this.charCreator.currentAttributes;
+    this._updateBonusDisplay();
+  }
+
+  _updateBonusDisplay() {
+    const attrs = this.charCreator.currentAttributes;
+    const remaining = this.charCreator.bonusPoints;
+    const base = this.charCreator._bonusBaseAttributes || {};
+
+    document.getElementById('bonus-points').textContent = remaining;
+
+    const container = document.getElementById('bonus-attributes');
+    container.innerHTML = '';
+    for (const [key, cfg] of Object.entries(ATTRIBUTES)) {
+      const value = attrs[key];
+      const baseVal = base[key] || value;
+      const hasBonus = value > baseVal;
+      const item = document.createElement('div');
+      item.className = 'roll-attr-item bonus-attr-item';
+      item.innerHTML = `
+        <span class="roll-attr-name">${cfg.name}</span>
+        <span class="roll-attr-value${hasBonus ? ' bonus-added' : ''}">${value}${hasBonus ? ` (+${value - baseVal})` : ''}</span>
+        <button class="btn btn-plus" data-attr="${key}" ${remaining <= 0 ? 'disabled' : ''}>+</button>
+        ${hasBonus ? `<button class="btn btn-minus" data-attr="${key}">-</button>` : ''}
+      `;
+      container.appendChild(item);
+    }
+
+    // 事件绑定
+    container.querySelectorAll('.btn-plus').forEach(btn => {
+      btn.onclick = () => {
+        const r = this.charCreator.addBonusPoint(btn.dataset.attr);
+        if (r.success) this._updateBonusDisplay();
+      };
+    });
+    container.querySelectorAll('.btn-minus').forEach(btn => {
+      btn.onclick = () => {
+        this.charCreator.removeBonusPoint(btn.dataset.attr);
+        this._updateBonusDisplay();
+      };
+    });
+
+    // 确认按钮
+    const nextBtn = document.getElementById('btn-bonus-next');
+    nextBtn.disabled = remaining > 0;
+    nextBtn.onclick = () => {
       this.renderCreateChoices();
+    };
+
+    // 返回按钮
+    document.getElementById('btn-bonus-prev').onclick = () => {
+      // 恢复原始属性并返回
+      this.charCreator.currentAttributes = { ...this.charCreator._bonusBaseAttributes };
+      this.charCreator.bonusPoints = 3;
+      this.renderCreateRoll();
     };
   }
 

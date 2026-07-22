@@ -230,8 +230,8 @@ export class UIManager {
       }
     };
 
-    // 储存按钮：有剩余次数才能储存，没有储存过才能用
-    btnSaveReroll.disabled = rerolls <= 0 || saved !== null;
+    // 储存按钮：有剩余次数才能储存，没有储存过才能用（用 != 而非 !== 允 undefined）
+    btnSaveReroll.disabled = rerolls <= 0 || (saved != null);
     btnSaveReroll.onclick = () => {
       this.charCreator.saveAttributes();
       const r = this.charCreator.rollAllAttributes();

@@ -885,9 +885,9 @@ body {
   padding: 0.6rem;
 }
 
-.domain-req-card.domain-req-met {
-  border-color: var(--color-success);
-  background: rgba(22, 163, 74, 0.05);
+.domain-req-card .req-met {
+  color: var(--color-success);
+  font-weight: bold;
 }
 
 .domain-action-row {

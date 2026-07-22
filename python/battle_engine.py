@@ -684,9 +684,8 @@ def _resolve_shikigami_action(shiki, state):
     if not target or not target.is_alive:
         shiki.atb = 0
         return
-    # 选择可用技能 — 优先体术
-    avail = [s for s in shiki.skills if s.type in ("martial","cursed") and shiki.mp >= s.cost
-             and s.min_distance <= shiki.distance <= s.max_distance]
+    # 选择可用技能（跳过距离过滤，由 _resolve_distance 处理）
+    avail = [s for s in shiki.skills if s.type in ("martial","cursed") and shiki.mp >= s.cost]
     if not avail:
         shiki.atb = 0
         _log(state, f"{shiki.name} 没有可用技能，略过行动。")
@@ -694,7 +693,8 @@ def _resolve_shikigami_action(shiki, state):
     # 优先高伤害技能
     avail.sort(key=lambda s: -s.damage_multiplier)
     skill = avail[0]
-    _resolve_distance(shiki, skill, target, state)
+    distance_cost = _resolve_distance(shiki, skill, target, state)
+    if distance_cost < 0: return  # ATB 不足
     is_bf = _check_black_flash(shiki)
     dmg = calculate_damage(shiki, skill, target, is_bf)
     dmg = apply_damage_variance(dmg, is_bf)
@@ -702,7 +702,7 @@ def _resolve_shikigami_action(shiki, state):
     shiki.mp = max(0, shiki.mp - cost)
     shiki.atb = 0
     target.hp = max(0, target.hp - dmg)
-    update_aggro(shiki, target, dmg, "damage")  # Phase 9: aggro
+    update_aggro(shiki, target, dmg, "damage")
     _log(state, f"[{shiki.name}] 自动使用 {skill.name}{'【黑闪！】' if is_bf else ''}，造成 {dmg} 点伤害。")
     if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
     _check_battle_end(state)

@@ -279,7 +279,10 @@ export class CharCreator {
    */
   reset() {
     this.currentAttributes = null;
+    this.savedAttributes = null;
     this.rerollsLeft = 3;
+    this.bonusPoints = 3;
+    this._bonusBaseAttributes = null;
     this.selectedTechniqueId = null;
     this.selectedBindingId = 'none';
     this.characterName = null;

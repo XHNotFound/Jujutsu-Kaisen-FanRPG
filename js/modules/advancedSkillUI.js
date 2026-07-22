@@ -84,7 +84,7 @@ export class AdvancedSkillUI {
   _renderDomainTab(st) {
     const techId = st.techniqueId || 'cursedEnergyBoost';
     const domainDef = DOMAINS[techId];
-    const hasDomainLearned = st.domainUnlocked === techId;
+    const learnedTier = (st.domainLearnedTiers && st.domainLearnedTiers[techId]) || null;
 
     let html = '<div class="advanced-skill-header">';
     if (domainDef) {
@@ -95,9 +95,9 @@ export class AdvancedSkillUI {
       html += '<p class="advanced-skill-flavor">该术式尚未配备领域配置。</p>';
     }
 
-    // 状态
-    if (hasDomainLearned) {
-      html += '<div class="skill-unlock-badge unlocked">✅ 已解锁</div>';
+    // Phase 11: 分别处理不完全/完全领域
+    if (learnedTier === 'complete') {
+      html += '<div class="skill-unlock-badge unlocked">✅ 已学会完全领域展开</div>';
       if (domainDef) {
         const stats = calculateDomainStats(techId, st, true);
         if (stats) {
@@ -109,14 +109,74 @@ export class AdvancedSkillUI {
           html += '</div>';
         }
       }
+    } else if (learnedTier === 'incomplete') {
+      html += '<div class="skill-unlock-badge unlocked">✅ 已学会不完全领域展开 (HP/伤害 ×0.6)</div>';
+      if (domainDef) {
+        const stats = calculateDomainStats(techId, st, false);
+        if (stats) {
+          html += '<div class="skill-stats-row">';
+          html += `<span>HP: ${stats.hp}</span>`;
+          html += `<span>攻击间隔: ${stats.attackInterval} 帧</span>`;
+          html += `<span>伤害: ${stats.attackDamage}</span>`;
+          html += `<span>咒力消耗: ${stats.mpCostPerTick}/tick</span>`;
+          html += '</div>';
+        }
+      }
+      // 检查是否可以升级到完全领域
+      if (domainDef) {
+        const cr = domainDef.completeRequirements;
+        const sl = st.skillLevels || {};
+        let totalTech = 0;
+        for (const lv of Object.values(sl)) totalTech += lv;
+        const barrier = st.attributes?.cursedEnergyControl || 0;
+        const insp = st.inspiration || 0;
+        const completeDone = totalTech >= cr.techniqueLevel && barrier >= cr.barrierLevel && insp >= cr.inspiration && barrier >= cr.cursedEnergyControl;
+
+        html += '<div class="skill-requirements">';
+        html += '<h4>升级至完全领域条件：</h4>';
+        html += `<div class="req-row"><span>术式等级</span><div class="req-bar"><div class="req-fill" style="width:${Math.min(100, (totalTech/cr.techniqueLevel)*100)}%"></div></div><span>${totalTech}/${cr.techniqueLevel}</span></div>`;
+        html += `<div class="req-row"><span>结界术(咒力操控)</span><div class="req-bar"><div class="req-fill" style="width:${Math.min(100, (barrier/cr.barrierLevel)*100)}%"></div></div><span>${barrier}/${cr.barrierLevel}</span></div>`;
+        html += `<div class="req-row"><span>咒力操控</span><div class="req-bar"><div class="req-fill" style="width:${Math.min(100, (barrier/cr.cursedEnergyControl)*100)}%"></div></div><span>${barrier}/${cr.cursedEnergyControl}</span></div>`;
+        html += `<div class="req-row"><span>灵感</span><div class="req-bar"><div class="req-fill" style="width:${Math.min(100, (insp/cr.inspiration)*100)}%"></div></div><span>${insp}/${cr.inspiration}</span></div>`;
+        if (completeDone && insp >= cr.inspiration) {
+          html += `<button class="btn btn-primary advanced-skill-unlock-btn" data-action="upgrade-domain" data-tier="complete" data-inspcost="${cr.inspiration}">🔓 升级为完全领域展开（消耗 ${cr.inspiration} 灵感）</button>`;
+        } else {
+          html += '<div class="skill-unlock-badge locked">🔒 完全领域条件不足</div>';
+        }
+        html += '</div>';
+      }
     } else if (domainDef) {
       html += '<div class="skill-unlock-badge locked">🔒 未解锁</div>';
       html += '<div class="skill-requirements">';
+      // 完全领域条件
       html += '<h4>完全领域条件：</h4>';
-      const complete = domainDef.completeRequirements;
-      html += `<div class="req-row"><span>术式等级</span><div class="req-bar"><div class="req-fill" style="width:${this._pct(st, 'technique', complete.techniqueLevel)}%"></div></div><span>${st._techLevel || 0}/${complete.techniqueLevel}</span></div>`;
-      html += `<div class="req-row"><span>结界术(咒力操控)</span><div class="req-bar"><div class="req-fill" style="width:${this._pctAttr(st, 'cursedEnergyControl', complete.cursedEnergyControl)}%"></div></div><span>${st.attributes?.cursedEnergyControl || 0}/${complete.cursedEnergyControl}</span></div>`;
-      html += `<div class="req-row"><span>灵感</span><div class="req-bar"><div class="req-fill" style="width:${this._pctRes(st, 'inspiration', complete.inspiration)}%"></div></div><span>${st.inspiration || 0}/${complete.inspiration}</span></div>`;
+      const cr = domainDef.completeRequirements;
+      const sl = st.skillLevels || {};
+      let totalTech = 0;
+      for (const lv of Object.values(sl)) totalTech += lv;
+      const barrier = st.attributes?.cursedEnergyControl || 0;
+      const insp = st.inspiration || 0;
+      html += `<div class="req-row"><span>术式等级</span><div class="req-bar"><div class="req-fill" style="width:${Math.min(100, (totalTech/cr.techniqueLevel)*100)}%"></div></div><span>${totalTech}/${cr.techniqueLevel}</span></div>`;
+      html += `<div class="req-row"><span>结界术(咒力操控)</span><div class="req-bar"><div class="req-fill" style="width:${Math.min(100, (barrier/cr.barrierLevel)*100)}%"></div></div><span>${barrier}/${cr.barrierLevel}</span></div>`;
+      html += `<div class="req-row"><span>咒力操控</span><div class="req-bar"><div class="req-fill" style="width:${Math.min(100, (barrier/cr.cursedEnergyControl)*100)}%"></div></div><span>${barrier}/${cr.cursedEnergyControl}</span></div>`;
+      html += `<div class="req-row"><span>灵感</span><div class="req-bar"><div class="req-fill" style="width:${Math.min(100, (insp/cr.inspiration)*100)}%"></div></div><span>${insp}/${cr.inspiration}</span></div>`;
+
+      // 不完全领域条件
+      html += '<h4 style="margin-top:0.5rem;">不完全领域条件：</h4>';
+      const ir = domainDef.incompleteRequirements;
+      html += `<div class="req-row"><span>术式等级</span><div class="req-bar"><div class="req-fill" style="width:${Math.min(100, (totalTech/ir.techniqueLevel)*100)}%"></div></div><span>${totalTech}/${ir.techniqueLevel}</span></div>`;
+      html += `<div class="req-row"><span>结界术(咒力操控)</span><div class="req-bar"><div class="req-fill" style="width:${Math.min(100, (barrier/ir.barrierLevel)*100)}%"></div></div><span>${barrier}/${ir.barrierLevel}</span></div>`;
+      html += `<div class="req-row"><span>咒力操控</span><div class="req-bar"><div class="req-fill" style="width:${Math.min(100, (barrier/ir.cursedEnergyControl)*100)}%"></div></div><span>${barrier}/${ir.cursedEnergyControl}</span></div>`;
+      html += `<div class="req-row"><span>灵感</span><div class="req-bar"><div class="req-fill" style="width:${Math.min(100, (insp/ir.inspiration)*100)}%"></div></div><span>${insp}/${ir.inspiration}</span></div>`;
+
+      // 学习按钮
+      const completeDone = totalTech >= cr.techniqueLevel && barrier >= cr.barrierLevel && insp >= cr.inspiration && barrier >= cr.cursedEnergyControl;
+      const incompleteDone = totalTech >= ir.techniqueLevel && barrier >= ir.barrierLevel && insp >= ir.inspiration && barrier >= ir.cursedEnergyControl;
+      if (completeDone && insp >= cr.inspiration) {
+        html += `<button class="btn btn-primary advanced-skill-unlock-btn" data-action="learn-domain" data-tier="complete" data-inspcost="${cr.inspiration}">🔓 学会完全领域展开（消耗 ${cr.inspiration} 灵感）</button>`;
+      } else if (incompleteDone && insp >= ir.inspiration) {
+        html += `<button class="btn btn-primary advanced-skill-unlock-btn" data-action="learn-domain" data-tier="incomplete" data-inspcost="${ir.inspiration}">🔓 学会不完全领域展开（消耗 ${ir.inspiration} 灵感）</button>`;
+      }
       html += '</div>';
     } else {
       html += '<div class="skill-unlock-badge locked">🔒 该术式无领域</div>';
@@ -203,16 +263,45 @@ export class AdvancedSkillUI {
       });
     });
 
-    // 解锁按钮事件
-    const unlockBtn = container.querySelector('.advanced-skill-unlock-btn');
-    if (unlockBtn) {
+    // 解锁按钮事件（高级技巧 + 领域学习）
+    const unlockBtns = container.querySelectorAll('.advanced-skill-unlock-btn');
+    unlockBtns.forEach(unlockBtn => {
       unlockBtn.addEventListener('click', () => {
+        const action = unlockBtn.dataset.action;
+        // Phase 11: 领域学习按钮
+        if (action === 'learn-domain' || action === 'upgrade-domain') {
+          const tier = unlockBtn.dataset.tier;
+          const inspCost = parseInt(unlockBtn.dataset.inspcost) || 0;
+          const state = this.saveManager.getState();
+          if (!state) return;
+
+          if (inspCost > 0 && (state.inspiration || 0) < inspCost) {
+            if (this.uiManager && typeof this.uiManager.showModal === 'function') {
+              this.uiManager.showModal(`灵感不足！需要 ${inspCost} 点灵感，当前 ${state.inspiration || 0}。`, { confirmOnly: true, onConfirm: () => this.uiManager.hideModal() });
+            }
+            return;
+          }
+          state.domainUnlocked = state.techniqueId;
+          if (!state.domainLearnedTiers) state.domainLearnedTiers = {};
+          state.domainLearnedTiers[state.techniqueId] = tier || 'incomplete';
+          if (inspCost > 0) state.inspiration = Math.max(0, (state.inspiration || 0) - inspCost);
+          this.saveManager.setState(state);
+          this.saveManager.saveToSlot(this.saveManager._findCurrentSlot() || 0);
+          if (this.uiManager && typeof this.uiManager.showModal === 'function') {
+            this.uiManager.showModal(
+              tier === 'complete' ? '你学会了完全领域展开！' : '你学会了不完全领域展开！（HP/伤害 ×0.6）',
+              { confirmOnly: true, onConfirm: () => { this.uiManager.hideModal(); this._buildPanel(state); } }
+            );
+          }
+          return;
+        }
+        // 原有：高级技巧解锁按钮
         const skillId = unlockBtn.dataset.skill;
         if (skillId && this.uiManager && typeof this.uiManager.unlockAdvancedSkill === 'function') {
           this.uiManager.unlockAdvancedSkill(skillId);
         }
       });
-    }
+    });
   }
 
   /** 计算属性进度百分比 */

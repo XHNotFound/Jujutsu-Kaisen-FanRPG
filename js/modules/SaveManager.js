@@ -406,13 +406,13 @@ export class SaveManager {
    */
   _calcMaxHp(con) {
     con = con || 10;
-    let hp = 80;
+    let hp = 30;
     if (con <= 20) {
-      hp = 80 + con * 5;
+      hp = 30 + con * 5;
     } else if (con <= 40) {
-      hp = 80 + 20 * 5 + (con - 20) * 10;
+      hp = 30 + 20 * 5 + (con - 20) * 10;
     } else {
-      hp = 80 + 20 * 5 + 20 * 10 + (con - 40) * 15;
+      hp = 30 + 20 * 5 + 20 * 10 + (con - 40) * 15;
     }
     return hp;
   }

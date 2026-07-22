@@ -206,7 +206,7 @@ def _advance_time(state: BattleState, frames: int):
             break  # 敌人回合结束后停止推进
 
 def _check_battle_end(state: BattleState):
-    """Fix 1: 统一伤亡检查"""
+    """Fix 1: 统一伤亡检查 — 含式神死亡"""
     p = state.find_player(); e = state.find_enemy()
     if e and e.hp <= 0 and e.is_alive:
         e.is_alive = False; state.turn = "player_win"
@@ -218,6 +218,12 @@ def _check_battle_end(state: BattleState):
         _log(state, f"{p.name} 倒下了…")
         for u in list(state.units):
             if u.unit_type == UNIT_DOMAIN: _handle_cancel_domain({"domain_id": u.id}, state)
+    # Phase 11: 检查式神死亡
+    for u in list(state.units):
+        if u.unit_type == UNIT_SHIKIGAMI and u.hp <= 0 and u.is_alive:
+            u.is_alive = False
+            _log(state, f"{u.name} 被击败了，消失在影子中。")
+            state.units = [x for x in state.units if x.id != u.id]
 
 def _resolve_enemy_turn(state: BattleState):
     """敌人回合（中断或正常）— Phase 10: aggro-based target + 领域展开 AI"""
@@ -650,6 +656,30 @@ def _resolve_shikigami_turns(state):
 
 def _resolve_shikigami_action(shiki, state):
     """式神 AI：优先攻击最近的敌对目标"""
+    # Phase 11: 如果设置了手动技能，使用它；否则自动选择
+    manual_skill = getattr(shiki, '_manual_skill', None)
+    if manual_skill:
+        target = state.find_enemy()
+        if not target or not target.is_alive:
+            shiki.atb = 0
+            return
+        skill = manual_skill
+        # 清除手动标记（仅当次行动）
+        shiki._manual_skill = None
+        _resolve_distance(shiki, skill, target, state)
+        is_bf = _check_black_flash(shiki)
+        dmg = calculate_damage(shiki, skill, target, is_bf)
+        dmg = apply_damage_variance(dmg, is_bf)
+        cost = calculate_mp_cost(shiki, skill)
+        shiki.mp = max(0, shiki.mp - cost)
+        shiki.atb = 0
+        target.hp = max(0, target.hp - dmg)
+        update_aggro(shiki, target, dmg, "damage")
+        _log(state, f"[{shiki.name}] 使用手动指定技能 {skill.name}{'【黑闪！】' if is_bf else ''}，造成 {dmg} 点伤害。")
+        if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
+        _check_battle_end(state)
+        return
+
     target = state.find_enemy()
     if not target or not target.is_alive:
         shiki.atb = 0
@@ -678,12 +708,10 @@ def _resolve_shikigami_action(shiki, state):
     _check_battle_end(state)
 
 def _handle_shikigami_skill(action, state, tracker=None):
-    """手动控制式神使用技能"""
+    """Phase 11: 手动控制式神 — 仅设定下一次行动使用的技能，不立即触发"""
     sid = action.get("skill_id", "")
-    tid = action.get("target", "")
     actor = state.find_unit(action.get("actor", ""))
-    target = state.find_unit(tid)
-    if not actor or not target or actor.unit_type != UNIT_SHIKIGAMI:
+    if not actor or actor.unit_type != UNIT_SHIKIGAMI:
         _log(state, "[ERROR] 无效的式神行动。"); return
     skill = None
     for s in actor.skills:
@@ -691,19 +719,9 @@ def _handle_shikigami_skill(action, state, tracker=None):
     if not skill: _log(state, f"[ERROR] 式神 {actor.name} 未找到技能: {sid}"); return
     if actor.mp < skill.cost:
         _log(state, f"式神咒力不足！需要 {skill.cost} MP，当前 {actor.mp} MP。"); return
-    if tracker: tracker.record_skill_use(sid)
-    _resolve_distance(actor, skill, target, state)
-    is_bf = _check_black_flash(actor)
-    dmg = calculate_damage(actor, skill, target, is_bf)
-    dmg = apply_damage_variance(dmg, is_bf)
-    cost = calculate_mp_cost(actor, skill)
-    actor.mp = max(0, actor.mp - cost)
-    actor.atb = 0
-    target.hp = max(0, target.hp - dmg)
-    update_aggro(actor, target, dmg, "damage")  # Phase 9: aggro
-    _log(state, f"[手动] {actor.name} 使用 {skill.name}{'【黑闪！】' if is_bf else ''}，造成 {dmg} 点伤害。")
-    if is_bf: _log(state, "漆黑的光芒一闪——那一击超越了极限。")
-    _check_battle_end(state)
+    # 设定手动技能标记，等 ATB 满时自动执行
+    actor._manual_skill = skill
+    _log(state, f"[手动] {actor.name} 的下一次行动已设定为：{skill.name}（需 {skill.cost} MP）")
 
 # ===== Phase 9: add_ally handler =====
 

@@ -3,10 +3,8 @@
 
 import { UIManager } from './modules/UIManager.js';
 import { SaveManager } from './modules/SaveManager.js';
+import { CharCreator } from './modules/CharCreator.js';
 import { pyodideLoader } from './pyodide_loader.js';
-
-// 动态导入 CharCreator 确保每次页面加载获取最新模块
-const { CharCreator } = await import('./modules/CharCreator.js');
 
 // 初始化
 document.addEventListener('DOMContentLoaded', async () => {

@@ -3,11 +3,13 @@
 
 import { UIManager } from './modules/UIManager.js';
 import { SaveManager } from './modules/SaveManager.js';
-import { CharCreator } from './modules/CharCreator.js';
 import { pyodideLoader } from './pyodide_loader.js';
 
 // 初始化
 document.addEventListener('DOMContentLoaded', async () => {
+  // 使用动态 import 确保 CharCreator 每次页面加载都是最新模块
+  const { CharCreator } = await import('./modules/CharCreator.js?v=' + Date.now());
+
   const saveManager = new SaveManager();
   const charCreator = new CharCreator();
   const uiManager = new UIManager(saveManager, charCreator, pyodideLoader);

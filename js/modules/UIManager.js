@@ -4,9 +4,11 @@ import { ATTRIBUTES } from '../data/attributes.js';
 import { BattleUI } from './BattleUI.js';
 import { SkillTreeUI } from './SkillTreeUI.js';
 import { HubSystem } from './HubSystem.js';
+import { AdvancedSkillUI } from './advancedSkillUI.js';
 import { NPCS } from '../data/npcs.js';
 import { QUESTS } from '../data/quests.js';
 import { DOMAINS } from '../data/domains.js';
+import { getNextExam } from '../data/exams.js';
 
 /**
  * UIManager 职责：
@@ -42,6 +44,10 @@ export class UIManager {
     // Phase 5: HubSystem 初始化
     /** @type {HubSystem} */
     this._hubSystem = new HubSystem();
+
+    // Phase 11: AdvancedSkillUI 初始化
+    /** @type {AdvancedSkillUI} */
+    this._advancedSkillUI = new AdvancedSkillUI(this.saveManager, this);
   }
 
   // ================================================================
@@ -477,9 +483,9 @@ export class UIManager {
       this._showSkillTree();
     };
 
-    // Phase 7: 领域详情
+    // Phase 7: 领域详情 → Phase 11 改为高级技巧面板
     document.getElementById('btn-domain-detail').onclick = () => {
-      this._showDomainDetail();
+      this._showAdvancedSkills();
     };
 
     // 休息
@@ -517,11 +523,27 @@ export class UIManager {
     if (!this._battleUI) {
       this._battleUI = new BattleUI(this.pyodideLoader, this);
     }
+    // Phase 11: 确保非考核战斗不传入 forced enemy
+    const state = this.saveManager.getState();
+    if (state && state._forcedEnemyId) {
+      delete state._forcedEnemyId;
+    }
+    await this._battleUI.start();
+  }
+
+  /**
+   * Phase 11: 考核战斗（传入强制 enemyId）
+   */
+  async _startBattle() {
+    if (!this._battleUI) {
+      this._battleUI = new BattleUI(this.pyodideLoader, this);
+    }
     await this._battleUI.start();
   }
 
   /**
    * Phase 7: 打开领域详情页面（重写版 — 支持解锁领域展开）
+   * Phase 11: 保留原有逻辑，新增高级技巧选项卡入口
    */
   _showDomainDetail() {
     const state = this.saveManager.getState();
@@ -647,6 +669,53 @@ export class UIManager {
   }
 
   /**
+   * Phase 11: 显示高级技巧面板（替换旧领域的单独弹窗入口）
+   */
+  _showAdvancedSkills() {
+    // 使用弹窗展示选项卡式高级技巧面板
+    const containerId = 'advanced-skill-modal-' + Date.now();
+    const html = `<div id="${containerId}" class="advanced-skill-modal"></div>`;
+    this.showModal(html, { confirmOnly: true, useHTML: true, onConfirm: () => this.hideModal() });
+
+    // AdvancedSkillUI 通过 id 渲染到弹窗中
+    setTimeout(() => {
+      const target = document.getElementById('advanced-skill-panel');
+      if (!target) {
+        // 创建一个容器在弹窗内部
+        const modal = document.getElementById(containerId);
+        if (modal) {
+          const panel = document.createElement('div');
+          panel.id = 'advanced-skill-panel';
+          modal.appendChild(panel);
+          this._advancedSkillUI.render();
+        }
+      } else {
+        this._advancedSkillUI.render();
+      }
+    }, 100);
+  }
+
+  /**
+   * Phase 11: 解锁高级技巧
+   */
+  unlockAdvancedSkill(skillId) {
+    const state = this.saveManager.getState();
+    if (!state) return;
+    const result = this._hubSystem.unlockAdvancedSkill(state, skillId);
+    if (result.success) {
+      this.saveManager.applyGrowthUpdate(result.updatePayload);
+      // 释放灵感（解锁消耗1点灵感）
+      if (state.inspiration > 0) {
+        state.inspiration = state.inspiration - 1;
+      }
+      this.saveManager.saveToSlot(this.saveManager._findCurrentSlot() || 0);
+      this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showAdvancedSkills(); } });
+    } else {
+      this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+    }
+  }
+
+  /**
    * 打开技能树面板
    */
   _showSkillTree() {
@@ -730,26 +799,46 @@ export class UIManager {
     document.addEventListener('click', this._trainDelegationHandler, true);
   }
 
-  /** 请教面板 */
+  /** Phase 11 请教面板（重构：按 NPC 独立人情 + 多功能 actions） */
   _showConsultPanel() {
     const state = this.saveManager.getState();
     if (!state) return;
 
     const ap = state.actionPoints || 0;
-    const rel = state.relationship !== undefined ? state.relationship : 0;
+    const relationships = state.relationships || {};
 
     let cards = '';
     for (const npc of NPCS) {
+      const npcRel = relationships[npc.id] || 0;
       const actionRows = npc.actions.map(action => {
-        const canDo = ap >= (action.cost.ap || 0) && rel >= (action.cost.relationship || 0) && state.money >= (action.cost.money || 0);
+        const costRel = action.cost.relationship || 0;
+        const costAp = action.cost.ap || 0;
+        const costMoney = action.cost.money || 0;
+
+        let canDo = ap >= costAp && state.money >= costMoney;
+        if (costRel > 0) canDo = canDo && npcRel >= costRel;
+
         const costLabel = [];
-        if (action.cost.ap) costLabel.push(`${action.cost.ap} AP`);
-        if (action.cost.relationship) costLabel.push(`${action.cost.relationship} 人情`);
-        if (action.cost.money) costLabel.push(`${action.cost.money} 金币`);
+        if (costAp) costLabel.push(`${costAp} AP`);
+        if (costRel) costLabel.push(`${costRel} 人情(当前${npcRel})`);
+        if (costMoney) costLabel.push(`${costMoney} 金币`);
+
+        // 根据类型给按钮标注
+        let typeLabel = '';
+        if (action.type === 'consult') typeLabel = '📚';
+        else if (action.type === 'gift') typeLabel = '🎁';
+        else if (action.type === 'spar') typeLabel = '⚔️';
+        else if (action.type === 'special') typeLabel = '💊';
+        else if (action.type === 'quest') typeLabel = '📋';
+
+        // 未实装类型的提示
+        const isImplemented = action.type === 'consult' || action.type === 'gift' || action.type === 'special' || action.type === 'unlock_prerequisite';
+        const disabledTitle = !isImplemented ? ' title="暂未实装"' : '';
+
         return `
           <div class="npc-action-row">
-            <span>${action.name} (${costLabel.join(', ')})</span>
-            <button class="btn btn-primary btn-consult-action" data-npc="${npc.id}" data-action="${action.id}" ${canDo ? '' : 'disabled'}>执行</button>
+            <span>${typeLabel} ${action.name} (${costLabel.join(', ')})</span>
+            <button class="btn btn-primary btn-consult-action" data-npc="${npc.id}" data-action="${action.id}" ${canDo && isImplemented ? '' : 'disabled'}${disabledTitle}>${isImplemented ? '执行' : '未开放'}</button>
           </div>
         `;
       }).join('');
@@ -758,6 +847,7 @@ export class UIManager {
         <div class="npc-card">
           <div class="npc-card-name">${npc.name}</div>
           <div class="npc-card-desc">${npc.description}</div>
+          <div class="npc-card-rel">❤️ 人情: ${npcRel}</div>
           <div class="npc-card-actions">${actionRows}</div>
         </div>
       `;
@@ -766,7 +856,7 @@ export class UIManager {
     const html = `
       <div class="train-panel">
         <h3>👥 请教</h3>
-        <p class="train-info">AP: ${ap}/100 | 人情: ${rel}</p>
+        <p class="train-info">AP: ${ap}/100</p>
         <div class="npc-grid">${cards}</div>
       </div>
     `;
@@ -808,14 +898,38 @@ export class UIManager {
       `;
     }
 
-    // 升职考核
-    for (const q of QUESTS.promotions || []) {
-      const canDo = ap >= (q.cost.ap || 0);
+    // Phase 11: 升职考核（仅显示高一级考核，含强制怪物和冷却）
+    const nextExam = getNextExam(state.rank || '四级');
+    const cooldownDays = state.examCooldownDays || 0;
+    if (cooldownDays > 0) {
+      rows += `
+        <div class="train-row exam-cooldown">
+          <span class="train-name">⏳ 考核冷却中</span>
+          <span class="train-value">距离下次考核还有 ${cooldownDays} 天（休息可减少冷却）</span>
+          <button class="btn btn-primary" disabled>冷却中</button>
+        </div>
+      `;
+    } else if (nextExam) {
+      const reqs = nextExam.requirements?.attributes || {};
+      const reqLines = Object.entries(reqs).map(([key, val]) => {
+        const attrName = ATTRIBUTES[key]?.name || key;
+        const currentVal = (state.attributes || {})[key] || 0;
+        const met = currentVal >= val;
+        return `${met ? '✓' : '✗'} ${attrName} ≥ ${val}（当前: ${currentVal}）`;
+      }).join('<br>');
+      const canDo = ap >= (nextExam.cost?.ap || 0);
       rows += `
         <div class="train-row">
-          <span class="train-name">🏅 ${q.name}</span>
-          <span class="train-value">${q.description} (${q.cost.ap} AP)</span>
-          <button class="btn btn-primary btn-quest-action" data-quest="${q.id}" data-cat="promotions" ${canDo ? '' : 'disabled'}>考核</button>
+          <span class="train-name">🏅 ${nextExam.name}</span>
+          <span class="train-value">${nextExam.description}<br><small>目标：祓除 ${nextExam.enemy_name || '指定怪物'}</small><br><small>${reqLines}</small></span>
+          <button class="btn btn-primary btn-quest-action" data-quest="${nextExam.id}" data-cat="exam" data-enemy="${nextExam.enemy_id}" ${canDo ? '' : 'disabled'}>参加考核</button>
+        </div>
+      `;
+    } else {
+      rows += `
+        <div class="train-row">
+          <span class="train-name">🎉 已达最高等级</span>
+          <span class="train-value">你已经是最强的了，没有更高的考核。</span>
         </div>
       `;
     }
@@ -847,6 +961,13 @@ export class UIManager {
     setTimeout(() => {
       document.querySelectorAll('.btn-quest-action').forEach(btn => {
         btn.onclick = () => {
+          // Phase 11: 考核任务走专用入口（强制怪物）
+          if (btn.dataset.cat === 'exam' && btn.dataset.enemy) {
+            const enemyId = btn.dataset.enemy;
+            const examQuest = { id: btn.dataset.quest, enemy_id: enemyId };
+            this._startExamBattle(examQuest);
+            return;
+          }
           const result = this._hubSystem.acceptQuest(state, btn.dataset.quest, btn.dataset.cat);
           if (result.success && result.updatePayload) {
             this.saveManager.applyGrowthUpdate(result.updatePayload);
@@ -859,6 +980,28 @@ export class UIManager {
         };
       });
     }, 50);
+  }
+
+  /**
+   * Phase 11: 考核战斗入口 — 强制指定怪物
+   */
+  async _startExamBattle(examQuest) {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    // 扣除 AP
+    const apCost = 30;
+    if ((state.actionPoints || 0) < apCost) {
+      this.showModal('行动力不足！', { confirmOnly: true, onConfirm: () => this.hideModal() });
+      return;
+    }
+    state.actionPoints -= apCost;
+
+    // 将强制 enemyId 写入 state（battle_engine init 时会读取）
+    state._forcedEnemyId = examQuest.enemy_id;
+
+    // 开始战斗
+    this._startBattle();
   }
 
   /** 休息 */

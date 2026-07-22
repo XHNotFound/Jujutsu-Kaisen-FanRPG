@@ -291,12 +291,15 @@ export class SaveManager {
     // 1. 初始化 Phase 5 字段的默认值
     if (this.state.stamina === undefined) this.state.stamina = 100;
     if (this.state.residual === undefined) this.state.residual = 0;
-    if (this.state.relationship === undefined) this.state.relationship = 0;
     if (this.state.gameDay === undefined) this.state.gameDay = 1;
     if (this.state.skillPoints === undefined) this.state.skillPoints = 5;
     if (this.state.inspiration === undefined) this.state.inspiration = 0;
     if (!this.state.skillLevels) this.state.skillLevels = {};
     if (!this.state.skillProficiency) this.state.skillProficiency = {};
+    // Phase 11: 新字段默认值
+    if (!this.state.relationships) this.state.relationships = {};
+    if (!this.state.advanced_skills_unlocked) this.state.advanced_skills_unlocked = [];
+    if (this.state.examCooldownDays === undefined) this.state.examCooldownDays = 0;
 
     const caps = {
       maxAp: 100, maxStamina: 100, maxResidual: 100,
@@ -317,11 +320,27 @@ export class SaveManager {
         this.state.inspiration = (this.state.inspiration || 0) + 1;
         continue;
       }
-      if (key === 'storyText' || key === 'relationship' || value === null || value === undefined) {
-        // relationship 专门处理
-        if (key === 'relationship') {
-          this.state.relationship = Math.max(0, Math.min(caps.maxRelationship || 10, (this.state.relationship || 0) + value));
+      // Phase 11: relationships 按 NPC ID 独立存储
+      if (key.startsWith('relationships.')) {
+        const npcId = key.split('.')[1];
+        if (!this.state.relationships) this.state.relationships = {};
+        this.state.relationships[npcId] = Math.max(0, (this.state.relationships[npcId] || 0) + value);
+        continue;
+      }
+      // Phase 11: 高级技巧解锁
+      if (key === 'advanced_skills_unlocked_add') {
+        if (!this.state.advanced_skills_unlocked) this.state.advanced_skills_unlocked = [];
+        if (!this.state.advanced_skills_unlocked.includes(value)) {
+          this.state.advanced_skills_unlocked.push(value);
         }
+        continue;
+      }
+      // Phase 11: 考核冷却
+      if (key === 'examCooldownDays') {
+        this.state.examCooldownDays = Math.max(0, (this.state.examCooldownDays || 0) + value);
+        continue;
+      }
+      if (key === 'storyText' || key === 'relationship' || value === null || value === undefined) {
         continue;
       }
 

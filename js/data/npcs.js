@@ -1,5 +1,6 @@
-// js/data/npcs.js — NPC 数据配置（Phase 5 新增 / Phase 9 扩展）
-// 定义可请教的 NPC 及其行为、主线助战配置
+// js/data/npcs.js — NPC 数据配置（Phase 5 新增 / Phase 9 扩展 / Phase 11 重构）
+// 多功能 NPC 框架：支持请教(consult)、赠礼(gift)、任务(quest)、切磋(spar)
+// 人情 (relationships) 按 NPC ID 独立存储
 
 export const NPCS = [
   {
@@ -9,13 +10,14 @@ export const NPCS = [
     actions: [
       {
         id: "heal",
+        type: "special",
         name: "治疗",
         description: "接受反转术式治疗。",
         cost: { money: 50, ap: 10 },
         effect: {
           type: "heal",
-          hpRestore: "max",          // 恢复至满
-          residualClearPct: 0.50,     // 清除 50% 残秽
+          hpRestore: "max",
+          residualClearPct: 0.50,
         }
       }
     ]
@@ -27,7 +29,8 @@ export const NPCS = [
     actions: [
       {
         id: "learn_combat",
-        name: "请教战斗",
+        type: "consult",
+        name: "请教战斗技巧",
         description: "向七海请教战斗经验，提升体术相关熟练度。",
         cost: { ap: 20, relationship: 1 },
         effect: {
@@ -36,9 +39,38 @@ export const NPCS = [
           proficiencyGain: 15,
           inspirationChance: 0.20
         }
+      },
+      {
+        id: "learn_overtime_essence",
+        type: "consult",
+        name: "请教十划咒法精髓",
+        description: "七海传授十划咒法的核心——7:3弱点制造。提升瓦解和比例打击的熟练度。",
+        cost: { ap: 25, relationship: 2 },
+        effect: {
+          type: "learn",
+          targetSkills: ["ratio_strike", "collapse"],
+          proficiencyGain: 20,
+          inspirationChance: 0.25,
+          requireTechnique: "overtime"
+        }
+      },
+      {
+        id: "gift",
+        type: "gift",
+        name: "赠送礼物",
+        description: "送一份体面的伴手礼，增加人情。",
+        cost: { money: 100 },
+        effect: { type: "gift", relationship: 2 }
+      },
+      {
+        id: "spar",
+        type: "spar",
+        name: "切磋",
+        description: "与七海进行模拟对战，测试你的实战能力。",
+        cost: { ap: 20 },
+        effect: { type: "spar", allyId: "nanami" }
       }
     ],
-    // Phase 9: 战斗助战配置（主线任务 NPC 加入队伍）
     battleAlly: {
       unitType: "ally",
       name: "七海建人",
@@ -47,7 +79,7 @@ export const NPCS = [
         { id: "npc_nanami_attack", name: "体术打击", type: "martial", damageMultiplier: 1.8, cost: 0, castTime: 8, baseRecoverySpeed: 26, minDistance: 0, maxDistance: 0, description: "精准的体术攻击" },
         { id: "npc_nanami_overtime", name: "十划咒法", type: "cursed", damageMultiplier: 2.8, cost: 18, castTime: 20, baseRecoverySpeed: 20, minDistance: 0, maxDistance: 1, description: "7:3弱点打击" }
       ],
-      aiBehavior: "balanced"  // "aggressive" | "defensive" | "balanced" | "support"
+      aiBehavior: "balanced"
     }
   },
   {
@@ -57,6 +89,7 @@ export const NPCS = [
     actions: [
       {
         id: "learn_limitless",
+        type: "consult",
         name: "请教无下限",
         description: "向五条悟请教无下限术式的精髓。仅限无下限术式持有者。",
         cost: { ap: 25, relationship: 2 },
@@ -67,6 +100,14 @@ export const NPCS = [
           inspirationChance: 0.30,
           requireTechnique: "limitless"
         }
+      },
+      {
+        id: "gift",
+        type: "gift",
+        name: "送甜食",
+        description: "给五条老师买他最喜欢的甜食。",
+        cost: { money: 150 },
+        effect: { type: "gift", relationship: 2 }
       }
     ]
   },
@@ -77,6 +118,7 @@ export const NPCS = [
     actions: [
       {
         id: "learn_basics",
+        type: "consult",
         name: "请教基本功",
         description: "向日下部请教基础体术和咒力操控。",
         cost: { ap: 15, relationship: 1 },
@@ -86,6 +128,26 @@ export const NPCS = [
           proficiencyGain: 10,
           inspirationChance: 0.10
         }
+      },
+      {
+        id: "learn_simple_domain_basics",
+        type: "consult",
+        name: "请教简易领域基础",
+        description: "日下部传授简易领域的入门知识。解锁简易领域的前置条件。",
+        cost: { ap: 25, relationship: 3 },
+        effect: {
+          type: "unlock_prerequisite",
+          unlockKey: "simple_domain_basics",
+          description: "获得了简易领域的基础知识"
+        }
+      },
+      {
+        id: "gift",
+        type: "gift",
+        name: "赠送礼物",
+        description: "给日下部带一份伴手礼。",
+        cost: { money: 80 },
+        effect: { type: "gift", relationship: 2 }
       }
     ]
   },
@@ -96,6 +158,7 @@ export const NPCS = [
     actions: [
       {
         id: "learn_theory",
+        type: "consult",
         name: "请教咒力理论",
         description: "与九十九由基探讨咒力本质，可能获得灵感。",
         cost: { ap: 20, relationship: 1 },
@@ -105,6 +168,14 @@ export const NPCS = [
           proficiencyGain: 12,
           inspirationChance: 0.25
         }
+      },
+      {
+        id: "gift",
+        type: "gift",
+        name: "赠送研究资料",
+        description: "给由基送去珍贵的咒灵研究资料。",
+        cost: { money: 120 },
+        effect: { type: "gift", relationship: 2 }
       }
     ]
   },
@@ -115,6 +186,7 @@ export const NPCS = [
     actions: [
       {
         id: "learn_boogie",
+        type: "consult",
         name: "请教不义游戏",
         description: "向东堂请教不义游戏的使用技巧。",
         cost: { ap: 20, relationship: 1 },
@@ -125,6 +197,14 @@ export const NPCS = [
           inspirationChance: 0.15,
           requireTechnique: "boogieWoogie"
         }
+      },
+      {
+        id: "spar",
+        type: "spar",
+        name: "切磋",
+        description: "东堂最喜欢的方式——用拳头交流。",
+        cost: { ap: 25 },
+        effect: { type: "spar", allyId: "todo" }
       }
     ]
   },
@@ -135,6 +215,7 @@ export const NPCS = [
     actions: [
       {
         id: "learn_speed",
+        type: "consult",
         name: "请教速度",
         description: "向直毘人请教以速度取胜的战术。",
         cost: { ap: 20, relationship: 1 },
@@ -146,17 +227,63 @@ export const NPCS = [
         }
       }
     ]
+  },
+  {
+    id: "mei_mei",
+    name: "冥冥",
+    description: "自由咒术师，以金钱衡量一切。可以用金钱换取她的人脉与情报。",
+    actions: [
+      {
+        id: "learn_intel",
+        type: "consult",
+        name: "情报交换",
+        description: "用金钱向冥冥购买咒术界的情报，可能获得灵感。",
+        cost: { ap: 15, money: 200 },
+        effect: {
+          type: "learn",
+          targetSkills: ["cursed_boost"],
+          proficiencyGain: 8,
+          inspirationChance: 0.35
+        }
+      },
+      {
+        id: "gift",
+        type: "gift",
+        name: "直接给钱",
+        description: "冥冥对金钱从不拒绝。",
+        cost: { money: 300 },
+        effect: { type: "gift", relationship: 3 }
+      }
+    ]
+  },
+  {
+    id: "geto",
+    name: "夏油杰",
+    description: "咒灵操术的使用者。虽已叛离咒术界，但仍可在暗中找到他。",
+    actions: [
+      {
+        id: "learn_curse_manipulation",
+        type: "consult",
+        name: "请教咒灵操术",
+        description: "向夏油请教咒灵操术的奥秘。仅限咒灵操术持有者。",
+        cost: { ap: 25, relationship: 2 },
+        effect: {
+          type: "learn",
+          targetSkills: ["curse_absorb", "curse_sphere", "uzumaki_pseudo"],
+          proficiencyGain: 18,
+          inspirationChance: 0.25,
+          requireTechnique: "curseManipulation"
+        }
+      }
+    ]
   }
 ];
 
 // ================================================================
 //  Phase 9: 友方 NPC 战斗助战配置
-//  主线任务中 NPC 临时加入队伍时的战斗 Unit 配置
-//  注意：这些是数据配置，不包含任何战斗逻辑，逻辑在 Python 引擎中
 // ================================================================
 
 export const NPC_ALLY_CONFIGS = {
-  // 七海建人助战
   nanami: {
     unitType: "ally",
     name: "七海建人",
@@ -186,11 +313,10 @@ export const NPC_ALLY_CONFIGS = {
         description: "以7:3的比例强制制造弱点进行打击"
       }
     ],
-    aiBehavior: "balanced",   // aggressive / defensive / balanced / support
-    joinCondition: null       // 暂不实现具体触发条件，预留给主线系统
+    aiBehavior: "balanced",
+    joinCondition: null
   },
 
-  // 五条悟（极少数剧情战斗助战）
   gojo: {
     unitType: "ally",
     name: "五条悟",
@@ -227,10 +353,9 @@ export const NPC_ALLY_CONFIGS = {
       }
     ],
     aiBehavior: "aggressive",
-    joinCondition: null       // 预留给关键剧情战斗
+    joinCondition: null
   },
 
-  // 东堂葵助战
   todo: {
     unitType: "ally",
     name: "东堂葵",

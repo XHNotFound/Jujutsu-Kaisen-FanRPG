@@ -1,10 +1,12 @@
-// js/modules/HubSystem.js — 养成系统逻辑层（Phase 5）
+// js/modules/HubSystem.js — 养成系统逻辑层（Phase 5 / Phase 11 扩展）
 // 严禁：DOM 操作、document、getElementById、innerHTML
 // 纯函数 + 状态机：接收玩家意图 → 校验资源 → 返回 { success, log, updatePayload }
 
 import { ATTRIBUTES, TRAIN_CONFIG, CONSULT_CONFIG, REST_CONFIG, RESOURCE_CAPS } from '../data/attributes.js';
 import { NPCS } from '../data/npcs.js';
 import { QUESTS } from '../data/quests.js';
+import { ADVANCED_SKILLS, checkAdvancedSkillUnlocked } from '../data/advanced_skills.js';
+import { EXAMS, getNextExam } from '../data/exams.js';
 
 export class HubSystem {
   constructor() {
@@ -78,7 +80,8 @@ export class HubSystem {
     }
 
     const ap = characterState.actionPoints || 0;
-    const relationship = characterState.relationship || 0;
+    const relationships = characterState.relationships || {};
+    const relationship = relationships[npcId] || 0;
     const money = characterState.money || 0;
 
     // 资源校验
@@ -86,7 +89,7 @@ export class HubSystem {
       return { success: false, log: `行动力不足！需要 ${action.cost.ap} AP。`, updatePayload: null };
     }
     if (action.cost.relationship && relationship < action.cost.relationship) {
-      return { success: false, log: `人情不足！需要 ${action.cost.relationship} 人情。`, updatePayload: null };
+      return { success: false, log: `与${npc.name}的人情不足！需要 ${action.cost.relationship} 人情，当前 ${relationship}。`, updatePayload: null };
     }
     if (action.cost.money && money < action.cost.money) {
       return { success: false, log: `金钱不足！需要 ${action.cost.money} 金币。`, updatePayload: null };
@@ -137,10 +140,49 @@ export class HubSystem {
         log: `你向${npc.name}请教了「${action.name}」。${inspText}`,
         updatePayload: {
           ap: -(action.cost.ap || 0),
-          relationship: -(action.cost.relationship || 0),
+          [`relationships.${npcId}`]: -(action.cost.relationship || 0),
           proficiencyGains: profGains,
           inspirationGained
         }
+      };
+    }
+
+    if (effect.type === 'unlock_prerequisite') {
+      // Phase 11: 请教获得的解锁基础（如 simple_domain_basics）
+      const unlockedPrereqs = characterState.advanced_skills_unlocked || [];
+      if (unlockedPrereqs.includes(effect.unlockKey)) {
+        return { success: false, log: '你已经掌握了这项基础。', updatePayload: null };
+      }
+
+      return {
+        success: true,
+        log: `你向${npc.name}请教了「${action.name}」——${effect.description || '获得了新的知识基础。'}`,
+        updatePayload: {
+          ap: -(action.cost.ap || 0),
+          [`relationships.${npcId}`]: -(action.cost.relationship || 0),
+          advanced_skills_unlocked_add: effect.unlockKey
+        }
+      };
+    }
+
+    if (effect.type === 'gift') {
+      // Phase 11: 赠礼 — 消耗金钱，增加人情
+      return {
+        success: true,
+        log: `你赠送了礼物给${npc.name}，与${npc.name}的人情加深了。`,
+        updatePayload: {
+          ap: -(action.cost.ap || 0),
+          money: -(action.cost.money || 0),
+          [`relationships.${npcId}`]: effect.relationship || 2
+        }
+      };
+    }
+
+    if (effect.type === 'spar') {
+      return {
+        success: false,
+        log: '切磋功能暂未实装，但已预留接口。',
+        updatePayload: null
       };
     }
 
@@ -234,7 +276,35 @@ export class HubSystem {
         stamina: staminaGain,
         ap: apGain,
         residual: -residualClear,
-        gameDay: 1
+        gameDay: 1,
+        examCooldownDays: (characterState.examCooldownDays || 0) > 0 ? -1 : 0
+      }
+    };
+  }
+
+  /**
+   * Phase 11: 解锁高级技巧
+   * @param {object} characterState
+   * @param {string} skillId — 高级技巧 ID（如 "simple_domain"）
+   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   */
+  unlockAdvancedSkill(characterState, skillId) {
+    const check = checkAdvancedSkillUnlocked(skillId, characterState);
+    if (!check.unlocked) {
+      return { success: false, log: check.reason || '条件不满足。', updatePayload: null };
+    }
+
+    const def = ADVANCED_SKILLS[skillId];
+    const alreadyUnlocked = (characterState.advanced_skills_unlocked || []).includes(skillId);
+    if (alreadyUnlocked) {
+      return { success: false, log: `你已解锁了「${def.name}」。`, updatePayload: null };
+    }
+
+    return {
+      success: true,
+      log: `你成功解锁了「${def.name}」！${def.flavorText || ''}`,
+      updatePayload: {
+        advanced_skills_unlocked_add: skillId
       }
     };
   }

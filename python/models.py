@@ -120,6 +120,8 @@ class Unit:
             "summon_duration": self.summon_duration,
             "aggro": self.aggro,
             "domain_counter_buffs": list(self.domain_counter_buffs),
+            "domain_name": self.domain_name,
+            "domain_hp": self.domain_hp,
             "skills": [s.to_dict() for s in self.skills]
         }
         return d
@@ -236,7 +238,8 @@ class BattleState:
             "phase": self.phase,
             "last_hit_was_black_flash": self.last_hit_was_black_flash,
             "global_action_time": self.global_action_time,
-            "status": "success"
+            "status": "success",
+            "domain_clash_active": getattr(self, 'domain_clash_active', False)
         }
         # 移除 None 值
         if result["player"] is None:

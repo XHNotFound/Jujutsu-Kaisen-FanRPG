@@ -81,6 +81,105 @@ export const ENEMIES = {
         { id: "enemy_iron_cannon", name: "铁甲炮", cost: 20, type: "cursed", damageMultiplier: 2.2, castTime: 25, baseRecoverySpeed: 14, minDistance: 0, maxDistance: 3 }
       ],
       rewards: { money: { min: 100, max: 200 }, skillExp: 20, skillPoints: 3, inspirationChance: 0.18 }
+    },
+    // ================================================================
+    //  Phase 11: 新增三级到一级普通咒灵（8种，不含领域）
+    // ================================================================
+    {
+      id: "enemy_kuchisake",
+      name: "裂口女",
+      rank: "二级",
+      tier: "normal",
+      baseStats: { hp: 220, max_hp: 220, mp: 40, max_mp: 40, speed: 13, constitution: 18, martial_arts: 22, cursed_energy: 16, cursed_energy_control: 14, cursed_energy_efficiency: 12, talent: 15 },
+      skills: [
+        { id: "enemy_scissor_slash", name: "剪刀斩", cost: 0, type: "martial", damageMultiplier: 1.5, castTime: 6, baseRecoverySpeed: 28, minDistance: 0, maxDistance: 0 },
+        { id: "enemy_kuchisake_question", name: "裂口质问", cost: 15, type: "cursed", damageMultiplier: 2.0, castTime: 18, baseRecoverySpeed: 20, minDistance: 0, maxDistance: 2 }
+      ],
+      rewards: { money: { min: 120, max: 220 }, skillExp: 22, skillPoints: 3, inspirationChance: 0.20 }
+    },
+    {
+      id: "enemy_hanako",
+      name: "花子",
+      rank: "二级",
+      tier: "normal",
+      baseStats: { hp: 190, max_hp: 190, mp: 60, max_mp: 60, speed: 15, constitution: 16, martial_arts: 18, cursed_energy: 20, cursed_energy_control: 18, cursed_energy_efficiency: 14, talent: 16 },
+      skills: [
+        { id: "enemy_toilet_curse", name: "厕所诅咒", cost: 0, type: "martial", damageMultiplier: 1.2, castTime: 8, baseRecoverySpeed: 26, minDistance: 0, maxDistance: 1 },
+        { id: "enemy_water_blade", name: "水刃", cost: 18, type: "cursed", damageMultiplier: 2.2, castTime: 20, baseRecoverySpeed: 18, minDistance: 1, maxDistance: 3 }
+      ],
+      rewards: { money: { min: 110, max: 210 }, skillExp: 20, skillPoints: 3, inspirationChance: 0.18 }
+    },
+    {
+      id: "enemy_rokurokubi",
+      name: "辘轳首",
+      rank: "准一级",
+      tier: "normal",
+      baseStats: { hp: 260, max_hp: 260, mp: 70, max_mp: 70, speed: 14, constitution: 20, martial_arts: 24, cursed_energy: 20, cursed_energy_control: 18, cursed_energy_efficiency: 14, talent: 17 },
+      skills: [
+        { id: "enemy_neck_whip", name: "长颈鞭", cost: 0, type: "martial", damageMultiplier: 1.4, castTime: 7, baseRecoverySpeed: 28, minDistance: 0, maxDistance: 2 },
+        { id: "enemy_gaze_curse", name: "凝视诅咒", cost: 20, type: "cursed", damageMultiplier: 2.5, castTime: 22, baseRecoverySpeed: 16, minDistance: 1, maxDistance: 3 }
+      ],
+      rewards: { money: { min: 150, max: 280 }, skillExp: 28, skillPoints: 4, inspirationChance: 0.22 }
+    },
+    {
+      id: "enemy_jorogumo",
+      name: "络新妇",
+      rank: "准一级",
+      tier: "normal",
+      baseStats: { hp: 240, max_hp: 240, mp: 80, max_mp: 80, speed: 16, constitution: 18, martial_arts: 22, cursed_energy: 22, cursed_energy_control: 20, cursed_energy_efficiency: 16, talent: 18 },
+      skills: [
+        { id: "enemy_web_trap", name: "蛛网陷阱", cost: 0, type: "martial", damageMultiplier: 1.3, castTime: 8, baseRecoverySpeed: 26, minDistance: 0, maxDistance: 2 },
+        { id: "enemy_venom_string", name: "毒丝", cost: 22, type: "cursed", damageMultiplier: 2.8, castTime: 24, baseRecoverySpeed: 14, minDistance: 0, maxDistance: 3 }
+      ],
+      rewards: { money: { min: 160, max: 300 }, skillExp: 30, skillPoints: 4, inspirationChance: 0.24 }
+    },
+    {
+      id: "enemy_ubume",
+      name: "姑获鸟",
+      rank: "一级",
+      tier: "normal",
+      baseStats: { hp: 300, max_hp: 300, mp: 90, max_mp: 90, speed: 17, constitution: 22, martial_arts: 26, cursed_energy: 24, cursed_energy_control: 22, cursed_energy_efficiency: 18, talent: 20 },
+      skills: [
+        { id: "enemy_bird_talon", name: "利爪", cost: 0, type: "martial", damageMultiplier: 1.6, castTime: 6, baseRecoverySpeed: 28, minDistance: 0, maxDistance: 1 },
+        { id: "enemy_screech", name: "啼鸣诅咒", cost: 25, type: "cursed", damageMultiplier: 3.0, castTime: 26, baseRecoverySpeed: 14, minDistance: 0, maxDistance: 3 }
+      ],
+      rewards: { money: { min: 200, max: 380 }, skillExp: 35, skillPoints: 5, inspirationChance: 0.26 }
+    },
+    {
+      id: "enemy_nurarihyon",
+      name: "滑瓢",
+      rank: "一级",
+      tier: "normal",
+      baseStats: { hp: 320, max_hp: 320, mp: 85, max_mp: 85, speed: 16, constitution: 24, martial_arts: 28, cursed_energy: 22, cursed_energy_control: 24, cursed_energy_efficiency: 20, talent: 19 },
+      skills: [
+        { id: "enemy_sneak_strike", name: "潜行一击", cost: 0, type: "martial", damageMultiplier: 1.7, castTime: 7, baseRecoverySpeed: 28, minDistance: 0, maxDistance: 0 },
+        { id: "enemy_dark_mist", name: "黑雾侵蚀", cost: 28, type: "cursed", damageMultiplier: 3.2, castTime: 28, baseRecoverySpeed: 12, minDistance: 0, maxDistance: 3 }
+      ],
+      rewards: { money: { min: 220, max: 400 }, skillExp: 38, skillPoints: 5, inspirationChance: 0.28 }
+    },
+    {
+      id: "enemy_gyuki",
+      name: "牛鬼",
+      rank: "一级",
+      tier: "normal",
+      baseStats: { hp: 350, max_hp: 350, mp: 70, max_mp: 70, speed: 13, constitution: 28, martial_arts: 30, cursed_energy: 20, cursed_energy_control: 20, cursed_energy_efficiency: 16, talent: 17 },
+      skills: [
+        { id: "enemy_horn_charge", name: "牛角冲撞", cost: 0, type: "martial", damageMultiplier: 1.8, castTime: 10, baseRecoverySpeed: 24, minDistance: 0, maxDistance: 2 },
+        { id: "enemy_breath_fire", name: "鬼火吐息", cost: 30, type: "cursed", damageMultiplier: 3.5, castTime: 30, baseRecoverySpeed: 10, minDistance: 0, maxDistance: 3 }
+      ],
+      rewards: { money: { min: 250, max: 450 }, skillExp: 40, skillPoints: 5, inspirationChance: 0.30 }
+    },
+    {
+      id: "enemy_gashadokuro",
+      name: "饿者骷髅",
+      rank: "一级",
+      tier: "normal",
+      baseStats: { hp: 380, max_hp: 380, mp: 100, max_mp: 100, speed: 11, constitution: 30, martial_arts: 26, cursed_energy: 26, cursed_energy_control: 22, cursed_energy_efficiency: 18, talent: 18 },
+      skills: [
+        { id: "enemy_bone_crush", name: "骨碎", cost: 0, type: "martial", damageMultiplier: 1.9, castTime: 12, baseRecoverySpeed: 22, minDistance: 0, maxDistance: 1 },
+        { id: "enemy_grave_wind", name: "墓场阴风", cost: 35, type: "cursed", damageMultiplier: 3.8, castTime: 32, baseRecoverySpeed: 10, minDistance: 0, maxDistance: 3 }
+      ],
+      rewards: { money: { min: 280, max: 500 }, skillExp: 45, skillPoints: 6, inspirationChance: 0.32 }
     }
   ],
 

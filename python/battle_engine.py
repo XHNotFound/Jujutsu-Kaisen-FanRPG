@@ -350,6 +350,15 @@ def create_enemy_from_save(save_data):
         {"id":"enemy_shadow_beast","name":"影兽","rank":"三级","tier":"normal","hp":130,"mp":30,"speed":10,"con":14,"ma":16,"ce":10,"cec":10,"cee":8,"tal":10,"skills":[("enemy_claw","影爪",0,"martial",1.2,5,30,0,0),("enemy_shadow_bolt","暗影弹",12,"cursed",1.8,20,18,0,3)]},
         {"id":"enemy_blood_ghost","name":"血涂灵","rank":"准二级","tier":"normal","hp":160,"mp":40,"speed":11,"con":16,"ma":18,"ce":12,"cec":12,"cee":10,"tal":12,"skills":[("enemy_blood_strike","血击",0,"martial",1.1,6,28,0,1),("enemy_blood_spear","血矛",15,"cursed",2.0,22,16,0,3)]},
         {"id":"enemy_iron_curse","name":"铁甲咒灵","rank":"二级","tier":"normal","hp":200,"mp":50,"speed":12,"con":20,"ma":20,"ce":14,"cec":14,"cee":12,"tal":14,"skills":[("enemy_iron_fist","铁拳",0,"martial",1.3,7,26,0,0),("enemy_iron_cannon","铁甲炮",20,"cursed",2.2,25,14,0,3)]},
+        # Phase 11: 新增三级到一级普通咒灵
+        {"id":"enemy_kuchisake","name":"裂口女","rank":"二级","tier":"normal","hp":220,"mp":40,"speed":13,"con":18,"ma":22,"ce":16,"cec":14,"cee":12,"tal":15,"skills":[("enemy_scissor_slash","剪刀斩",0,"martial",1.5,6,28,0,0),("enemy_kuchisake_question","裂口质问",15,"cursed",2.0,18,20,0,2)]},
+        {"id":"enemy_hanako","name":"花子","rank":"二级","tier":"normal","hp":190,"mp":60,"speed":15,"con":16,"ma":18,"ce":20,"cec":18,"cee":14,"tal":16,"skills":[("enemy_toilet_curse","厕所诅咒",0,"martial",1.2,8,26,0,1),("enemy_water_blade","水刃",18,"cursed",2.2,20,18,1,3)]},
+        {"id":"enemy_rokurokubi","name":"辘轳首","rank":"准一级","tier":"normal","hp":260,"mp":70,"speed":14,"con":20,"ma":24,"ce":20,"cec":18,"cee":14,"tal":17,"skills":[("enemy_neck_whip","长颈鞭",0,"martial",1.4,7,28,0,2),("enemy_gaze_curse","凝视诅咒",20,"cursed",2.5,22,16,1,3)]},
+        {"id":"enemy_jorogumo","name":"络新妇","rank":"准一级","tier":"normal","hp":240,"mp":80,"speed":16,"con":18,"ma":22,"ce":22,"cec":20,"cee":16,"tal":18,"skills":[("enemy_web_trap","蛛网陷阱",0,"martial",1.3,8,26,0,2),("enemy_venom_string","毒丝",22,"cursed",2.8,24,14,0,3)]},
+        {"id":"enemy_ubume","name":"姑获鸟","rank":"一级","tier":"normal","hp":300,"mp":90,"speed":17,"con":22,"ma":26,"ce":24,"cec":22,"cee":18,"tal":20,"skills":[("enemy_bird_talon","利爪",0,"martial",1.6,6,28,0,1),("enemy_screech","啼鸣诅咒",25,"cursed",3.0,26,14,0,3)]},
+        {"id":"enemy_nurarihyon","name":"滑瓢","rank":"一级","tier":"normal","hp":320,"mp":85,"speed":16,"con":24,"ma":28,"ce":22,"cec":24,"cee":20,"tal":19,"skills":[("enemy_sneak_strike","潜行一击",0,"martial",1.7,7,28,0,0),("enemy_dark_mist","黑雾侵蚀",28,"cursed",3.2,28,12,0,3)]},
+        {"id":"enemy_gyuki","name":"牛鬼","rank":"一级","tier":"normal","hp":350,"mp":70,"speed":13,"con":28,"ma":30,"ce":20,"cec":20,"cee":16,"tal":17,"skills":[("enemy_horn_charge","牛角冲撞",0,"martial",1.8,10,24,0,2),("enemy_breath_fire","鬼火吐息",30,"cursed",3.5,30,10,0,3)]},
+        {"id":"enemy_gashadokuro","name":"饿者骷髅","rank":"一级","tier":"normal","hp":380,"mp":100,"speed":11,"con":30,"ma":26,"ce":26,"cec":22,"cee":18,"tal":18,"skills":[("enemy_bone_crush","骨碎",0,"martial",1.9,12,22,0,1),("enemy_grave_wind","墓场阴风",35,"cursed",3.8,32,10,0,3)]},
         # elite: rank 6~7
         {"id":"enemy_cursed_womb","name":"咒胎","rank":"准一级","tier":"elite","hp":300,"mp":80,"speed":14,"con":22,"ma":24,"ce":18,"cec":18,"cee":14,"tal":16,"skills":[("enemy_womb_slam","重压",0,"martial",1.5,10,24,0,1),("enemy_womb_beam","咒胎光束",20,"cursed",2.5,28,14,0,3),("enemy_womb_roar","咒胎咆哮",15,"cursed",2.0,22,16,1,2)]},
         {"id":"enemy_vengeful_spirit","name":"怨灵","rank":"一级","tier":"elite","hp":400,"mp":100,"speed":16,"con":25,"ma":26,"ce":22,"cec":22,"cee":16,"tal":18,"skills":[("enemy_vengeful_strike","怨念击",0,"martial",1.6,8,24,0,0),("enemy_vengeful_blast","怨念爆破",25,"cursed",3.0,30,12,0,3),("enemy_vengeful_curse","深层诅咒",18,"cursed",2.2,24,14,0,2)]},
@@ -445,6 +454,10 @@ def _decide_enemy_action(enemy, state):
     domain_name = getattr(enemy, 'domain_name', None)
     has_existing_domain = any(u.unit_type == UNIT_DOMAIN and u.owner == enemy.id for u in state.units)
     if domain_name and not has_existing_domain:
+        # Phase 10.5: 若玩家已展开领域，敌人下次行动必展开
+        player_domain = _get_player_domain(state, "player")
+        if player_domain:
+            return "expand_domain"
         hp_ratio = enemy.hp / max(1, enemy.max_hp)
         mp_ratio = enemy.mp / max(1, enemy.max_mp)
         # 高阶敌人(HP>500)在HP>60%+MP>50%时有25%概率展开领域
@@ -486,6 +499,8 @@ def execute_action(action_json, state_json):
     elif at == "add_ally": _handle_add_ally(action, state)
     # Phase 10: activate domain counter buff (simple domain / falling blossom / hollow wicker)
     elif at == "activate_domain_counter": _handle_activate_domain_counter(action, state)
+    # Phase 10.5: repair domain barrier
+    elif at == "repair_domain": _handle_repair_domain(action, state)
     result = state.to_dict(); result["_tracker"] = tracker.to_dict()
     return json.dumps(result, ensure_ascii=False)
 
@@ -720,6 +735,29 @@ def _handle_activate_domain_counter(action, state):
     else:
         _log(state, f"[ERROR] 无法激活 Buff: {buff_id}（不存在或已有同类 Buff）")
 
+# ===== Phase 10.5: 结界术修复 =====
+
+def _handle_repair_domain(action, state):
+    """结界术修复：消耗 MP 修复己方领域的 HP"""
+    actor = state.find_unit(action.get("actor", "player"))
+    if not actor: return
+    domain = None
+    for u in state.units:
+        if u.unit_type == UNIT_DOMAIN and u.owner == actor.id and u.is_alive:
+            domain = u
+            break
+    if not domain:
+        _log(state, "[ERROR] 没有可修复的领域。")
+        return
+    cost = 15
+    if actor.mp < cost:
+        _log(state, f"咒力不足！需要 {cost} MP 进行结界术修复。")
+        return
+    heal_amount = int(domain.max_hp * 0.2)
+    actor.mp -= cost
+    domain.hp = min(domain.max_hp, domain.hp + heal_amount)
+    _log(state, f"{actor.name} 使用结界术修复，{domain.name} 恢复 {heal_amount} HP（消耗 {cost} MP）。")
+
 # ===== Phase 9: 友方 NPC 助战 AI =====
 
 def _resolve_ally_turns(state):
@@ -823,7 +861,7 @@ def _deserialize_state(d):
     extra=[u for u in d.get("units",[]) if u.get("id") not in (pd.get("id"), ed.get("id"))]
     def _u(cd):
         sks=[Skill(id=s.get("id",""),name=s.get("name",""),cost=s.get("cost",0),type=s.get("type","martial"),damage_multiplier=s.get("damage_multiplier",1.0),min_distance=s.get("min_distance",0),max_distance=s.get("max_distance",3),cast_time=s.get("cast_time",5),base_recovery_speed=s.get("base_recovery_speed",30),summon_config=s.get("summon_config")) for s in cd.get("skills",[])]
-        return Unit(id=cd.get("id",""),name=cd.get("name",""),unit_type=cd.get("unit_type","player"),hp=cd.get("hp",0),max_hp=cd.get("max_hp",0),mp=cd.get("mp",0),max_mp=cd.get("max_mp",0),atb=cd.get("atb",0),speed=cd.get("speed",10),is_alive=cd.get("is_alive",True),skills=sks,constitution=cd.get("constitution",10),martial_arts=cd.get("martial_arts",10),cursed_energy=cd.get("cursed_energy",10),cursed_energy_control=cd.get("cursed_energy_control",10),cursed_energy_efficiency=cd.get("cursed_energy_efficiency",10),talent=cd.get("talent",10),distance=cd.get("distance",2),active_vow=cd.get("active_vow"),recovery_speed=cd.get("recovery_speed",cd.get("speed",10)),owner=cd.get("owner"),attack_interval=cd.get("attack_interval",0),attack_damage=cd.get("attack_damage",0),status_effects=cd.get("status_effects",[]),domain_maintenance_cost=cd.get("domain_maintenance_cost",0),summon_duration=cd.get("summon_duration",0),aggro=cd.get("aggro",0))
+        return Unit(id=cd.get("id",""),name=cd.get("name",""),unit_type=cd.get("unit_type","player"),hp=cd.get("hp",0),max_hp=cd.get("max_hp",0),mp=cd.get("mp",0),max_mp=cd.get("max_mp",0),atb=cd.get("atb",0),speed=cd.get("speed",10),is_alive=cd.get("is_alive",True),skills=sks,constitution=cd.get("constitution",10),martial_arts=cd.get("martial_arts",10),cursed_energy=cd.get("cursed_energy",10),cursed_energy_control=cd.get("cursed_energy_control",10),cursed_energy_efficiency=cd.get("cursed_energy_efficiency",10),talent=cd.get("talent",10),distance=cd.get("distance",2),active_vow=cd.get("active_vow"),recovery_speed=cd.get("recovery_speed",cd.get("speed",10)),owner=cd.get("owner"),attack_interval=cd.get("attack_interval",0),attack_damage=cd.get("attack_damage",0),status_effects=cd.get("status_effects",[]),domain_maintenance_cost=cd.get("domain_maintenance_cost",0),summon_duration=cd.get("summon_duration",0),aggro=cd.get("aggro",0),domain_counter_buffs=cd.get("domain_counter_buffs",[]),domain_name=cd.get("domain_name"),domain_hp=cd.get("domain_hp",500))
     return BattleState(units=[_u(pd),_u(ed)]+[_u(x) for x in extra],turn=d.get("turn","player"),log=d.get("log",[]),round_number=d.get("round_number",1),phase=d.get("phase",PHASE_WAITING),last_hit_was_black_flash=d.get("last_hit_was_black_flash",False),global_action_time=d.get("global_action_time",0))
 
 def generate_battle_rewards(tracker, enemy_config=None, player_rank="四级", enemy_rank="四级", is_low_hp=False):
@@ -897,6 +935,13 @@ def _get_player_domain(state, owner_type="player"):
                     return u
     return None
 
+def _is_enemy_domain(domain, state):
+    """判断一个领域是否属于敌方"""
+    if domain.owner == "player":
+        return False
+    owner_unit = state.find_unit(domain.owner)
+    return owner_unit is not None and owner_unit.unit_type == UNIT_ENEMY
+
 def _check_domain_clash(state):
     """检查是否存在领域对拼（双方都展开了领域）
     若对拼：两个领域的攻击目标互相切换为对方领域 Unit，且特殊效果失效
@@ -931,9 +976,14 @@ def _resolve_domain_auto_attack(domain, state):
         if enemy_domain:
             target = enemy_domain
         else:
-            target = state.find_enemy()
+            target = state.find_enemy() if domain.owner == "player" else state.find_player()
     else:
-        target = state.find_enemy()
+        # 非对拼时：领域攻击敌方本体
+        # 敌方领域 → 攻击玩家；玩家领域 → 攻击敌人
+        if _is_enemy_domain(domain, state):
+            target = state.find_player()
+        else:
+            target = state.find_enemy()
 
     if not target or not target.is_alive: return
     dmg = domain.attack_damage
@@ -990,10 +1040,74 @@ def init_battle(save_data_json):
         try: save_data=json.loads(save_data_json)
         except json.JSONDecodeError: save_data={}
     else: save_data={}
-    player=create_player_from_save(save_data); enemy=create_enemy_from_save(save_data)
+    player=create_player_from_save(save_data)
+
+    # Phase 11: 强制考核怪物（从 _forced_enemy_id 读取）
+    forced_enemy_id = save_data.get("_forced_enemy_id")
+    if forced_enemy_id:
+        enemy = _create_enemy_by_id(forced_enemy_id)
+    else:
+        enemy = create_enemy_from_save(save_data)
+
     state=BattleState(units=[player,enemy],turn="player",phase=PHASE_WAITING)
     _log(state,"战斗开始！一股诅咒气息扑面而来。")
     _log(state,f"遭遇了 {enemy.name}！")
     _log(state,f"初始距离：{DISTANCE_NAMES[player.distance]}。")
     _log(state,"—— 玩家回合 ——")
     return json.dumps(state.to_dict(),ensure_ascii=False)
+
+def _create_enemy_by_id(enemy_id):
+    """Phase 11: 根据 enemy_id 从池中强制创建敌人（用于考核战斗）"""
+    # 搜索所有池（需要访问 create_enemy_from_save 中的局部变量）
+    # ENEMY_POOL 和 BOSS_POOL 在 create_enemy_from_save 内部定义
+    # 我们在这里直接用内联搜索
+    all_enemies = [
+        # normal pool entries
+        {"id":"enemy_flyhead","name":"蛸头","rank":"不入流","tier":"normal","hp":50,"mp":0,"speed":7,"con":6,"ma":8,"ce":0,"cec":0,"cee":0,"tal":3,"skills":[("enemy_bite","撕咬",0,"martial",1.0,8,28,0,0)]},
+        {"id":"enemy_cursed_doll","name":"咒骸","rank":"四级","tier":"normal","hp":80,"mp":15,"speed":8,"con":10,"ma":12,"ce":6,"cec":5,"cee":5,"tal":5,"skills":[("enemy_punch","重拳",0,"martial",1.0,8,28,0,0),("enemy_cursed_bolt","诅咒弹",6,"cursed",1.3,16,22,1,3)]},
+        {"id":"enemy_centipede","name":"百足咒灵","rank":"准三级","tier":"normal","hp":100,"mp":20,"speed":9,"con":12,"ma":14,"ce":8,"cec":8,"cee":6,"tal":8,"skills":[("enemy_swipe","横扫",0,"martial",1.0,6,30,0,1),("enemy_poison_spit","毒液喷射",8,"cursed",1.5,18,20,1,3)]},
+        {"id":"enemy_shadow_beast","name":"影兽","rank":"三级","tier":"normal","hp":130,"mp":30,"speed":10,"con":14,"ma":16,"ce":10,"cec":10,"cee":8,"tal":10,"skills":[("enemy_claw","影爪",0,"martial",1.2,5,30,0,0),("enemy_shadow_bolt","暗影弹",12,"cursed",1.8,20,18,0,3)]},
+        {"id":"enemy_blood_ghost","name":"血涂灵","rank":"准二级","tier":"normal","hp":160,"mp":40,"speed":11,"con":16,"ma":18,"ce":12,"cec":12,"cee":10,"tal":12,"skills":[("enemy_blood_strike","血击",0,"martial",1.1,6,28,0,1),("enemy_blood_spear","血矛",15,"cursed",2.0,22,16,0,3)]},
+        {"id":"enemy_iron_curse","name":"铁甲咒灵","rank":"二级","tier":"normal","hp":200,"mp":50,"speed":12,"con":20,"ma":20,"ce":14,"cec":14,"cee":12,"tal":14,"skills":[("enemy_iron_fist","铁拳",0,"martial",1.3,7,26,0,0),("enemy_iron_cannon","铁甲炮",20,"cursed",2.2,25,14,0,3)]},
+        {"id":"enemy_kuchisake","name":"裂口女","rank":"二级","tier":"normal","hp":220,"mp":40,"speed":13,"con":18,"ma":22,"ce":16,"cec":14,"cee":12,"tal":15,"skills":[("enemy_scissor_slash","剪刀斩",0,"martial",1.5,6,28,0,0),("enemy_kuchisake_question","裂口质问",15,"cursed",2.0,18,20,0,2)]},
+        {"id":"enemy_hanako","name":"花子","rank":"二级","tier":"normal","hp":190,"mp":60,"speed":15,"con":16,"ma":18,"ce":20,"cec":18,"cee":14,"tal":16,"skills":[("enemy_toilet_curse","厕所诅咒",0,"martial",1.2,8,26,0,1),("enemy_water_blade","水刃",18,"cursed",2.2,20,18,1,3)]},
+        {"id":"enemy_rokurokubi","name":"辘轳首","rank":"准一级","tier":"normal","hp":260,"mp":70,"speed":14,"con":20,"ma":24,"ce":20,"cec":18,"cee":14,"tal":17,"skills":[("enemy_neck_whip","长颈鞭",0,"martial",1.4,7,28,0,2),("enemy_gaze_curse","凝视诅咒",20,"cursed",2.5,22,16,1,3)]},
+        {"id":"enemy_jorogumo","name":"络新妇","rank":"准一级","tier":"normal","hp":240,"mp":80,"speed":16,"con":18,"ma":22,"ce":22,"cec":20,"cee":16,"tal":18,"skills":[("enemy_web_trap","蛛网陷阱",0,"martial",1.3,8,26,0,2),("enemy_venom_string","毒丝",22,"cursed",2.8,24,14,0,3)]},
+        {"id":"enemy_ubume","name":"姑获鸟","rank":"一级","tier":"normal","hp":300,"mp":90,"speed":17,"con":22,"ma":26,"ce":24,"cec":22,"cee":18,"tal":20,"skills":[("enemy_bird_talon","利爪",0,"martial",1.6,6,28,0,1),("enemy_screech","啼鸣诅咒",25,"cursed",3.0,26,14,0,3)]},
+        {"id":"enemy_nurarihyon","name":"滑瓢","rank":"一级","tier":"normal","hp":320,"mp":85,"speed":16,"con":24,"ma":28,"ce":22,"cec":24,"cee":20,"tal":19,"skills":[("enemy_sneak_strike","潜行一击",0,"martial",1.7,7,28,0,0),("enemy_dark_mist","黑雾侵蚀",28,"cursed",3.2,28,12,0,3)]},
+        {"id":"enemy_gyuki","name":"牛鬼","rank":"一级","tier":"normal","hp":350,"mp":70,"speed":13,"con":28,"ma":30,"ce":20,"cec":20,"cee":16,"tal":17,"skills":[("enemy_horn_charge","牛角冲撞",0,"martial",1.8,10,24,0,2),("enemy_breath_fire","鬼火吐息",30,"cursed",3.5,30,10,0,3)]},
+        {"id":"enemy_gashadokuro","name":"饿者骷髅","rank":"一级","tier":"normal","hp":380,"mp":100,"speed":11,"con":30,"ma":26,"ce":26,"cec":22,"cee":18,"tal":18,"skills":[("enemy_bone_crush","骨碎",0,"martial",1.9,12,22,0,1),("enemy_grave_wind","墓场阴风",35,"cursed",3.8,32,10,0,3)]},
+        # elite
+        {"id":"enemy_cursed_womb","name":"咒胎","rank":"准一级","tier":"elite","hp":300,"mp":80,"speed":14,"con":22,"ma":24,"ce":18,"cec":18,"cee":14,"tal":16,"skills":[("enemy_womb_slam","重压",0,"martial",1.5,10,24,0,1),("enemy_womb_beam","咒胎光束",20,"cursed",2.5,28,14,0,3),("enemy_womb_roar","咒胎咆哮",15,"cursed",2.0,22,16,1,2)]},
+        {"id":"enemy_vengeful_spirit","name":"怨灵","rank":"一级","tier":"elite","hp":400,"mp":100,"speed":16,"con":25,"ma":26,"ce":22,"cec":22,"cee":16,"tal":18,"skills":[("enemy_vengeful_strike","怨念击",0,"martial",1.6,8,24,0,0),("enemy_vengeful_blast","怨念爆破",25,"cursed",3.0,30,12,0,3),("enemy_vengeful_curse","深层诅咒",18,"cursed",2.2,24,14,0,2)]},
+        # boss
+        {"id":"enemy_special_grade","name":"特级咒灵","rank":"准特级","tier":"boss","hp":600,"mp":200,"speed":18,"con":30,"ma":32,"ce":28,"cec":28,"cee":20,"tal":22,"skills":[("boss_domain_fist","领域之拳",0,"martial",2.0,12,22,0,1),("boss_cursed_beam","咒力光束",30,"cursed",3.5,30,12,0,3),("boss_catastrophe","灾厄降临",50,"cursed",4.5,40,8,0,3)]},
+        {"id":"boss_jogo","name":"漏瑚","rank":"特级","tier":"boss","hp":700,"mp":250,"speed":20,"con":28,"ma":30,"ce":32,"cec":30,"cee":22,"tal":25,"skills":[("boss_jogo_volcano","火山弹",25,"cursed",4.5,24,14,0,3),("boss_jogo_fire_eruption","火炎柱",30,"cursed",5.0,28,12,0,2),("boss_jogo_insect","火虫",18,"cursed",3.0,16,18,1,2),("boss_jogo_meteor","极之番·陨",60,"cursed",8.0,50,6,0,3),("boss_jogo_ember_slash","灼烧击",0,"martial",1.8,8,24,0,0)],"domain_name":"盖棺铁围山","domain_hp":800},
+        {"id":"boss_mahito","name":"真人","rank":"特级","tier":"boss","hp":650,"mp":280,"speed":22,"con":24,"ma":32,"ce":30,"cec":28,"cee":24,"tal":28,"skills":[("boss_mahito_touch","无为转变",30,"cursed",3.5,22,16,0,0),("boss_mahito_morph","肉体变形",15,"cursed",2.5,15,22,0,1),("boss_mahito_dolls","改造人偶",25,"cursed",2.8,20,18,0,3)],"domain_name":"自闭圆顿裹","domain_hp":700},
+        {"id":"boss_dagon","name":"陀艮","rank":"准特级","tier":"boss","hp":550,"mp":200,"speed":16,"con":25,"ma":26,"ce":26,"cec":24,"cee":20,"tal":22,"skills":[("boss_dagon_water","水流弹",20,"cursed",3.0,18,20,0,3),("boss_dagon_shikigami","鱼形式神",30,"cursed",3.5,24,16,0,3),("boss_dagon_swarm","鱼群吞噬",40,"cursed",4.0,30,12,0,2)],"domain_name":"荡蕴平线","domain_hp":600},
+        {"id":"boss_sukuna_3f","name":"两面宿傩（三指）","rank":"特级","tier":"boss","hp":900,"mp":300,"speed":25,"con":35,"ma":38,"ce":36,"cec":35,"cee":30,"tal":35,"skills":[("boss_sukuna_cleave","解",15,"cursed",4.0,12,22,0,1),("boss_sukuna_dismantle","捌",20,"cursed",4.5,15,20,0,3),("boss_sukuna_cleave_net","解·网",35,"cursed",5.5,22,14,0,2),("boss_sukuna_slash","袈裟斩",0,"martial",3.0,8,26,0,0)],"domain_name":"伏魔御厨子","domain_hp":1000},
+        {"id":"boss_choso","name":"胀相","rank":"准特级","tier":"boss","hp":500,"mp":220,"speed":18,"con":22,"ma":28,"ce":24,"cec":22,"cee":18,"tal":20,"skills":[("boss_choso_convergence","百敛·穿血",35,"cursed",5.0,25,14,0,3),("boss_choso_slicing","血星弹",15,"cursed",2.2,12,22,1,3),("piercing_blood","穿血",14,"cursed",2.4,15,25,0,3),("blood_blade","血刃",8,"cursed",2.0,10,30,0,1)],"domain_name":"九血之狱（未完成）","domain_hp":500},
+    ]
+    for chosen in all_enemies:
+        if chosen.get("id") == enemy_id:
+            sk_list = []
+            for sk in chosen.get("skills", []):
+                sk_list.append(Skill(id=sk[0],name=sk[1],cost=sk[2],type=sk[3],damage_multiplier=sk[4],cast_time=sk[5],base_recovery_speed=sk[6],min_distance=sk[7],max_distance=sk[8]))
+            if not sk_list:
+                sk_list = [Skill(id="enemy_attack",name="撞击",cost=0,type="martial",damage_multiplier=1.0,cast_time=8,base_recovery_speed=28,min_distance=0,max_distance=0)]
+            return Unit(
+                id="enemy_1", name=chosen["name"], unit_type=UNIT_ENEMY,
+                hp=chosen["hp"], max_hp=chosen["hp"],
+                mp=chosen["mp"], max_mp=chosen["mp"],
+                atb=0, speed=chosen["speed"],
+                constitution=chosen["con"], martial_arts=chosen["ma"],
+                cursed_energy=chosen["ce"], cursed_energy_control=chosen["cec"],
+                cursed_energy_efficiency=chosen["cee"], talent=chosen["tal"],
+                skills=sk_list,
+                is_alive=True, distance=DISTANCE_MID, active_vow=None,
+                recovery_speed=chosen["speed"],
+                domain_name=chosen.get("domain_name"),
+                domain_hp=chosen.get("domain_hp", 500)
+            )
+    # Fallback
+    return create_enemy_from_save({"rank": "四级"})

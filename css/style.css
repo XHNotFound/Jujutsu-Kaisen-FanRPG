@@ -762,6 +762,59 @@ body {
   background: rgba(212, 168, 67, 0.15) !important;
 }
 
+/* Phase 10.5: unified domain panel */
+.domain-status-row {
+  display: flex;
+  align-items: center;
+  padding: 0.3rem 0;
+}
+.domain-actions-row {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin: 0.3rem 0;
+}
+.domain-clash-indicator {
+  text-align: center;
+  padding: 0.4rem;
+  background: rgba(220, 38, 38, 0.15);
+  border: 1px solid rgba(220, 38, 38, 0.4);
+  border-radius: 4px;
+  color: #f87171;
+  font-size: 0.85rem;
+  font-weight: bold;
+  margin: 0.3rem 0;
+}
+.domain-counter-buffs-row {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  margin: 0.2rem 0;
+}
+.btn-domain-repair {
+  font-size: 0.8rem;
+  padding: 0.3rem 0.6rem;
+  border-color: var(--color-gold);
+  color: var(--color-gold);
+  background: rgba(212, 168, 67, 0.08);
+}
+.btn-domain-repair:hover:not(:disabled) {
+  background: rgba(212, 168, 67, 0.2);
+}
+
+/* Phase 10.5: enemy domain row */
+.domain-enemy-row {
+  border-top: 1px solid rgba(220, 38, 38, 0.3);
+  padding-top: 0.4rem;
+  margin-top: 0.2rem;
+}
+.domain-enemy-label {
+  color: #f87171 !important;
+}
+.enemy-hp-bar {
+  background: linear-gradient(90deg, #dc2626, #b91c1c) !important;
+}
+
 /* Phase 8: Status Badge */
 .status-badge {
   font-size: 0.7rem;
@@ -1049,6 +1102,134 @@ body {
 
 .btn-domain-counter:disabled {
   opacity: 0.35;
+}
+
+/* ===== Phase 11: Advanced Skill UI ===== */
+.advanced-skill-modal {
+  max-width: 520px;
+  min-height: 320px;
+}
+.advanced-skill-tabs {
+  display: flex;
+  gap: 0.3rem;
+  margin-bottom: 0.8rem;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.5rem;
+}
+.advanced-skill-tab {
+  font-size: 0.8rem;
+  padding: 0.3rem 0.8rem;
+  border-color: var(--color-border);
+  color: var(--color-text-dim);
+  background: transparent;
+  transition: all 0.2s;
+}
+.advanced-skill-tab:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary-glow);
+}
+.advanced-skill-tab.tab-active {
+  border-color: var(--color-primary);
+  color: var(--color-primary-glow);
+  background: rgba(139, 26, 255, 0.12);
+  font-weight: bold;
+}
+.advanced-skill-content {
+  min-height: 250px;
+}
+.advanced-skill-header h3 {
+  color: var(--color-gold);
+  font-size: 1rem;
+  margin-bottom: 0.3rem;
+}
+.advanced-skill-flavor {
+  font-style: italic;
+  color: var(--color-text-dim);
+  margin-bottom: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  background: rgba(212, 168, 67, 0.05);
+  border-left: 3px solid var(--color-gold);
+  border-radius: 0 4px 4px 0;
+  font-size: 0.8rem;
+}
+.advanced-skill-desc {
+  font-size: 0.85rem;
+  margin-bottom: 0.8rem;
+  line-height: 1.4;
+}
+.skill-unlock-badge {
+  font-size: 0.9rem;
+  font-weight: bold;
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  display: inline-block;
+}
+.skill-unlock-badge.unlocked {
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
+  background: rgba(22, 163, 74, 0.08);
+}
+.skill-unlock-badge.locked {
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
+  background: rgba(220, 38, 38, 0.08);
+}
+.skill-lock-reason {
+  color: var(--color-gold);
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+}
+.skill-requirements h4 {
+  color: var(--color-primary-glow);
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0.3rem;
+}
+.req-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.3rem 0;
+  font-size: 0.8rem;
+}
+.req-row span:first-child {
+  min-width: 100px;
+  color: var(--color-text-dim);
+}
+.req-row span:last-child {
+  min-width: 60px;
+  text-align: right;
+  font-weight: bold;
+}
+.req-bar {
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.req-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-glow));
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+.advanced-skill-unlock-btn {
+  margin-top: 0.8rem;
+  width: 100%;
+}
+.skill-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.4rem 0;
+}
+.skill-stats-row span {
+  font-size: 0.8rem;
+  padding: 0.2rem 0.5rem;
+  background: rgba(139, 26, 255, 0.08);
+  border: 1px solid rgba(139, 26, 255, 0.2);
+  border-radius: 3px;
 }
 
 /* ===== Phase 9: Summon Cards ===== */

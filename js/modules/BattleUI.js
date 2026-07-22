@@ -48,9 +48,23 @@ export class BattleUI {
       const state = this.uiManager.saveManager.getState();
       const saveDataJson = state ? JSON.stringify(state) : '{}';
 
+      // Phase 11: 如果有强制 enemyId（考核战斗），写入 saveData 让 Python 引擎读取
+      let enemyIdOverride = '';
+      if (state && state._forcedEnemyId) {
+        enemyIdOverride = state._forcedEnemyId;
+      }
+
+      // 通过临时文件传递 JSON，避免字符串字面量转义问题
+      py.FS.writeFile('/home/pyodide/_init_save.json', saveDataJson);
+      if (enemyIdOverride) {
+        py.FS.writeFile('/home/pyodide/_forced_enemy.json', JSON.stringify({ enemy_id: enemyIdOverride }));
+      } else {
+        try { py.FS.unlink('/home/pyodide/_forced_enemy.json'); } catch(e) {}
+      }
+
       // 使用 exec 绕过 import 缓存，直接加载最新源码
       const resultJson = await py.runPythonAsync(`
-import sys, json
+import sys, json, os
 sys.path.insert(0, '/home/pyodide')
 for k in list(sys.modules.keys()):
     if 'python' in k or 'battle_engine' in k or 'models' in k:
@@ -59,7 +73,16 @@ with open('/home/pyodide/python/models.py', 'r', encoding='utf-8') as f:
     exec(f.read())
 with open('/home/pyodide/python/battle_engine.py', 'r', encoding='utf-8') as f:
     exec(f.read())
-init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
+with open('/home/pyodide/_init_save.json', 'r', encoding='utf-8') as f:
+    save_data = json.load(f)
+# Phase 11: 检查是否有强制 enemy_id
+try:
+    with open('/home/pyodide/_forced_enemy.json', 'r', encoding='utf-8') as f:
+        forced = json.load(f)
+    save_data['_forced_enemy_id'] = forced.get('enemy_id')
+except:
+    pass
+init_battle(json.dumps(save_data))
       `);
       this.currentState = JSON.parse(resultJson);
 
@@ -117,13 +140,14 @@ init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
         return;
       }
       const domainBtn = e.target.closest('.battle-domain-btn');
-      if (domainBtn && !domainBtn.disabled) {
-        this._handleDomainExpand(domainBtn.dataset.domainId || 'limitless_domain');
+      // cancel-domain 用 data-action 区分，必须在 domain expand 之前检查
+      if (e.target.closest('[data-action="cancel-domain"]')) {
+        const d = this.currentState?.units?.find(u => u.unit_type === 'domain' && u.owner === 'player');
+        if (d) this._executeAction({ type: 'cancel_domain', domain_id: d.id });
         return;
       }
-      if (e.target.closest('[data-action="cancel-domain"]')) {
-        const d = this.currentState?.units?.find(u => u.unit_type === 'domain');
-        if (d) this._executeAction({ type: 'cancel_domain', domain_id: d.id });
+      if (domainBtn && !domainBtn.disabled && !domainBtn.dataset.action) {
+        this._handleDomainExpand(domainBtn.dataset.domainId || 'limitless_domain');
         return;
       }
       // Phase 9: shikigami auto/manual toggle
@@ -158,6 +182,12 @@ init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
         this._executeAction({ type: 'activate_domain_counter', actor: 'player', buff_id: buffId });
         return;
       }
+      // Phase 10.5: repair domain barrier
+      const repairBtn = e.target.closest('[data-action="repair-domain"]');
+      if (repairBtn && !repairBtn.disabled) {
+        this._executeAction({ type: 'repair_domain', actor: 'player' });
+        return;
+      }
     });
   }
 
@@ -170,10 +200,9 @@ init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
     this._renderLog(s.log);
     this._renderSummons(s);  // Phase 9: 召唤物状态栏
     this._renderShikigamiSkillPanel(s);  // Phase 9: 式神手动技能面板
-    this._renderDomainCounterBuffs(s);  // Phase 10: 领域对抗 Buff 状态显示
     this._renderCollapsibleSection('battle-attack-section', 'battle-attack-body', '⚔️ 攻击', () => this._renderSkillButtons(s.player));
     this._renderCollapsibleSection('battle-vow-section', 'battle-vow-body', '🔗 束缚', () => this._renderVowButtons(s.player));
-    this._renderDomainButton(s);
+    this._renderCollapsibleSection('battle-domain-section', 'battle-domain-body', '🏛️ 领域', () => this._renderDomainPanel(s));
     if (s.last_hit_was_black_flash) this._flashBlackFlashEffect();
     if (s.turn === 'player_win') { this._appendLog('━━ 胜利！诅咒被祓除了。 ━━'); this._disableAllSkills(); this._showVictoryScreen(s); }
     else if (s.turn === 'enemy_win') { this._appendLog('━━ 败北…你失去了意识。 ━━'); this._disableAllSkills(); }
@@ -442,25 +471,78 @@ init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
   }
 
   _renderDomainButton(s) {
-    const hasDomain = s.units && s.units.some(u => u.unit_type === 'domain');
-    let bc = document.getElementById('battle-domain-bar');
-    if (!bc) { bc = document.createElement('div'); bc.id = 'battle-domain-bar'; bc.className = 'battle-domain-bar'; const ve = document.getElementById('battle-vows'); if (ve && ve.parentNode) ve.parentNode.insertBefore(bc, ve.nextSibling); }
-    if (hasDomain) {
-      const d = s.units.find(u => u.unit_type === 'domain');
-      bc.innerHTML = '<div class="domain-hp-row"><span class="domain-label">🏛️ ' + d.name + '</span><div class="stat-bar-bg battle-bar-wide" style="margin:0 0.5rem;"><div class="stat-bar hp-bar" style="width:' + (d.max_hp > 0 ? (d.hp / d.max_hp) * 100 : 0) + '%"></div></div><span class="stat-text">' + d.hp + ' / ' + d.max_hp + '</span><button class="btn battle-domain-btn btn-system" data-action="cancel-domain">取消领域</button></div>';
+    // Phase 10.5: 已废弃，由 _renderDomainPanel 统一处理
+    // 保留函数体以避免报错（旧代码可能引用），但不再被 _renderAll 调用
+  }
+
+  _renderDomainPanel(s) {
+    const body = document.getElementById('battle-domain-body');
+    if (!body) return;
+
+    const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    const playerDomain = (s.units || []).find(u => u.unit_type === 'domain' && u.owner === 'player');
+    const enemyDomain = (s.units || []).find(u => u.unit_type === 'domain' && u.owner !== 'player');
+    const isClashActive = s.domain_clash_active || (playerDomain && enemyDomain);
+    const buffs = (player && player.domain_counter_buffs) || [];
+
+    let html = '';
+
+    // 1. 我方领域状态
+    if (playerDomain) {
+      const hpPct = playerDomain.max_hp > 0 ? (playerDomain.hp / playerDomain.max_hp) * 100 : 0;
+      html += '<div class="domain-status-row">';
+      html += '<span class="domain-label">🏛️ ' + playerDomain.name + '（我方）</span>';
+      html += '<div class="stat-bar-bg battle-bar-wide" style="margin:0 0.5rem;"><div class="stat-bar hp-bar" style="width:' + hpPct + '%"></div></div>';
+      html += '<span class="stat-text">' + playerDomain.hp + ' / ' + playerDomain.max_hp + '</span>';
+      html += '</div>';
+      html += '<div class="domain-actions-row">';
+      html += '<button class="btn battle-domain-btn btn-system" data-action="cancel-domain">❌ 取消领域</button>';
+      html += '<button class="btn btn-domain-repair" data-action="repair-domain"' + (player.mp < 15 ? ' disabled' : '') + '>🔧 结界术修复</button>';
+      html += '</div>';
     } else {
       const st = this.uiManager.saveManager?.getState();
-      // 领域按钮必须满足两个条件：1) domainUnlocked === techniqueId  2) 该术式确实有领域
       const hasDomainUnlocked = st && st.domainUnlocked === st.techniqueId;
-      let hasDomainConfig = false;
-      if (st && st.techniqueId) {
-        const TECHNIQUES_WITH_DOMAIN = ['limitless', 'tenShadows', 'boogieWoogie', 'curseManipulation', 'pureMartial'];
-        hasDomainConfig = TECHNIQUES_WITH_DOMAIN.includes(st.techniqueId);
-      }
-      const hl = hasDomainUnlocked && hasDomainConfig;
-      bc.innerHTML = '<button class="btn battle-domain-btn btn-primary" data-domain-id="' + (st?.techniqueId || 'cursedEnergyBoost') + '_domain" ' + (hl ? '' : 'disabled') + '>🏛️ 领域展开' + (hl ? '' : ' (未学习)') + '</button>';
-
+      const TECHNIQUES_WITH_DOMAIN = ['limitless', 'tenShadows', 'boogieWoogie', 'curseManipulation', 'pureMartial'];
+      const hasDomainConfig = st && TECHNIQUES_WITH_DOMAIN.includes(st.techniqueId);
+      const canExpand = hasDomainUnlocked && hasDomainConfig;
+      html += '<button class="btn battle-domain-btn btn-primary" data-domain-id="' + (st?.techniqueId || 'cursedEnergyBoost') + '_domain"' + (canExpand ? '' : ' disabled') + '>🏛️ 领域展开' + (canExpand ? '' : ' (未学习)') + '</button>';
     }
+
+    // 2. 敌方领域状态
+    if (enemyDomain) {
+      const eHpPct = enemyDomain.max_hp > 0 ? (enemyDomain.hp / enemyDomain.max_hp) * 100 : 0;
+      html += '<div class="domain-status-row domain-enemy-row">';
+      html += '<span class="domain-label domain-enemy-label">⚫ ' + enemyDomain.name + '（敌方）</span>';
+      html += '<div class="stat-bar-bg battle-bar-wide" style="margin:0 0.5rem;"><div class="stat-bar enemy-hp-bar" style="width:' + eHpPct + '%"></div></div>';
+      html += '<span class="stat-text">' + enemyDomain.hp + ' / ' + enemyDomain.max_hp + '</span>';
+      html += '</div>';
+    }
+
+    // 3. 领域对拼指示器
+    if (isClashActive) {
+      html += '<div class="domain-clash-indicator">⚔️ 领域对拼中！双方特殊效果失效</div>';
+    }
+
+    // 4. 领域对抗 Buff 状态
+    if (buffs.length > 0) {
+      html += '<div class="domain-counter-buffs-row">';
+      for (const b of buffs) {
+        const drainText = b.mp_drain_per_10av > 0 ? ' ⚡' + b.mp_drain_per_10av + '/10AV' : '';
+        html += '<span class="domain-counter-buff-badge">🛡️ ' + b.name + drainText + '</span>';
+      }
+      html += '</div>';
+    }
+
+    // 5. 领域对抗按钮（仅敌方有领域时可用；已有 buff 时仍显示但 disabled）
+    if (enemyDomain && player && player.mp > 10) {
+      html += '<div class="domain-actions-row">';
+      html += '<button class="btn btn-domain-counter" data-action="activate-simple-domain"' + (buffs.length > 0 ? ' disabled' : '') + '>🗡️ 简易领域</button>';
+      html += '<button class="btn btn-domain-counter" data-action="activate-falling-blossom"' + (buffs.length > 0 ? ' disabled' : '') + '>🌸 落花之情</button>';
+      html += '<button class="btn btn-domain-counter" data-action="activate-hollow-wicker"' + (buffs.length > 0 ? ' disabled' : '') + '>🏺 弥虚葛笼</button>';
+      html += '</div>';
+    }
+
+    body.innerHTML = html;
   }
 
   _flashBlackFlashEffect() {
@@ -515,6 +597,10 @@ init_battle('${saveDataJson.replace(/'/g, "\\'").replace(/\n/g, '')}')
     try {
       const actionJson = JSON.stringify(action);
       const stateJson = JSON.stringify(this.currentState);
+      // 通过临时文件传递 JSON，避免字符串字面量转义问题
+      const py = await this.pyodideLoader.load();
+      py.FS.writeFile('/home/pyodide/_action.json', actionJson);
+      py.FS.writeFile('/home/pyodide/_state.json', stateJson);
       const resultJson = await this.pyodideLoader.runPython(`
 import sys, json
 sys.path.insert(0, '/home/pyodide')
@@ -525,7 +611,12 @@ with open('/home/pyodide/python/models.py', 'r', encoding='utf-8') as f:
     exec(f.read())
 with open('/home/pyodide/python/battle_engine.py', 'r', encoding='utf-8') as f:
     exec(f.read())
-execute_action('${actionJson.replace(/'/g, "\\'")}', '''${stateJson.replace(/'/g, "\\'")}''')`);
+with open('/home/pyodide/_action.json', 'r', encoding='utf-8') as f:
+    _action = json.load(f)
+with open('/home/pyodide/_state.json', 'r', encoding='utf-8') as f:
+    _state = json.load(f)
+execute_action(json.dumps(_action), json.dumps(_state))
+`);
       this.currentState = JSON.parse(resultJson);
       this._renderAll();
     } catch (err) {

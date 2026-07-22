@@ -2,3 +2,6 @@
 lib/pyodide/
 __pycache__/
 *.pyc
+python_env/
+run.bat
+__pycache__/

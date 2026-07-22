@@ -43,7 +43,7 @@ export const ADVANCED_SKILLS = {
       extra_mp_drain_on_hit: true
     },
     requirements: {
-      prerequisite: null,                    // 落花之情不需要请教基础（御三家相传）
+      prerequisite: "falling_blossom_basics",
       inspiration: 2,
       cursed_energy_control: 40,
       talent: 35
@@ -67,7 +67,7 @@ export const ADVANCED_SKILLS = {
       mp_drain_per_10av: 8
     },
     requirements: {
-      prerequisite: null,                    // 弥虚葛笼不需要请教基础
+      prerequisite: "hollow_wicker_basics",
       inspiration: 2,
       cursed_energy_control: 45,
       constitution: 35

@@ -283,7 +283,37 @@ export class HubSystem {
   }
 
   /**
-   * Phase 11: 解锁高级技巧
+   * Phase 11: 完成考核任务（战斗胜利后调用）
+   * @param {object} characterState
+   * @param {string} examQuestId — 考核任务 ID
+   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   */
+  completeExam(characterState, examQuestId) {
+    const exam = EXAMS.promotions.find(e => e.id === examQuestId);
+    if (!exam) {
+      return { success: false, log: '无效的考核任务。', updatePayload: null };
+    }
+
+    const ap = characterState.actionPoints || 0;
+    if (ap < (exam.cost?.ap || 30)) {
+      return { success: false, log: '行动力不足！', updatePayload: null };
+    }
+
+    return {
+      success: true,
+      log: `🎉 恭喜！你通过了「${exam.name}」，晋升为 ${exam.target_rank}！`,
+      updatePayload: {
+        ap: -(exam.cost?.ap || 30),
+        money: exam.reward?.money || 0,
+        skillPoints: exam.reward?.skillPoints || 0,
+        inspirationGained: true,
+        newRank: exam.reward?.newRank || exam.target_rank
+      }
+    };
+  }
+
+  /**
+   * Phase 11: 解锁高级技巧（消耗灵感）
    * @param {object} characterState
    * @param {string} skillId — 高级技巧 ID（如 "simple_domain"）
    * @returns {{ success: boolean, log: string, updatePayload: object|null }}
@@ -300,11 +330,18 @@ export class HubSystem {
       return { success: false, log: `你已解锁了「${def.name}」。`, updatePayload: null };
     }
 
+    // 扣除灵感
+    const inspCost = def.requirements.inspiration || 0;
+    if (inspCost > 0 && (characterState.inspiration || 0) < inspCost) {
+      return { success: false, log: `灵感不足！需要 ${inspCost} 点灵感，当前 ${characterState.inspiration || 0}。`, updatePayload: null };
+    }
+
     return {
       success: true,
       log: `你成功解锁了「${def.name}」！${def.flavorText || ''}`,
       updatePayload: {
-        advanced_skills_unlocked_add: skillId
+        advanced_skills_unlocked_add: skillId,
+        inspiration: -inspCost
       }
     };
   }

@@ -9,6 +9,7 @@ import { NPCS } from '../data/npcs.js';
 import { QUESTS } from '../data/quests.js';
 import { DOMAINS } from '../data/domains.js';
 import { getNextExam } from '../data/exams.js';
+import { checkAdvancedSkillUnlocked } from '../data/advanced_skills.js';
 
 /**
  * UIManager 职责：
@@ -561,6 +562,10 @@ export class UIManager {
     }
 
     const hasDomainLearned = state.domainUnlocked === techId;
+    const learnedTier = (state.domainLearnedTiers && state.domainLearnedTiers[techId]) || null;
+    // incomplete 可从 "incomplete" 升级到 "complete"
+    const hasComplete = learnedTier === 'complete';
+    const hasIncomplete = learnedTier === 'incomplete';
 
     const sl = state.skillLevels || {};
     let totalTech = 0;
@@ -573,7 +578,6 @@ export class UIManager {
     const ir = domainDef.incompleteRequirements;
     const completeDone = totalTech >= cr.techniqueLevel && barrier >= cr.barrierLevel && insp >= cr.inspiration && barrier >= cr.cursedEnergyControl;
     const incompleteDone = totalTech >= ir.techniqueLevel && barrier >= ir.barrierLevel && insp >= ir.inspiration && barrier >= ir.cursedEnergyControl;
-    const canLearn = incompleteDone || completeDone;
 
     function reqRow(name, current, required) {
       const ok = current >= required;
@@ -610,11 +614,24 @@ export class UIManager {
     const containerId = 'domain-panel-' + Date.now();
 
     let learnBtnHTML = '';
-    if (hasDomainLearned) {
-      learnBtnHTML = '<div class="domain-learned-badge">✅ 已学会领域展开</div>';
-    } else if (canLearn) {
-      const tier = completeDone ? '完全领域' : '不完全领域';
-      learnBtnHTML = `<button class="btn btn-primary btn-learn-domain" data-tier="${completeDone ? 'complete' : 'incomplete'}">🔓 学会${tier}领域展开</button>`;
+    if (hasComplete) {
+      learnBtnHTML = '<div class="domain-learned-badge">✅ 已学会完全领域展开</div>';
+    } else if (hasIncomplete) {
+      // 已学会不完全领域，可以升级到完全领域
+      learnBtnHTML = '<div class="domain-learned-badge">✅ 已学会不完全领域展开</div>';
+      if (completeDone && insp >= cr.inspiration) {
+        learnBtnHTML += `<button class="btn btn-primary btn-learn-domain" data-tier="complete" data-inspcost="${cr.inspiration}">🔓 升级为完全领域展开（消耗 ${cr.inspiration} 灵感）</button>`;
+      } else if (!completeDone) {
+        learnBtnHTML += '<div class="domain-cannot-learn">🔒 完全领域条件不足，继续修行吧</div>';
+      } else {
+        learnBtnHTML += `<div class="domain-cannot-learn">🔒 灵感不足 (需要 ${cr.inspiration})</div>`;
+      }
+    } else if (completeDone) {
+      // 直接学完全领域
+      learnBtnHTML = `<button class="btn btn-primary btn-learn-domain" data-tier="complete" data-inspcost="${cr.inspiration}">🔓 学会完全领域展开（消耗 ${cr.inspiration} 灵感）</button>`;
+    } else if (incompleteDone) {
+      // 学不完全领域
+      learnBtnHTML = `<button class="btn btn-primary btn-learn-domain" data-tier="incomplete" data-inspcost="${ir.inspiration}">🔓 学会不完全领域展开（消耗 ${ir.inspiration} 灵感）</button>`;
     } else {
       learnBtnHTML = '<div class="domain-cannot-learn">🔒 条件不足，无法学习</div>';
     }
@@ -653,10 +670,20 @@ export class UIManager {
       if (learnBtn) {
         learnBtn.onclick = () => {
           const tier = learnBtn.dataset.tier;
+          const inspCost = parseInt(learnBtn.dataset.inspcost) || 0;
           const st = this.saveManager.getState();
+
+          // 检查灵感是否足够
+          if (inspCost > 0 && (st.inspiration || 0) < inspCost) {
+            this.showModal(`灵感不足！需要 ${inspCost} 点灵感，当前 ${st.inspiration || 0}。`, { confirmOnly: true, onConfirm: () => this.hideModal() });
+            return;
+          }
+
           st.domainUnlocked = techId;
           if (!st.domainLearnedTiers) st.domainLearnedTiers = {};
           st.domainLearnedTiers[techId] = tier || 'incomplete';
+          // 扣除灵感
+          if (inspCost > 0) st.inspiration = Math.max(0, (st.inspiration || 0) - inspCost);
           this.saveManager.setState(st);
           this.saveManager.saveToSlot(this.saveManager._findCurrentSlot() || 0);
           this.showModal(
@@ -704,10 +731,6 @@ export class UIManager {
     const result = this._hubSystem.unlockAdvancedSkill(state, skillId);
     if (result.success) {
       this.saveManager.applyGrowthUpdate(result.updatePayload);
-      // 释放灵感（解锁消耗1点灵感）
-      if (state.inspiration > 0) {
-        state.inspiration = state.inspiration - 1;
-      }
       this.saveManager.saveToSlot(this.saveManager._findCurrentSlot() || 0);
       this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showAdvancedSkills(); } });
     } else {
@@ -989,13 +1012,32 @@ export class UIManager {
     const state = this.saveManager.getState();
     if (!state) return;
 
+    // Phase 11: 考核属性校验
+    const nextExam = getNextExam(state.rank || '四级');
+    if (!nextExam) {
+      this.showModal('没有可参加的考核。', { confirmOnly: true, onConfirm: () => this.hideModal() });
+      return;
+    }
+    const reqs = nextExam.requirements?.attributes || {};
+    const attrs = state.attributes || {};
+    for (const [key, val] of Object.entries(reqs)) {
+      if ((attrs[key] || 0) < val) {
+        const attrName = ATTRIBUTES[key]?.name || key;
+        this.showModal(`${attrName}不足！需要 ${val}，当前 ${attrs[key] || 0}。`, { confirmOnly: true, onConfirm: () => this.hideModal() });
+        return;
+      }
+    }
+
     // 扣除 AP
-    const apCost = 30;
+    const apCost = nextExam.cost?.ap || 30;
     if ((state.actionPoints || 0) < apCost) {
       this.showModal('行动力不足！', { confirmOnly: true, onConfirm: () => this.hideModal() });
       return;
     }
     state.actionPoints -= apCost;
+
+    // Phase 11: 写入选定考核ID（战斗胜利后用于触发 quest 完成）
+    state._examQuestId = examQuest.id;
 
     // 将强制 enemyId 写入 state（battle_engine init 时会读取）
     state._forcedEnemyId = examQuest.enemy_id;

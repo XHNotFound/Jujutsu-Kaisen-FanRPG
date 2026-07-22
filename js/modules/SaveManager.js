@@ -164,11 +164,11 @@ export class SaveManager {
       bindingId: charCreator.selectedBindingId,
       rank: rank.name,
 
-      // 基础资源（Phase 1 默认值，后续 Phase 可扩展）
-      hp: 100,
-      maxHp: 100,
-      mp: 100,
-      maxMp: 100,
+      // Phase 11: HP/MP 上限随体质/咒力总量阶梯线性提升
+      hp: this._calcMaxHp(adjustedAttrs.constitution),
+      maxHp: this._calcMaxHp(adjustedAttrs.constitution),
+      mp: this._calcMaxMp(adjustedAttrs.cursedEnergy),
+      maxMp: this._calcMaxMp(adjustedAttrs.cursedEnergy),
       money: 0,
       actionPoints: 10,
 
@@ -361,6 +361,15 @@ export class SaveManager {
         if (!this.state.baseAttributes) this.state.baseAttributes = {};
         this.state.attributes[attrKey] = (this.state.attributes[attrKey] || 0) + value;
         this.state.baseAttributes[attrKey] = (this.state.baseAttributes[attrKey] || 0) + value;
+        // Phase 11: 体质/咒力总量变化时重新计算 maxHp/maxMp
+        if (attrKey === 'constitution') {
+          this.state.maxHp = this._calcMaxHp(this.state.attributes.constitution);
+          this.state.hp = Math.min(this.state.maxHp, this.state.hp || this.state.maxHp);
+        }
+        if (attrKey === 'cursedEnergy') {
+          this.state.maxMp = this._calcMaxMp(this.state.attributes.cursedEnergy);
+          this.state.mp = Math.min(this.state.maxMp, this.state.mp || this.state.maxMp);
+        }
         continue;
       }
 
@@ -389,6 +398,47 @@ export class SaveManager {
     if (slot >= 0) {
       this.saveToSlot(slot);
     }
+  }
+
+  /**
+   * Phase 11: 根据体质阶梯计算 maxHp
+   * 体质≤20: +5/点, 20<体质≤40: +10/点, 体质>40: +15/点
+   */
+  _calcMaxHp(con) {
+    con = con || 10;
+    let hp = 80;
+    if (con <= 20) {
+      hp = 80 + con * 5;
+    } else if (con <= 40) {
+      hp = 80 + 20 * 5 + (con - 20) * 10;
+    } else {
+      hp = 80 + 20 * 5 + 20 * 10 + (con - 40) * 15;
+    }
+    return hp;
+  }
+
+  /**
+   * Phase 11: 根据咒力总量阶梯计算 maxMp
+   * 总量≤20: +4/点, 20<总量≤30: +8/点, 30<总量≤45: +15/点, 总量>45: +20/点
+   */
+  _calcMaxMp(ce) {
+    ce = ce || 10;
+    let mp = 30;
+    // tier 1: ≤20
+    const t1 = Math.min(ce, 20);
+    mp += t1 * 4;
+    if (ce <= 20) return mp;
+    // tier 2: 20-30
+    const t2 = Math.min(ce - 20, 10);
+    mp += t2 * 8;
+    if (ce <= 30) return mp;
+    // tier 3: 30-45
+    const t3 = Math.min(ce - 30, 15);
+    mp += t3 * 15;
+    if (ce <= 45) return mp;
+    // tier 4: >45
+    mp += (ce - 45) * 20;
+    return mp;
   }
 
   // ===== 内部方法 =====

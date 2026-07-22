@@ -225,6 +225,53 @@ export const NPCS = [
           proficiencyGain: 12,
           inspirationChance: 0.15
         }
+      },
+      {
+        id: "learn_falling_blossom_basics",
+        type: "consult",
+        name: "请教落花之情基础",
+        description: "直毘人传授禅院家秘传——落花之情的入门知识。解锁落花之情的前置条件。",
+        cost: { ap: 30, relationship: 3 },
+        effect: {
+          type: "unlock_prerequisite",
+          unlockKey: "falling_blossom_basics",
+          description: "获得了落花之情的基础知识"
+        }
+      },
+      {
+        id: "gift",
+        type: "gift",
+        name: "赠送清酒",
+        description: "给直毘人送上他最喜欢的清酒。",
+        cost: { money: 120 },
+        effect: { type: "gift", relationship: 2 }
+      }
+    ]
+  },
+  {
+    id: "kashimo",
+    name: "鹿紫云一",
+    description: "四百年前的最强咒术师。虽然看起来冷漠，但对强者愿意交流心得。",
+    actions: [
+      {
+        id: "learn_hollow_wicker_basics",
+        type: "consult",
+        name: "请教弥虚葛笼基础",
+        description: "鹿紫云一传授结界术最高秘义——弥虚葛笼的入门知识。解锁弥虚葛笼的前置条件。",
+        cost: { ap: 35, relationship: 4 },
+        effect: {
+          type: "unlock_prerequisite",
+          unlockKey: "hollow_wicker_basics",
+          description: "获得了弥虚葛笼的基础知识"
+        }
+      },
+      {
+        id: "gift",
+        type: "gift",
+        name: "赠送珍稀咒物",
+        description: "将你祓除咒灵获得的稀有咒物赠给鹿紫云一。",
+        cost: { money: 200 },
+        effect: { type: "gift", relationship: 3 }
       }
     ]
   },

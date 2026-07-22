@@ -555,11 +555,69 @@ init_battle(json.dumps(save_data))
   _showVictoryScreen(s) {
     const tracker = s._tracker || {};
     const usage = tracker.skill_usage || {};
-    this.pyodideLoader.runPython('import sys; sys.path.insert(0,"/home/pyodide");\nfor k in list(sys.modules.keys()):\n if "python" in k: sys.modules.pop(k,None)\nwith open("/home/pyodide/python/battle_engine.py","r",encoding="utf-8") as f:\n exec(f.read())\ngenerate_battle_rewards(t, None)' + '').then(rs => {}).catch(err => {
+
+    const examQuestId = this.uiManager.saveManager?.getState()?._examQuestId;
+    if (examQuestId) {
+      // Phase 11: 考核战斗胜利 - 完成考核任务
+      this._completeExamQuest(examQuestId, tracker);
+      return;
+    }
+
+    // 普通战斗奖励
+    this.pyodideLoader.runPython(`
+import sys, json
+sys.path.insert(0,"/home/pyodide")
+for k in list(sys.modules.keys()):
+ if "python" in k: sys.modules.pop(k,None)
+with open("/home/pyodide/python/battle_engine.py","r",encoding="utf-8") as f:
+ exec(f.read())
+json.dumps(generate_battle_rewards(BattleTracker(), None))
+    `.trim()).then(rs => {
+      try {
+        const rewards = JSON.parse(rs);
+        this._renderRewardPopup(rewards);
+      } catch(e) {
+        const proficiency = {};
+        for (const [id, count] of Object.entries(usage)) proficiency[id] = count * 5;
+        this._renderRewardPopup({ money: Math.floor(Math.random() * 31) + 20, skillPoints: 1, inspirationGained: Math.random() < 0.05, proficiencyGains: proficiency });
+      }
+    }).catch(err => {
       const proficiency = {};
       for (const [id, count] of Object.entries(usage)) proficiency[id] = count * 5;
       this._renderRewardPopup({ money: Math.floor(Math.random() * 31) + 20, skillPoints: 1, inspirationGained: Math.random() < 0.05, proficiencyGains: proficiency });
     });
+  }
+
+  _completeExamQuest(examQuestId, tracker) {
+    // 调用 HubSystem 完成考核
+    if (this.uiManager._hubSystem && typeof this.uiManager._hubSystem.completeExam === 'function') {
+      const state = this.uiManager.saveManager.getState();
+      const result = this.uiManager._hubSystem.completeExam(state, examQuestId);
+      if (result.success && result.updatePayload) {
+        this.uiManager.saveManager.applyGrowthUpdate(result.updatePayload);
+        // 清理 _examQuestId
+        delete state._examQuestId;
+        delete state._forcedEnemyId;
+        this.uiManager.saveManager.saveToSlot(this.uiManager.saveManager._findCurrentSlot() || 0);
+
+        const usage = tracker.skill_usage || {};
+        const proficiency = {};
+        for (const [id, count] of Object.entries(usage)) proficiency[id] = count * 5;
+        this._renderRewardPopup({
+          money: Math.floor(Math.random() * 101) + 200,
+          skillPoints: 5,
+          inspirationGained: true,
+          proficiencyGains: proficiency,
+          examComplete: true
+        });
+        return;
+      }
+    }
+    // Fallback
+    const usage2 = tracker.skill_usage || {};
+    const proficiency2 = {};
+    for (const [id, count] of Object.entries(usage2)) proficiency2[id] = count * 5;
+    this._renderRewardPopup({ money: Math.floor(Math.random() * 31) + 20, skillPoints: 1, inspirationGained: Math.random() < 0.05, proficiencyGains: proficiency2 });
   }
 
   _renderRewardPopup(rewards) {
@@ -570,15 +628,21 @@ init_battle(json.dumps(save_data))
     const pGains = rewards.proficiencyGains || {};
     const profLines = Object.entries(pGains).map(([id, val]) => '<div class="reward-row">' + (id || '??') + ': +' + val + ' 熟练度</div>').join('');
     const inspText = rewards.inspirationGained ? '<div class="reward-row reward-inspiration">⚡ 获得了灵感！</div>' : '';
+    const examText = rewards.examComplete ? '<div class="reward-row reward-inspiration">🏅 考核通过！职级已晋升</div>' : '';
     const overlay = document.createElement('div');
     overlay.id = 'battle-reward-overlay';
     overlay.className = 'battle-reward-overlay';
-    overlay.innerHTML = '<div class="battle-reward-box"><h3>━━ 战斗胜利 ━━</h3><div class="reward-row reward-money">💰 金币: +' + rewards.money + '</div><div class="reward-row reward-sp">🔧 技能点: +' + rewards.skillPoints + '</div>' + profLines + inspText + '<button id="btn-reward-confirm" class="btn btn-primary">确认</button></div>';
+    overlay.innerHTML = '<div class="battle-reward-box"><h3>━━ 战斗胜利 ━━</h3><div class="reward-row reward-money">💰 金币: +' + rewards.money + '</div><div class="reward-row reward-sp">🔧 技能点: +' + rewards.skillPoints + '</div>' + profLines + inspText + examText + '<button id="btn-reward-confirm" class="btn btn-primary">确认</button></div>';
     container.appendChild(overlay);
     document.getElementById('btn-reward-confirm').onclick = () => {
       overlay.remove();
       if (this.uiManager.saveManager && typeof this.uiManager.saveManager.applyBattleRewards === 'function') {
         this.uiManager.saveManager.applyBattleRewards(rewards);
+      }
+      // Phase 11: 返回主界面防止反复领取奖励
+      if (this.uiManager && typeof this.uiManager.renderMainScreen === 'function') {
+        this.uiManager.renderMainScreen();
+        this.uiManager.showScreen('screen-main');
       }
     };
   }

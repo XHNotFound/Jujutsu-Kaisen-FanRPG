@@ -19,7 +19,7 @@ export class HubSystem {
    * 修炼指定属性
    * @param {object} characterState — SaveManager.getState() 的返回值
    * @param {string} attrKey — ATTRIBUTES 中的 key
-   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   * @returns {object}
    */
   train(characterState, attrKey) {
     const attrDef = ATTRIBUTES[attrKey];
@@ -68,7 +68,7 @@ export class HubSystem {
    * @param {object} characterState
    * @param {string} npcId
    * @param {string} actionId
-   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   * @returns {object}
    */
   consult(characterState, npcId, actionId) {
     const npc = NPCS.find(n => n.id === npcId);
@@ -196,7 +196,7 @@ export class HubSystem {
    * @param {object} characterState
    * @param {string} questId
    * @param {string} category — "promotions" | "npcTasks" | "mainStory"
-   * @returns {{ success: boolean, log: string, updatePayload: object|null, storyText: string|null }}
+   * @returns {object}
    */
   acceptQuest(characterState, questId, category = 'npcTasks') {
     const pool = QUESTS[category] || [];
@@ -245,7 +245,7 @@ export class HubSystem {
   /**
    * 休息
    * @param {object} characterState
-   * @returns {{ success: boolean, log: string, updatePayload: object }}
+   * @returns {object}
    */
   rest(characterState) {
     const maxHp = characterState.maxHp || 100;
@@ -288,7 +288,7 @@ export class HubSystem {
    * Phase 11: 完成考核任务（战斗胜利后调用）
    * @param {object} characterState
    * @param {string} examQuestId — 考核任务 ID
-   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   * @returns {object}
    */
   completeExam(characterState, examQuestId) {
     const exam = EXAMS.promotions.find(e => e.id === examQuestId);
@@ -318,7 +318,7 @@ export class HubSystem {
    * Phase 11: 解锁高级技巧（消耗灵感）
    * @param {object} characterState
    * @param {string} skillId — 高级技巧 ID（如 "simple_domain"）
-   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   * @returns {object}
    */
   unlockAdvancedSkill(characterState, skillId) {
     const check = checkAdvancedSkillUnlocked(skillId, characterState);
@@ -357,7 +357,7 @@ export class HubSystem {
    * @param {object} characterState
    * @param {string} itemId
    * @param {number} quantity — 购买数量（默认 1）
-   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   * @returns {object}
    */
   buyItem(characterState, itemId, quantity = 1) {
     const item = getItem(itemId);
@@ -383,7 +383,7 @@ export class HubSystem {
    * 使用道具（非战斗状态）
    * @param {object} characterState
    * @param {string} itemId
-   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   * @returns {object}
    */
   useItem(characterState, itemId) {
     const item = getItem(itemId);
@@ -474,7 +474,7 @@ export class HubSystem {
    * @param {string} enemyId — 敌人 ID
    * @param {string} level — 情报等级: "basic" | "skill" | "advanced"
    * @param {object} enemyConfig — 敌人完整配置（从 ENEMIES 中查询）
-   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   * @returns {object}
    */
   purchaseIntel(characterState, enemyId, level, enemyConfig) {
     if (!enemyConfig || !enemyConfig.intelData) {
@@ -507,7 +507,6 @@ export class HubSystem {
       }
     };
   }
-}
 
   // ================================================================
   //  Phase 13: 咒具系统（纯函数，零 DOM 依赖）
@@ -518,7 +517,7 @@ export class HubSystem {
    * @param {object} characterState
    * @param {string} slotId — "mainHand" | "offHand" | "accessory"
    * @param {string} toolId — 咒具 ID（null 表示卸下）
-   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   * @returns {object}
    */
   equipTool(characterState, slotId, toolId) {
     const slot = EQUIPMENT_SLOTS[slotId];
@@ -573,7 +572,7 @@ export class HubSystem {
    * 卸下指定槽位的装备（equipTool 的语法糖）
    * @param {object} characterState
    * @param {string} slotId
-   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   * @returns {object}
    */
   unequipTool(characterState, slotId) {
     return this.equipTool(characterState, slotId, null);

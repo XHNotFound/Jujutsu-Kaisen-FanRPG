@@ -463,4 +463,48 @@ export class HubSystem {
       updatePayload: payload
     };
   }
+
+  // ================================================================
+  //  Phase 13: 窗的情报系统（纯函数，零 DOM 依赖）
+  // ================================================================
+
+  /**
+   * 购买怪物情报
+   * @param {object} characterState
+   * @param {string} enemyId — 敌人 ID
+   * @param {string} level — 情报等级: "basic" | "skill" | "advanced"
+   * @param {object} enemyConfig — 敌人完整配置（从 ENEMIES 中查询）
+   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   */
+  purchaseIntel(characterState, enemyId, level, enemyConfig) {
+    if (!enemyConfig || !enemyConfig.intelData) {
+      return { success: false, log: '该敌人没有可购买的情报数据。', updatePayload: null };
+    }
+    const intelLevel = enemyConfig.intelData[level];
+    if (!intelLevel) {
+      return { success: false, log: `无效的情报等级: ${level}。`, updatePayload: null };
+    }
+
+    const money = characterState.money || 0;
+    const price = intelLevel.price;
+    if (money < price) {
+      return { success: false, log: `金钱不足！需要 ${price} 金币购买「${enemyConfig.name} - ${intelLevel.name}」，当前 ${money} 金币。`, updatePayload: null };
+    }
+
+    // 检查是否已购买过该等级的情报
+    const unlockedIntel = characterState.unlockedIntel || {};
+    const unlockedLevels = unlockedIntel[enemyId] || [];
+    if (unlockedLevels.includes(level)) {
+      return { success: false, log: `你已经购买过「${enemyConfig.name}」的「${intelLevel.name}」了。`, updatePayload: null };
+    }
+
+    return {
+      success: true,
+      log: `购买了「${enemyConfig.name}」的「${intelLevel.name}」——${intelLevel.description}，花费 ${price} 金币。`,
+      updatePayload: {
+        money: -price,
+        unlockedIntel: { [enemyId]: [level] }
+      }
+    };
+  }
 }

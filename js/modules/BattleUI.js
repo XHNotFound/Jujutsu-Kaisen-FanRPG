@@ -202,12 +202,6 @@ init_battle(json.dumps(save_data))
         this._executeAction({ type: 'repair_domain', actor: 'player' });
         return;
       }
-      // Phase 12: status badge click/hover — expand/collapse description
-      const statusBadge = e.target.closest('.battle-status-badge');
-      if (statusBadge) {
-        this._toggleStatusBadge(statusBadge);
-        return;
-      }
       // Phase 12: RCT dialog — open slider popup
       const rctBtn = e.target.closest('[data-action="rct-dialog"]');
       if (rctBtn && !rctBtn.disabled) {

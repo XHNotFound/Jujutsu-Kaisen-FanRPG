@@ -81,7 +81,7 @@ export const ADVANCED_SKILLS = {
     id: "rct",
     name: "反转术式",
     category: "advanced_technique",
-    description: "将咒力反转，产生"正"的力量以恢复自身伤势的顶级术式。消耗咒力回复血量，回复效率取决于咒力效率属性。每场战斗中每次使用后有 60 AV 冷却期。",
+    description: "将咒力反转，产生正向的力量以恢复自身伤势的顶级术式。消耗咒力回复血量，回复效率取决于咒力效率属性。每场战斗中每次使用后有 60 AV 冷却期。",
     flavorText: "「咒力为负，而其反转即为正——这就是反转术式。」——乙骨忧太",
     requirements: {
       prerequisite: "rct_basics",            // 必须向乙骨忧太/五条悟/家入硝子请教

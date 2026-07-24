@@ -607,10 +607,12 @@ init_battle(json.dumps(save_data))
     }
 
     // 普通战斗奖励
-    // Phase 12 fix: 先回写战斗后的 HP/MP 到存档状态
+    // Phase 12 fix: 先回写战斗后的 HP/MP 到存档状态（兼容模块缓存）
     const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
     if (player && this.uiManager.saveManager) {
-      this.uiManager.saveManager.applyBattleStatus(player.hp, player.mp);
+      if (typeof this.uiManager.saveManager.applyBattleStatus === 'function') {
+        this.uiManager.saveManager.applyBattleStatus(player.hp, player.mp);
+      }
       // 同时更新 state 上的 hp/mp 防止 renderMainScreen 覆盖
       const st = this.uiManager.saveManager.getState();
       if (st) { st.hp = player.hp; st.mp = player.mp; }
@@ -641,11 +643,13 @@ json.dumps(generate_battle_rewards(BattleTracker(), None))
   }
 
   _completeExamQuest(examQuestId, tracker) {
-    // Phase 12 fix: 先回写战斗后 HP/MP 状态
+    // Phase 12 fix: 先回写战斗后 HP/MP 状态（兼容模块缓存：检查方法是否存在）
     const s = this.currentState;
     const player = s?.player || (s?.units || []).find(u => u.unit_type === 'player');
     if (player && this.uiManager.saveManager) {
-      this.uiManager.saveManager.applyBattleStatus(player.hp, player.mp);
+      if (typeof this.uiManager.saveManager.applyBattleStatus === 'function') {
+        this.uiManager.saveManager.applyBattleStatus(player.hp, player.mp);
+      }
       const st = this.uiManager.saveManager.getState();
       if (st) { st.hp = player.hp; st.mp = player.mp; }
     }

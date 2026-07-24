@@ -7,6 +7,8 @@ import { NPCS } from '../data/npcs.js';
 import { QUESTS } from '../data/quests.js';
 import { ADVANCED_SKILLS, checkAdvancedSkillUnlocked } from '../data/advanced_skills.js';
 import { EXAMS, getNextExam } from '../data/exams.js';
+import { ITEMS, getItem } from '../data/items.js';
+import { CURSED_TOOLS, EQUIPMENT_SLOTS, getCursedTool, canEquipToSlot } from '../data/cursed_tools.js';
 
 export class HubSystem {
   constructor() {
@@ -343,6 +345,122 @@ export class HubSystem {
         advanced_skills_unlocked_add: skillId,
         inspiration: -inspCost
       }
+    };
+  }
+
+  // ================================================================
+  //  Phase 13: 商店与道具系统（纯函数，零 DOM 依赖）
+  // ================================================================
+
+  /**
+   * 购买道具
+   * @param {object} characterState
+   * @param {string} itemId
+   * @param {number} quantity — 购买数量（默认 1）
+   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   */
+  buyItem(characterState, itemId, quantity = 1) {
+    const item = getItem(itemId);
+    if (!item) {
+      return { success: false, log: '未知道具。', updatePayload: null };
+    }
+    const totalPrice = item.price * quantity;
+    const money = characterState.money || 0;
+    if (money < totalPrice) {
+      return { success: false, log: `金钱不足！需要 ${totalPrice} 金币，当前 ${money} 金币。`, updatePayload: null };
+    }
+    return {
+      success: true,
+      log: `购买了 ${quantity} 个「${item.name}」，花费 ${totalPrice} 金币。`,
+      updatePayload: {
+        money: -totalPrice,
+        inventory: { [itemId]: quantity }
+      }
+    };
+  }
+
+  /**
+   * 使用道具（非战斗状态）
+   * @param {object} characterState
+   * @param {string} itemId
+   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   */
+  useItem(characterState, itemId) {
+    const item = getItem(itemId);
+    if (!item) {
+      return { success: false, log: '未知道具。', updatePayload: null };
+    }
+
+    // 检查背包中是否有此道具
+    const inventory = characterState.inventory || {};
+    const owned = inventory[itemId] || 0;
+    if (owned <= 0) {
+      return { success: false, log: `背包中没有「${item.name}」。`, updatePayload: null };
+    }
+
+    const effect = item.effect;
+    const payload = {
+      inventory: { [itemId]: -1 }  // 消耗 1 个
+    };
+    let logParts = [`使用了「${item.name}」。`];
+
+    // 处理不同效果类型
+    switch (effect.type) {
+      case 'restore_stamina':
+        const stamina = characterState.stamina || 0;
+        const maxStamina = RESOURCE_CAPS.maxStamina || 100;
+        const staminaRestore = Math.min(effect.amount || 0, maxStamina - stamina);
+        payload.stamina = staminaRestore;
+        logParts.push(`回复了 ${staminaRestore} 点体力。`);
+        break;
+
+      case 'restore_hp':
+        const hp = characterState.hp || 0;
+        const maxHp = characterState.maxHp || 100;
+        const hpRestore = effect.pct
+          ? Math.floor(maxHp * effect.pct)
+          : (effect.amount || 0);
+        const actualHp = Math.min(hpRestore, maxHp - hp);
+        payload.hp = actualHp;
+        logParts.push(`回复了 ${actualHp} 点生命值。`);
+        break;
+
+      case 'restore_mp':
+        const mp = characterState.mp || 0;
+        const maxMp = characterState.maxMp || 100;
+        const mpRestore = effect.pct
+          ? Math.floor(maxMp * effect.pct)
+          : (effect.amount || 0);
+        const actualMp = Math.min(mpRestore, maxMp - mp);
+        payload.mp = actualMp;
+        logParts.push(`回复了 ${actualMp} 点咒力。`);
+        break;
+
+      case 'clear_residual':
+        const residual = characterState.residual || 0;
+        payload.residual = -residual;  // 清除全部残秽
+        logParts.push(`清除了 ${residual} 点咒力残秽。`);
+        // 额外效果（如御守的体力恢复）
+        if (effect.bonus && effect.bonus.stamina) {
+          const bonusStamina = Math.min(effect.bonus.stamina,
+            (RESOURCE_CAPS.maxStamina || 100) - (characterState.stamina || 0));
+          payload.stamina = (payload.stamina || 0) + bonusStamina;
+          logParts.push(`额外恢复了 ${bonusStamina} 点体力。`);
+        }
+        break;
+
+      case 'flee_guaranteed':
+        logParts.push('可在战斗中使用，必定成功脱离战斗。');
+        break;
+
+      default:
+        return { success: false, log: '未知的道具效果类型。', updatePayload: null };
+    }
+
+    return {
+      success: true,
+      log: logParts.join(''),
+      updatePayload: payload
     };
   }
 }

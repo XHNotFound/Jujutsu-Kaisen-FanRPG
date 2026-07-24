@@ -318,6 +318,10 @@ export class SaveManager {
     if (!this.state.relationships) this.state.relationships = {};
     if (!this.state.advanced_skills_unlocked) this.state.advanced_skills_unlocked = [];
     if (this.state.examCooldownDays === undefined) this.state.examCooldownDays = 0;
+    // Phase 13: 新字段默认值
+    if (!this.state.inventory) this.state.inventory = {};
+    if (!this.state.unlockedIntel) this.state.unlockedIntel = {};
+    if (!this.state.equipment) this.state.equipment = { mainHand: null, offHand: null, accessory: null };
 
     const caps = {
       maxAp: 100, maxStamina: 100, maxResidual: 100,
@@ -408,6 +412,35 @@ export class SaveManager {
       } else if (key === 'mp') {
         const maxMp = this.state.maxMp || 100;
         this.state.mp = Math.min(maxMp, Math.max(0, (this.state.mp || maxMp) + value));
+      } else if (key === 'inventory' && typeof value === 'object') {
+        // Phase 13: 道具背包更新（增量合并）
+        if (!this.state.inventory) this.state.inventory = {};
+        for (const [itemId, qty] of Object.entries(value)) {
+          const current = this.state.inventory[itemId] || 0;
+          const newQty = current + qty;
+          if (newQty <= 0) {
+            delete this.state.inventory[itemId];
+          } else {
+            this.state.inventory[itemId] = newQty;
+          }
+        }
+      } else if (key === 'unlockedIntel' && typeof value === 'object') {
+        // Phase 13: 情报数据更新（增量合并）
+        if (!this.state.unlockedIntel) this.state.unlockedIntel = {};
+        for (const [enemyId, levels] of Object.entries(value)) {
+          if (!this.state.unlockedIntel[enemyId]) this.state.unlockedIntel[enemyId] = [];
+          for (const lvl of levels) {
+            if (!this.state.unlockedIntel[enemyId].includes(lvl)) {
+              this.state.unlockedIntel[enemyId].push(lvl);
+            }
+          }
+        }
+      } else if (key === 'equipment' && typeof value === 'object') {
+        // Phase 13: 装备更新（槽位级合并）
+        if (!this.state.equipment) this.state.equipment = { mainHand: null, offHand: null, accessory: null };
+        if (value.mainHand !== undefined) this.state.equipment.mainHand = value.mainHand;
+        if (value.offHand !== undefined) this.state.equipment.offHand = value.offHand;
+        if (value.accessory !== undefined) this.state.equipment.accessory = value.accessory;
       }
     }
 

@@ -19,6 +19,19 @@ export const NPCS = [
           hpRestore: "max",
           residualClearPct: 0.50,
         }
+      },
+      // Phase 12: 反转术式基础
+      {
+        id: "learn_rct_basics",
+        type: "consult",
+        name: "请教反转术式基础",
+        description: "家入硝子是咒术界少有的反转术式输出者，向她请教反转术式的入门知识。解锁反转术式的前置条件。",
+        cost: { ap: 30, relationship: 4 },
+        effect: {
+          type: "unlock_prerequisite",
+          unlockKey: "rct_basics",
+          description: "获得了反转术式的基础知识"
+        }
       }
     ]
   },
@@ -99,6 +112,19 @@ export const NPCS = [
           proficiencyGain: 20,
           inspirationChance: 0.30,
           requireTechnique: "limitless"
+        }
+      },
+      // Phase 12: 五条悟也能教导反转术式（但要求最高人情）
+      {
+        id: "learn_rct_basics",
+        type: "consult",
+        name: "请教反转术式基础",
+        description: "向五条悟请教反转术式的奥秘。五条老师本人也是反转术式的大师。",
+        cost: { ap: 35, relationship: 5 },
+        effect: {
+          type: "unlock_prerequisite",
+          unlockKey: "rct_basics",
+          description: "获得了反转术式的基础知识"
         }
       },
       {
@@ -321,6 +347,34 @@ export const NPCS = [
           inspirationChance: 0.25,
           requireTechnique: "curseManipulation"
         }
+      }
+    ]
+  },
+  // Phase 12: 乙骨忧太 — 反转术式入门导师
+  {
+    id: "yuta",
+    name: "乙骨忧太",
+    description: "特级咒术师，反转术式的天赋使用者。在战斗中受伤时能瞬间以反转术式愈合。",
+    actions: [
+      {
+        id: "learn_rct_basics",
+        type: "consult",
+        name: "请教反转术式基础",
+        description: "向乙骨忧太请教反转术式的入门知识。他是最擅长教导反转术式的咒术师之一。解锁反转术式的前置条件。",
+        cost: { ap: 25, relationship: 3 },
+        effect: {
+          type: "unlock_prerequisite",
+          unlockKey: "rct_basics",
+          description: "获得了反转术式的基础知识"
+        }
+      },
+      {
+        id: "gift",
+        type: "gift",
+        name: "赠送咒物",
+        description: "将你在祓除咒灵中获得的稀有咒物赠给乙骨。",
+        cost: { money: 150 },
+        effect: { type: "gift", relationship: 2 }
       }
     ]
   }

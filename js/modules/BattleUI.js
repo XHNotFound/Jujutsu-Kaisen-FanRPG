@@ -5,6 +5,13 @@
 // Phase 9: 召唤物 UI + 仇恨热力图
 
 import { getActiveSummons, getAggroRanking } from './summonSystem.js';
+import { getStatusSummary, calculateRCTEfficiency } from './statusSystem.js';
+
+// Phase 12: simple HTML escape (no DOM needed — just for safe attribute interpolation)
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
 export class BattleUI {
   constructor(pyodideLoader, uiManager) {
@@ -140,6 +147,13 @@ init_battle(json.dumps(save_data))
         return;
       }
       const domainBtn = e.target.closest('.battle-domain-btn');
+      // Phase 12: status badge click/hover interaction
+      const statusBadge = e.target.closest('.battle-status-badge');
+      if (statusBadge) {
+        this._toggleStatusBadge(statusBadge);
+        return;
+      }
+
       // cancel-domain 用 data-action 区分，必须在 domain expand 之前检查
       if (e.target.closest('[data-action="cancel-domain"]')) {
         const d = this.currentState?.units?.find(u => u.unit_type === 'domain' && u.owner === 'player');
@@ -188,6 +202,36 @@ init_battle(json.dumps(save_data))
         this._executeAction({ type: 'repair_domain', actor: 'player' });
         return;
       }
+      // Phase 12: status badge click/hover — expand/collapse description
+      const statusBadge = e.target.closest('.battle-status-badge');
+      if (statusBadge) {
+        this._toggleStatusBadge(statusBadge);
+        return;
+      }
+      // Phase 12: RCT dialog — open slider popup
+      const rctBtn = e.target.closest('[data-action="rct-dialog"]');
+      if (rctBtn && !rctBtn.disabled) {
+        this._showRCTDialog();
+        return;
+      }
+    });
+
+    // Phase 12: mouseover/mouseout delegation for status badge hover expansion
+    container.addEventListener('mouseover', (e) => {
+      const badge = e.target.closest('.battle-status-badge');
+      if (badge) {
+        const nameSpan = badge.querySelector('.status-name');
+        if (nameSpan) nameSpan.classList.add('status-expanded');
+      }
+    });
+    container.addEventListener('mouseout', (e) => {
+      const badge = e.target.closest('.battle-status-badge');
+      if (badge) {
+        const nameSpan = badge.querySelector('.status-name');
+        if (nameSpan && !badge.classList.contains('status-pinned')) {
+          nameSpan.classList.remove('status-expanded');
+        }
+      }
     });
   }
 
@@ -203,6 +247,8 @@ init_battle(json.dumps(save_data))
     this._renderCollapsibleSection('battle-attack-section', 'battle-attack-body', '⚔️ 攻击', () => this._renderSkillButtons(s.player));
     this._renderCollapsibleSection('battle-vow-section', 'battle-vow-body', '🔗 束缚', () => this._renderVowButtons(s.player));
     this._renderCollapsibleSection('battle-domain-section', 'battle-domain-body', '🏛️ 领域', () => this._renderDomainPanel(s));
+    // Phase 12: 反转术式按钮
+    this._renderRCTButton(s);
     if (s.last_hit_was_black_flash) this._flashBlackFlashEffect();
     if (s.turn === 'player_win') { this._appendLog('━━ 胜利！诅咒被祓除了。 ━━'); this._disableAllSkills(); this._showVictoryScreen(s); }
     else if (s.turn === 'enemy_win') { this._appendLog('━━ 败北…你失去了意识。 ━━'); this._disableAllSkills(); }
@@ -250,6 +296,9 @@ init_battle(json.dumps(save_data))
     const atbText = document.getElementById(prefix + '-atb-text');
     if (atbBar) atbBar.style.width = atbPct + '%';
     if (atbText) atbText.textContent = data.atb + ' / 300';
+
+    // Phase 12: 渲染状态栏（Buff/Debuff 显式化）
+    this._renderStatusBar(prefix, data);
   }
 
   _renderDistance(s) {
@@ -739,5 +788,202 @@ execute_action(json.dumps(_action), json.dumps(_state))
     if (!isComplete) { hp = Math.floor(hp * 0.6); atkDmg = Math.floor(atkDmg * 0.6); }
     const domainNames = { limitless: '无量空处', tenShadows: '嵌合暗翳庭', boogieWoogie: '不义游戏·领域', curseManipulation: '极之番·漩涡', pureMartial: '天与咒缚·体' };
     this._executeAction({ type: 'expand_domain', actor: 'player', domain_id: domainId, domain_name: domainNames[techId] || '领域', is_complete: isComplete, domain_hp: hp, attack_interval: 10, attack_damage: atkDmg, mp_cost: 5 });
+  }
+
+  // ===== Phase 12: 状态栏渲染（Buff/Debuff 显式化）=====
+
+  _renderStatusBar(prefix, data) {
+    const statuses = data.status_effects || [];
+    // Also include mapped domain_counter_buffs as statuses
+    const domainCounters = data.domain_counter_buffs || [];
+    let container = document.getElementById(prefix + '-status-bar');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = prefix + '-status-bar';
+      container.className = 'battle-status-bar';
+      const cardEl = document.querySelector(`#screen-battle .battle-${prefix}-section .battle-char-card`);
+      if (cardEl) cardEl.appendChild(container);
+    }
+
+    if (statuses.length === 0 && domainCounters.length === 0) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = 'flex';
+    container.style.flexWrap = 'wrap';
+    container.style.gap = '4px';
+
+    let html = '';
+    // Render status_effects
+    for (const se of statuses) {
+      const type = se.type || 'buff';
+      const borderColor = type === 'debuff' ? 'var(--color-danger, #ef4444)' : 'var(--color-gold, #eab308)';
+      const bgColor = type === 'debuff' ? 'rgba(239,68,68,0.15)' : 'rgba(234,179,8,0.15)';
+      const durText = se.duration > 0 ? Math.floor(se.duration) + 's' : '';
+      const detail = se.description ? ` title="${escapeHtml(se.description)}"` : '';
+      html += `<span class="battle-status-badge" data-status-id="${escapeHtml(se.id)}" data-status-type="${type}" style="border:2px solid ${borderColor};background:${bgColor};cursor:pointer;padding:2px 6px;border-radius:4px;font-size:0.75rem;display:inline-flex;align-items:center;gap:2px;"${detail}>
+        <span class="status-icon">${escapeHtml(se.icon || (type === 'debuff' ? '✕' : '✦'))}</span>
+        <span class="status-name status-collapsed">${escapeHtml(se.name)}</span>
+        ${durText ? `<span class="status-dur">${durText}</span>` : ''}
+      </span>`;
+    }
+    // Also render domain_counter_buffs not already in status_effects
+    const statusIds = new Set(statuses.map(s => s.id));
+    const mapped = { simple_domain: 'simple_domain_active', falling_blossom: 'falling_blossom_active', hollow_wicker: 'hollow_wicker_active' };
+    for (const db of domainCounters) {
+      const statusId = mapped[db.id];
+      if (statusId && statusIds.has(statusId)) continue; // already shown via status_effects
+      const isBuff = true;
+      const borderColor = 'var(--color-gold, #eab308)';
+      const bgColor = 'rgba(234,179,8,0.15)';
+      const shieldText = db.current_shield_hp ? ` 护盾${db.current_shield_hp}` : '';
+      html += `<span class="battle-status-badge" data-status-id="${escapeHtml(db.id)}" data-status-type="buff" style="border:2px solid ${borderColor};background:${bgColor};cursor:pointer;padding:2px 6px;border-radius:4px;font-size:0.75rem;display:inline-flex;align-items:center;gap:2px;" title="${escapeHtml(db.name + shieldText)}">
+        <span class="status-icon">🛡️</span>
+        <span class="status-name status-collapsed">${escapeHtml(db.name)}</span>
+      </span>`;
+    }
+    container.innerHTML = html;
+  }
+
+  _toggleStatusBadge(badge) {
+    if (!badge) return;
+    // Toggle pin: click to permanently expand/collapse
+    const isPinned = badge.classList.toggle('status-pinned');
+    const nameSpan = badge.querySelector('.status-name');
+    const descEl = badge.querySelector('.status-desc-inline');
+    if (isPinned) {
+      if (nameSpan) nameSpan.classList.add('status-expanded');
+      // Show inline description
+      const desc = badge.getAttribute('title') || '';
+      if (desc && !descEl) {
+        const descSpan = document.createElement('span');
+        descSpan.className = 'status-desc-inline';
+        descSpan.style.cssText = 'font-size:0.65rem;color:var(--color-text-dim, #888);margin-left:4px;max-width:150px;white-space:normal;';
+        descSpan.textContent = desc;
+        badge.appendChild(descSpan);
+      }
+    } else {
+      if (nameSpan) nameSpan.classList.remove('status-expanded');
+      if (descEl) descEl.remove();
+    }
+  }
+
+  // ===== Phase 12: 反转术式 UI（技能按钮 + 消耗滑块弹窗）=====
+
+  _renderRCTButton(s) {
+    // Create or get the RCT button container
+    let container = document.getElementById('battle-rct-area');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'battle-rct-area';
+      container.className = 'battle-rct-area';
+      const skillsEl = document.getElementById('battle-skills');
+      if (skillsEl && skillsEl.parentNode) {
+        skillsEl.parentNode.insertBefore(container, skillsEl);
+      }
+    }
+
+    const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    if (!player || !player.is_alive) {
+      container.innerHTML = '';
+      return;
+    }
+
+    // Check if player has unlocked RCT
+    const saveState = this.uiManager.saveManager?.getState();
+    const rctUnlocked = saveState && (saveState.advanced_skills_unlocked || []).includes('rct');
+    if (!rctUnlocked) {
+      container.innerHTML = '';
+      return;
+    }
+
+    // Check for blocking debuffs
+    const statuses = player.status_effects || [];
+    const hasCooldown = statuses.some(se => se.id === 'rct_cooldown');
+    const hasBurnout = statuses.some(se => se.id === 'domain_burnout');
+    const hasCurseSeal = statuses.some(se => se.id === 'curse_seal');
+
+    const blockedReason = hasBurnout ? '领域熔断中' : hasCurseSeal ? '咒力被封' : hasCooldown ? '冷却中' : '';
+    const canUse = !blockedReason && player.mp > 0;
+
+    container.innerHTML = `
+      <button class="btn btn-rct-heal${canUse ? '' : ' cost-too-high'}" data-action="rct-dialog" ${canUse ? '' : 'disabled'}>
+        💚 反转术式${blockedReason ? ' (' + blockedReason + ')' : ''}
+        <span class="skill-cost">${canUse ? 'MP 1~' + player.mp : ''}</span>
+      </button>
+    `;
+  }
+
+  _showRCTDialog() {
+    const s = this.currentState;
+    const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    if (!player) return;
+
+    const mpAvailable = player.mp;
+    if (mpAvailable <= 0) return;
+
+    // Get save state for efficiency preview
+    const saveState = this.uiManager.saveManager?.getState();
+    const cee = (saveState && saveState.attributes && saveState.attributes.cursedEnergyEfficiency) || player.cursed_energy_efficiency || 10;
+    const efficiency = calculateRCTEfficiency(cee);
+
+    const containerId = 'rct-dialog-' + Date.now();
+    const html = `
+      <div id="${containerId}" class="rct-dialog">
+        <h4>💚 反转术式</h4>
+        <p class="rct-efficiency">咒力效率: ${cee} → 回复倍率: ${efficiency.toFixed(3)}</p>
+        <input type="range" id="${containerId}-slider" min="1" max="${mpAvailable}" value="${Math.floor(mpAvailable / 2)}" class="rct-slider">
+        <div class="rct-values">
+          <span>消耗: <strong id="${containerId}-cost">${Math.floor(mpAvailable / 2)}</strong> MP</span>
+          <span>回复: <strong id="${containerId}-heal" style="color:#22c55e;">${Math.floor(Math.floor(mpAvailable / 2) * efficiency)}</strong> HP</span>
+        </div>
+        <p class="rct-preview" id="${containerId}-cap-warn"></p>
+        <button class="btn btn-primary btn-rct-confirm" id="${containerId}-confirm">确认回复</button>
+      </div>
+    `;
+
+    this.uiManager.showModal(html, { confirmOnly: false, useHTML: true });
+
+    // Wire up slider and confirm button after DOM is rendered
+    setTimeout(() => {
+      const slider = document.getElementById(containerId + '-slider');
+      const costEl = document.getElementById(containerId + '-cost');
+      const healEl = document.getElementById(containerId + '-heal');
+      const warnEl = document.getElementById(containerId + '-cap-warn');
+      const confirmBtn = document.getElementById(containerId + '-confirm');
+
+      if (!slider || !confirmBtn) return;
+
+      const hpMax = player.max_hp;
+      const hpCur = player.hp;
+      const hpRoom = hpMax - hpCur;
+
+      const updatePreview = (val) => {
+        const consume = parseInt(val);
+        const rawHeal = Math.floor(consume * efficiency);
+        const actualHeal = Math.min(rawHeal, hpRoom);
+        costEl.textContent = consume;
+        healEl.textContent = actualHeal;
+        if (rawHeal > hpRoom) {
+          warnEl.textContent = `⚠️ 溢出 ${rawHeal - hpRoom} HP（当前 ${hpCur}/${hpMax}）`;
+        } else {
+          warnEl.textContent = '';
+        }
+      };
+
+      slider.oninput = () => updatePreview(slider.value);
+      updatePreview(slider.value);
+
+      confirmBtn.onclick = () => {
+        const consume = parseInt(slider.value);
+        this.uiManager.hideModal();
+        this._executeAction({
+          type: 'rct_heal',
+          actor: 'player',
+          consume_amount: consume
+        });
+      };
+    }, 100);
   }
 }

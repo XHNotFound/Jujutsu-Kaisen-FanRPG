@@ -1668,3 +1668,114 @@ body {
   font-size: 0.85rem;
   color: var(--color-text-dim);
 }
+
+/* ===== Phase 12: 战斗状态栏（Buff/Debuff 显式化）===== */
+
+.battle-status-bar {
+  margin: 0.3rem 0;
+  padding: 0.2rem 0;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.battle-status-badge {
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.battle-status-badge:hover {
+  filter: brightness(1.3);
+  transform: translateY(-1px);
+}
+
+.battle-status-badge.status-pinned {
+  box-shadow: 0 0 4px rgba(255,255,255,0.2);
+  filter: brightness(1.2);
+}
+
+.status-icon {
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.status-name {
+  font-size: 0.7rem;
+  color: var(--color-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 0;
+  opacity: 0;
+  transition: max-width 0.3s ease, opacity 0.3s ease;
+}
+
+.status-name.status-expanded {
+  max-width: 120px;
+  opacity: 1;
+  margin-left: 2px;
+}
+
+.status-dur {
+  font-size: 0.6rem;
+  color: var(--color-text-dim);
+  margin-left: 2px;
+}
+
+/* Phase 12: 反转术式按钮 */
+.btn-rct-heal {
+  background: rgba(34, 197, 94, 0.15);
+  border: 2px solid #22c55e;
+  color: #22c55e;
+  font-weight: bold;
+  transition: all 0.3s;
+}
+
+.btn-rct-heal:hover:not(:disabled) {
+  background: rgba(34, 197, 94, 0.3);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+}
+
+.btn-rct-heal.cost-too-high {
+  border-color: #666;
+  color: #666;
+  background: rgba(100, 100, 100, 0.1);
+}
+
+/* Phase 12: RCT 消耗滑块弹窗 */
+.rct-dialog {
+  text-align: center;
+  padding: 1rem;
+}
+
+.rct-dialog h4 {
+  color: #22c55e;
+  margin-bottom: 0.5rem;
+}
+
+.rct-dialog .rct-efficiency {
+  font-size: 0.85rem;
+  color: var(--color-text-dim);
+  margin-bottom: 0.5rem;
+}
+
+.rct-dialog input[type="range"] {
+  width: 100%;
+  margin: 0.5rem 0;
+}
+
+.rct-dialog .rct-values {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--color-text-dim);
+  margin-bottom: 0.75rem;
+}
+
+.rct-dialog .rct-preview {
+  font-size: 0.9rem;
+  color: #22c55e;
+  margin-bottom: 0.5rem;
+}
+
+.rct-dialog .btn-rct-confirm {
+  margin-top: 0.5rem;
+}

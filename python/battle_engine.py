@@ -85,6 +85,114 @@ def has_domain_counter(unit):
     """检查 Unit 是否有任何激活的领域对抗 Buff"""
     return len(unit.domain_counter_buffs) > 0
 
+# ===== Phase 12: Status Effects 系统 =====
+
+def _tick_status_effects(state):
+    """每帧推进所有单位 status_effects 的持续时间，移除已过期的"""
+    for u in state.units:
+        if not u.is_alive or not u.status_effects:
+            continue
+        surviving = []
+        for se in u.status_effects:
+            dur = se.get("duration", 0)
+            if dur > 0:
+                se["duration"] = max(0, dur - FRAME_STEP)
+                if se["duration"] <= 0:
+                    _log(state, f"{u.name} 的「{se.get('name','状态')}」效果消失了。")
+                    # Phase 12: 当领域熔断 Debuff 过期时，恢复补偿速度
+                    if se.get("id") == "domain_burnout":
+                        u.recovery_speed = max(1, int(u.recovery_speed / (1.0 - DOMAIN_BURNOUT_SPEED_PENALTY)))
+                    continue
+            surviving.append(se)
+        u.status_effects = surviving
+
+def add_status_effect(unit, status_id, duration_override=None):
+    """向 Unit 添加标准状态效果。若同 id 已存在则刷新持续时间（取更长者）"""
+    STATUS_DEFS = {
+        "domain_burnout": {
+            "id": "domain_burnout", "name": "领域熔断", "type": "debuff",
+            "duration": 60, "description": "禁用所有咒术技能，体术补偿速度 -30%。",
+            "icon": "🔥",
+            "effects": {"forbid_cursed_skills": True, "recovery_speed_penalty": 0.30}
+        },
+        "simple_domain_active": {
+            "id": "simple_domain_active", "name": "简易领域", "type": "buff",
+            "duration": 0, "description": "护盾中和敌方领域必中效果。每 10 AV 消耗咒力。",
+            "icon": "🗡️",
+            "effects": {"negate_domain_special": True, "shield_hp": 200, "mp_drain_per_10av": 2}
+        },
+        "falling_blossom_active": {
+            "id": "falling_blossom_active", "name": "落花之情", "type": "buff",
+            "duration": 0, "description": "以咒力将敌方领域必中效果打散，100% 免伤。每 10 AV 高消耗。",
+            "icon": "🌸",
+            "effects": {"negate_domain_special": True, "domain_damage_reduction": 1.0, "mp_drain_per_10av": 5}
+        },
+        "hollow_wicker_active": {
+            "id": "hollow_wicker_active", "name": "弥虚葛笼", "type": "buff",
+            "duration": 0, "description": "编织结界术防御空间，80% 减伤。每 10 AV 高消耗。",
+            "icon": "🏺",
+            "effects": {"negate_domain_special": True, "domain_damage_reduction": 0.8, "mp_drain_per_10av": 8}
+        },
+        # Phase 12: RCT related
+        "rct_cooldown": {
+            "id": "rct_cooldown", "name": "反转术式冷却", "type": "debuff",
+            "duration": 60, "description": "反转术式使用后的咒力调整期，无法再次使用反转术式。",
+            "icon": "💚",
+            "effects": {"forbid_rct": True}
+        },
+        "rct_active": {
+            "id": "rct_active", "name": "反转术式", "type": "buff",
+            "duration": 0, "description": "反转术式已解锁，可在战斗中消耗咒力回复血量。",
+            "icon": "💚",
+            "effects": {"rct_unlocked": True}
+        }
+    }
+    sd = STATUS_DEFS.get(status_id)
+    if not sd:
+        return False
+    existing = [s for s in unit.status_effects if s.get("id") == status_id]
+    if existing:
+        dur = duration_override if duration_override is not None else sd.get("duration", 0)
+        existing[0]["duration"] = max(existing[0].get("duration", 0), dur)
+        return True
+    se = dict(sd)  # shallow copy
+    if duration_override is not None:
+        se["duration"] = duration_override
+    unit.status_effects.append(se)
+    return True
+
+def remove_status_effect(unit, status_id):
+    """移除单位指定状态效果"""
+    if not unit.status_effects:
+        return False
+    before = len(unit.status_effects)
+    unit.status_effects = [s for s in unit.status_effects if s.get("id") != status_id]
+    return len(unit.status_effects) < before
+
+def has_status(unit, status_id):
+    """检查单位是否拥有指定状态效果（且持续时间 > 0 或为永久）"""
+    for s in (unit.status_effects or []):
+        if s.get("id") == status_id and s.get("duration", 0) >= 0:
+            return s
+    return None
+
+def _sync_domain_counter_to_status(unit):
+    """Phase 12: 将 unit.domain_counter_buffs 映射为标准化 status_effects"""
+    map_buff = {
+        "simple_domain": "simple_domain_active",
+        "falling_blossom": "falling_blossom_active",
+        "hollow_wicker": "hollow_wicker_active",
+    }
+    active_ids = {b.get("id") for b in unit.domain_counter_buffs}
+    for buff_id, status_id in map_buff.items():
+        has_se = has_status(unit, status_id)
+        if buff_id in active_ids:
+            if not has_se:
+                add_status_effect(unit, status_id)
+        else:
+            if has_se:
+                remove_status_effect(unit, status_id)
+
 def _tick_domain_counter_buffs(state):
     """每帧推进领域对抗 Buff 的咒力消耗（每 10 AV 扣一次）"""
     for u in state.units:
@@ -105,6 +213,9 @@ def _tick_domain_counter_buffs(state):
         for buf in expired:
             u.domain_counter_buffs.remove(buf)
             _log(state, f"{u.name} 的「{buf['name']}」效果消失了。")
+        # Phase 12: 同步 domain_counter_buffs 变更到 status_effects
+        if expired:
+            _sync_domain_counter_to_status(u)
 
 def apply_domain_counter_to_damage(unit, raw_dmg):
     """对原始领域伤害应用领域对抗 Buff 的减免。
@@ -183,6 +294,8 @@ def _advance_time(state: BattleState, frames: int):
         _apply_shikigami_taunt_aggro(state)
         # Phase 10: 领域对抗 Buff 咒力消耗
         _tick_domain_counter_buffs(state)
+        # Phase 12: 推进所有单位的 status_effects 持续时间
+        _tick_status_effects(state)
         # 1. 推进所有单位的 ATB
         for u in state.units:
             if u.is_alive:
@@ -211,17 +324,20 @@ def _check_battle_end(state: BattleState):
     if e and e.hp <= 0 and e.is_alive:
         e.is_alive = False; state.turn = "player_win"
         _log(state, f"{e.name} 被击败了！")
+        e.status_effects = []  # Phase 12: 清除死亡单位的状态效果
         for u in list(state.units):
             if u.unit_type == UNIT_DOMAIN: _handle_cancel_domain({"domain_id": u.id}, state)
     if p and p.hp <= 0 and p.is_alive:
         p.is_alive = False; state.turn = "enemy_win"
         _log(state, f"{p.name} 倒下了…")
+        p.status_effects = []  # Phase 12: 清除死亡单位的状态效果
         for u in list(state.units):
             if u.unit_type == UNIT_DOMAIN: _handle_cancel_domain({"domain_id": u.id}, state)
     # Phase 11: 检查式神死亡
     for u in list(state.units):
         if u.unit_type == UNIT_SHIKIGAMI and u.hp <= 0 and u.is_alive:
             u.is_alive = False
+            u.status_effects = []  # Phase 12: 清除
             _log(state, f"{u.name} 被击败了，消失在影子中。")
             state.units = [x for x in state.units if x.id != u.id]
 
@@ -484,6 +600,45 @@ def calculate_mp_cost(actor, skill):
     if skill.cost <= 0: return 0
     return max(0, int(skill.cost * max(0.3, 1.0 - actor.cursed_energy_efficiency * 0.005)))
 
+# ===== Phase 12: 反转术式 (Reverse Cursed Technique) =====
+
+def calculate_rct_efficiency(cursed_energy_efficiency):
+    """计算反转术式回复效率（分段线性函数，严格连续无跳变）
+    - cee < 20:  固定 0.5
+    - 20 <= cee <= 40: 0.5 + (cee - 20) * 0.01   (线性上升至 0.7)
+    - 40 < cee <= 60:  0.7 + (cee - 40) * 0.015  (线性上升至 1.0)
+    - cee > 60:  1.0 + (cee - 60) * 0.02
+    边界验证:
+      cee=19 -> 0.5; cee=20 -> 0.5 (第二段代入: 0.5+(20-20)*0.01=0.5) ✓连续
+      cee=40 -> 0.7 (第二段: 0.5+(40-20)*0.01=0.7; 第三段: 0.7+(40-40)*0.015=0.7) ✓连续
+      cee=60 -> 1.0 (第三段: 0.7+(60-40)*0.015=1.0; 第四段: 1.0+(60-60)*0.02=1.0) ✓连续
+    """
+    if cursed_energy_efficiency < 20:
+        return 0.5
+    if cursed_energy_efficiency <= 40:
+        return 0.5 + (cursed_energy_efficiency - 20) * 0.01
+    if cursed_energy_efficiency <= 60:
+        return 0.7 + (cursed_energy_efficiency - 40) * 0.015
+    return 1.0 + (cursed_energy_efficiency - 60) * 0.02
+
+def execute_rct(unit, consume_amount):
+    """执行反转术式回复。
+    参数:
+      unit: 施术者 Unit
+      consume_amount: 消耗的咒力量（1 ~ unit.mp）
+    返回:
+      (heal_amount, consume_amount, log_text) 三元组
+    """
+    if consume_amount <= 0 or consume_amount > unit.mp:
+        return (0, 0, "无效的咒力消耗量。")
+    efficiency = calculate_rct_efficiency(unit.cursed_energy_efficiency)
+    heal_amount = int(consume_amount * efficiency)
+    unit.mp -= consume_amount
+    actual_heal = min(heal_amount, unit.max_hp - unit.hp)
+    unit.hp += actual_heal
+    return (actual_heal, consume_amount,
+            f"{unit.name} 使用了反转术式，消耗 {consume_amount} 咒力，回复了 {actual_heal} HP（效率 {efficiency:.3f}）。")
+
 # ===== 行动执行 =====
 def execute_action(action_json, state_json):
     action = json.loads(action_json); state_dict = json.loads(state_json)
@@ -507,6 +662,8 @@ def execute_action(action_json, state_json):
     elif at == "activate_domain_counter": _handle_activate_domain_counter(action, state)
     # Phase 10.5: repair domain barrier
     elif at == "repair_domain": _handle_repair_domain(action, state)
+    # Phase 12: reverse cursed technique heal
+    elif at == "rct_heal": _handle_rct_heal(action, state)
     result = state.to_dict(); result["_tracker"] = tracker.to_dict()
     return json.dumps(result, ensure_ascii=False)
 
@@ -723,6 +880,33 @@ def _handle_shikigami_skill(action, state, tracker=None):
     actor._manual_skill = skill
     _log(state, f"[手动] {actor.name} 的下一次行动已设定为：{skill.name}（需 {skill.cost} MP）")
 
+# ===== Phase 12: 反转术式 Handler =====
+
+def _handle_rct_heal(action, state):
+    """处理玩家使用反转术式回复"""
+    actor_id = action.get("actor", "player")
+    consume_amount = action.get("consume_amount", 0)
+    actor = state.find_unit(actor_id)
+    if not actor:
+        _log(state, "[ERROR] 无效的行动者。")
+        return
+    # Phase 12: 检查 rct_cooldown debuff
+    if has_status(actor, "rct_cooldown"):
+        _log(state, f"{actor.name} 的反转术式仍在冷却中，无法使用。")
+        return
+    # Phase 12: 检查领域熔断（禁止咒术技能）
+    if has_status(actor, "domain_burnout"):
+        _log(state, f"{actor.name} 处于领域熔断状态，无法使用反转术式！")
+        return
+    heal, consumed, log_text = execute_rct(actor, consume_amount)
+    if heal <= 0:
+        _log(state, f"[ERROR] {log_text}")
+        return
+    _log(state, log_text)
+    # 添加 RCT 冷却 Debuff（先 tick 再创建，避免立即被倒计时）
+    _advance_time(state, 10)  # 回复动作占用 10 行动值
+    add_status_effect(actor, "rct_cooldown", 60)
+
 # ===== Phase 9: add_ally handler =====
 
 def _handle_add_ally(action, state):
@@ -750,6 +934,8 @@ def _handle_activate_domain_counter(action, state):
             _log(state, f"护盾 HP: {buff['shield_hp']}")
         if buff.get("mp_drain_per_10av", 0) > 0:
             _log(state, f"每 10 AV 消耗 {buff['mp_drain_per_10av']} 咒力")
+        # Phase 12: 同步 domain_counter_buffs → status_effects
+        _sync_domain_counter_to_status(actor)
     else:
         _log(state, f"[ERROR] 无法激活 Buff: {buff_id}（不存在或已有同类 Buff）")
 
@@ -929,6 +1115,8 @@ def _handle_cancel_domain(action, state):
     if owner:
         owner.atb=max(0,owner.atb-DOMAIN_BURNOUT_ATB_COST)
         owner.recovery_speed=max(1,int(owner.recovery_speed*(1.0-DOMAIN_BURNOUT_SPEED_PENALTY)))
+        # Phase 12: 领域熔断作为标准化 Debuff 加入 status_effects
+        add_status_effect(owner, "domain_burnout", 60)
         _log(state,f"领域解除！{owner.name} 遭受熔断——扣除 {DOMAIN_BURNOUT_ATB_COST} ATB，补偿速度 -30%。")
     else: _log(state,"领域被解除。")
     # Phase 10: 对拼结束后重新检查

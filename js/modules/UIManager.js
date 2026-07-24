@@ -561,7 +561,8 @@ export class UIManager {
 
     state.hp = (state.hp !== undefined && state.hp !== null) ? state.hp : (state.maxHp || 100);
     state.mp = (state.mp !== undefined && state.mp !== null) ? state.mp : (state.maxMp || 100);
-    state.skillPoints = (state.skillPoints !== undefined && state.skillPoints !== null) ? state.skillPoints : 5;
+    // Phase 12 fix: 不再无条件回满 HP/MP
+    // 战斗后 HP/MP 已由 applyBattleStatus 回写，直接使用 state 中的值
 
     this._updateHUD(state);
     this._bindMainMenuEvents();

@@ -212,7 +212,25 @@ export class SaveManager {
       }
     }
 
+    // Phase 12 fix: 战斗后 HP/MP 从战斗状态回写，确保不自动回满
+    // applyBattleRewards 只处理金币/技能点/灵感/熟练度，HP/MP 由 _showVictoryScreen 前独立回写
+
     // 5. 立即持久化
+    const slot = this._findCurrentSlot();
+    if (slot >= 0) {
+      this.saveToSlot(slot);
+    }
+  }
+
+  /**
+   * Phase 12: 将战斗结束后的 HP/MP 回写到存档状态
+   * @param {number} hp — 战斗后的 HP
+   * @param {number} mp — 战斗后的 MP
+   */
+  applyBattleStatus(hp, mp) {
+    if (!this.state) return;
+    this.state.hp = hp;
+    this.state.mp = mp;
     const slot = this._findCurrentSlot();
     if (slot >= 0) {
       this.saveToSlot(slot);

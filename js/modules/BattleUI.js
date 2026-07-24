@@ -607,6 +607,15 @@ init_battle(json.dumps(save_data))
     }
 
     // 普通战斗奖励
+    // Phase 12 fix: 先回写战斗后的 HP/MP 到存档状态
+    const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    if (player && this.uiManager.saveManager) {
+      this.uiManager.saveManager.applyBattleStatus(player.hp, player.mp);
+      // 同时更新 state 上的 hp/mp 防止 renderMainScreen 覆盖
+      const st = this.uiManager.saveManager.getState();
+      if (st) { st.hp = player.hp; st.mp = player.mp; }
+    }
+
     this.pyodideLoader.runPython(`
 import sys, json
 sys.path.insert(0,"/home/pyodide")
@@ -682,7 +691,7 @@ json.dumps(generate_battle_rewards(BattleTracker(), None))
       if (this.uiManager.saveManager && typeof this.uiManager.saveManager.applyBattleRewards === 'function') {
         this.uiManager.saveManager.applyBattleRewards(rewards);
       }
-      // Phase 11: 返回主界面防止反复领取奖励
+      // Phase 12: 返回主界面，HP/MP 已在 _showVictoryScreen 中回写
       if (this.uiManager && typeof this.uiManager.renderMainScreen === 'function') {
         this.uiManager.renderMainScreen();
         this.uiManager.showScreen('screen-main');

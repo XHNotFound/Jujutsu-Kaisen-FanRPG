@@ -613,13 +613,7 @@ export class UIManager {
           return;
         }
 
-        // Phase 13: 商店按钮
-        if (action === 'shop') {
-          this._showShopPanel();
-          return;
-        }
-
-        // Phase 5: 修炼/请教/任务 → 调用 HubSystem
+        // Phase 5: 修炼/请教/任务/商店 → 调用对应方法
         if (action === 'train') {
           this._showTrainPanel();
           return;
@@ -630,6 +624,10 @@ export class UIManager {
         }
         if (action === 'quest') {
           this._showQuestPanel();
+          return;
+        }
+        if (action === 'shop') {
+          this._showShopPanel();
           return;
         }
 

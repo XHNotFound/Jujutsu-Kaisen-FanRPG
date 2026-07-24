@@ -854,27 +854,19 @@ export class UIManager {
    * Phase 11: 显示高级技巧面板（替换旧领域的单独弹窗入口）
    */
   _showAdvancedSkills() {
-    // 使用弹窗展示选项卡式高级技巧面板
+    // Phase 12 fix: 确保 AdvancedSkillUI 使用最新的模块实例
+    // 关闭旧弹窗 → 创建新 modal → 渲染面板
+    this.hideModal();
     const containerId = 'advanced-skill-modal-' + Date.now();
-    const html = `<div id="${containerId}" class="advanced-skill-modal"></div>`;
+    const html = `<div id="${containerId}" class="advanced-skill-modal"><div id="advanced-skill-panel"></div></div>`;
     this.showModal(html, { confirmOnly: true, useHTML: true, onConfirm: () => this.hideModal() });
 
-    // AdvancedSkillUI 通过 id 渲染到弹窗中
+    // 直接调用 render（AdvancedSkillUI 会把 tabs + content 写入 #advanced-skill-panel）
     setTimeout(() => {
-      const target = document.getElementById('advanced-skill-panel');
-      if (!target) {
-        // 创建一个容器在弹窗内部
-        const modal = document.getElementById(containerId);
-        if (modal) {
-          const panel = document.createElement('div');
-          panel.id = 'advanced-skill-panel';
-          modal.appendChild(panel);
-          this._advancedSkillUI.render();
-        }
-      } else {
+      if (this._advancedSkillUI && typeof this._advancedSkillUI.render === 'function') {
         this._advancedSkillUI.render();
       }
-    }, 100);
+    }, 50);
   }
 
   /**

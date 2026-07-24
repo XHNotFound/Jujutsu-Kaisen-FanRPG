@@ -39,6 +39,7 @@ export class AdvancedSkillUI {
       { id: 'simple_domain', label: '🗡️ 简易领域', icon: '🗡️' },
       { id: 'falling_blossom', label: '🌸 落花之情', icon: '🌸' },
       { id: 'hollow_wicker', label: '🏺 弥虚葛笼', icon: '🏺' },
+      // Phase 12: RCT tab always visible (like other advanced skills)
       { id: 'rct', label: '💚 反转术式', icon: '💚' }
     ];
 

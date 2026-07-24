@@ -613,6 +613,12 @@ export class UIManager {
           return;
         }
 
+        // Phase 13: 商店按钮
+        if (action === 'shop') {
+          this._showShopPanel();
+          return;
+        }
+
         // Phase 5: 修炼/请教/任务 → 调用 HubSystem
         if (action === 'train') {
           this._showTrainPanel();
@@ -669,6 +675,21 @@ export class UIManager {
         },
         onCancel: () => this.hideModal()
       });
+    };
+
+    // Phase 13: 道具背包按钮
+    document.getElementById('btn-items').onclick = () => {
+      this._showInventoryPanel();
+    };
+
+    // Phase 13: 装备按钮
+    document.getElementById('btn-equipment').onclick = () => {
+      this._showEquipmentPanel();
+    };
+
+    // Phase 13: 图鉴按钮
+    document.getElementById('btn-bestiary').onclick = () => {
+      this._showBestiaryPanel();
     };
   }
 
@@ -1486,5 +1507,283 @@ export class UIManager {
         { confirmOnly: true, onConfirm: () => this.hideModal() }
       );
     };
+  }
+
+  // ================================================================
+  //  Phase 13: 商店面板
+  // ================================================================
+
+  _showShopPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    const money = state.money || 0;
+
+    // 导入道具列表
+    import('../data/items.js').then(({ ITEMS }) => {
+      let itemRows = '';
+      for (const [id, item] of Object.entries(ITEMS)) {
+        const owned = (state.inventory || {})[id] || 0;
+        const canBuy = money >= item.price;
+        itemRows += `
+          <div class="train-row">
+            <span class="train-name">${item.name}</span>
+            <span class="train-value">${item.description} (💰${item.price}) | 持有: ${owned}</span>
+            <button class="btn btn-primary btn-buy-item" data-item="${id}" ${canBuy ? '' : 'disabled'}>购买</button>
+          </div>
+        `;
+      }
+
+      const html = `
+        <div class="train-panel">
+          <h3>🏪 商店 · 基础道具</h3>
+          <p class="train-info">💰 金币: ${money}</p>
+          <div class="train-grid">${itemRows}</div>
+        </div>
+      `;
+
+      this.showModal(html, { confirmOnly: false, useHTML: true });
+
+      // 绑定购买事件
+      setTimeout(() => {
+        document.querySelectorAll('.btn-buy-item').forEach(btn => {
+          btn.onclick = () => {
+            const result = this._hubSystem.buyItem(state, btn.dataset.item);
+            if (result.success && result.updatePayload) {
+              this.saveManager.applyGrowthUpdate(result.updatePayload);
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showShopPanel(); } });
+            } else {
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+            }
+          };
+        });
+      }, 50);
+    });
+  }
+
+  // ================================================================
+  //  Phase 13: 道具背包面板
+  // ================================================================
+
+  _showInventoryPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    const inventory = state.inventory || {};
+
+    import('../data/items.js').then(({ ITEMS }) => {
+      let rows = '';
+      let hasItems = false;
+      for (const [id, item] of Object.entries(ITEMS)) {
+        const owned = inventory[id] || 0;
+        if (owned <= 0) continue;
+        hasItems = true;
+        rows += `
+          <div class="train-row">
+            <span class="train-name">${item.name}</span>
+            <span class="train-value">${item.description} | 持有: ${owned}</span>
+            <button class="btn btn-primary btn-use-item" data-item="${id}" ${item.usableInBattle ? '':''}>使用</button>
+          </div>
+        `;
+      }
+
+      if (!hasItems) rows = '<p style="text-align:center;color:var(--color-text-dim);">背包是空的……去商店购买一些道具吧。</p>';
+
+      const html = `
+        <div class="train-panel">
+          <h3>🎒 道具背包</h3>
+          <div class="train-grid">${rows}</div>
+        </div>
+      `;
+
+      this.showModal(html, { confirmOnly: false, useHTML: true });
+
+      setTimeout(() => {
+        document.querySelectorAll('.btn-use-item').forEach(btn => {
+          btn.onclick = () => {
+            const result = this._hubSystem.useItem(state, btn.dataset.item);
+            if (result.success && result.updatePayload) {
+              this.saveManager.applyGrowthUpdate(result.updatePayload);
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this.renderMainScreen(); } });
+            } else {
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+            }
+          };
+        });
+      }, 50);
+    });
+  }
+
+  // ================================================================
+  //  Phase 13: 装备面板
+  // ================================================================
+
+  _showEquipmentPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    const equipment = state.equipment || { mainHand: null, offHand: null, accessory: null };
+
+    import('../data/cursed_tools.js').then(({ CURSED_TOOLS, EQUIPMENT_SLOTS, getCursedTool }) => {
+      let html = '<div class="train-panel"><h3>⚔️ 装备</h3>';
+
+      // 显示当前装备状态和最终属性
+      const finalStats = this._hubSystem.calculateFinalStats(state);
+      const baseAttrs = state.attributes || {};
+
+      html += '<div class="equipment-final-stats" style="margin:0.5rem 0;padding:0.5rem;background:rgba(255,255,255,0.05);border-radius:4px;">';
+      html += '<h4 style="margin:0 0 0.3rem;">最终属性（含装备加成）</h4>';
+      const attrNames = { cursedEnergy: '咒力总量', cursedEnergyControl: '咒力操控', cursedEnergyEfficiency: '咒力效率', constitution: '体质', martialArts: '体术水平', talent: '天赋' };
+      for (const [key, name] of Object.entries(attrNames)) {
+        const base = baseAttrs[key] || 0;
+        const final = finalStats[key] || 0;
+        const bonus = final - base;
+        html += `<span style="display:inline-block;margin-right:0.8rem;font-size:0.85rem;">${name}: ${final}${bonus > 0 ? ' <span style=\"color:#22c55e;\">(+' + bonus + ')</span>' : ''}</span>`;
+      }
+      html += '</div>';
+
+      // 三个装备槽位
+      for (const [slotId, slot] of Object.entries(EQUIPMENT_SLOTS)) {
+        const equipped = equipment[slotId];
+        const tool = equipped ? getCursedTool(equipped) : null;
+
+        html += `<div class="equipment-slot-card" style="margin:0.4rem 0;padding:0.5rem;border:1px solid var(--color-border);border-radius:4px;">`;
+        html += `<h4 style="margin:0;">${slot.name} (${slot.description})</h4>`;
+        if (tool) {
+          html += `<p style="margin:0.2rem 0;"><strong>${tool.name}</strong> (Tier ${tool.tier}) — ${tool.flavorText}</p>`;
+          html += '<p style="margin:0.2rem 0;font-size:0.8rem;color:#22c55e;">加成: ';
+          for (const [attr, val] of Object.entries(tool.statsBonus)) {
+            html += `${attrNames[attr] || attr} +${val} `;
+          }
+          html += '</p>';
+          html += `<button class="btn btn-system btn-unequip" data-slot="${slotId}">卸下</button>`;
+        } else {
+          html += '<p style="color:var(--color-text-dim);">空</p>';
+          // 列出可装备的咒具
+          const available = Object.values(CURSED_TOOLS).filter(t => slot.acceptedTypes.includes(t.type));
+          if (available.length > 0) {
+            html += '<div style="display:flex;flex-wrap:wrap;gap:0.3rem;margin-top:0.3rem;">';
+            for (const t of available) {
+              const alreadyEquipped = Object.values(equipment).includes(t.id);
+              html += `<button class="btn btn-primary btn-equip" data-slot="${slotId}" data-tool="${t.id}" style="font-size:0.75rem;" ${alreadyEquipped ? 'disabled' : ''}>${t.name}${alreadyEquipped ? '(已装备)' : ''}</button>`;
+            }
+            html += '</div>';
+          }
+        }
+        html += '</div>';
+      }
+
+      html += '</div>';
+      this.showModal(html, { confirmOnly: false, useHTML: true });
+
+      setTimeout(() => {
+        document.querySelectorAll('.btn-unequip').forEach(btn => {
+          btn.onclick = () => {
+            const result = this._hubSystem.unequipTool(state, btn.dataset.slot);
+            if (result.success && result.updatePayload) {
+              this.saveManager.applyGrowthUpdate(result.updatePayload);
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showEquipmentPanel(); } });
+            }
+          };
+        });
+        document.querySelectorAll('.btn-equip').forEach(btn => {
+          btn.onclick = () => {
+            const result = this._hubSystem.equipTool(state, btn.dataset.slot, btn.dataset.tool);
+            if (result.success && result.updatePayload) {
+              this.saveManager.applyGrowthUpdate(result.updatePayload);
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showEquipmentPanel(); } });
+            } else {
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+            }
+          };
+        });
+      }, 50);
+    });
+  }
+
+  // ================================================================
+  //  Phase 13: 图鉴面板（窗的情报）
+  // ================================================================
+
+  _showBestiaryPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    const unlockedIntel = state.unlockedIntel || {};
+
+    import('../data/enemies.js').then(({ ENEMIES }) => {
+      const allEnemies = [...(ENEMIES.normal || []), ...(ENEMIES.elite || []), ...(ENEMIES.boss || [])];
+
+      let html = '<div class="train-panel"><h3>📖 窗的情报 · 怪物图鉴</h3>';
+      html += '<div class="train-grid">';
+
+      for (const enemy of allEnemies) {
+        const intelLevels = unlockedIntel[enemy.id] || [];
+        const hasBasic = intelLevels.includes('basic');
+        const hasSkill = intelLevels.includes('skill');
+        const hasAdvanced = intelLevels.includes('advanced');
+        const hasAny = hasBasic || hasSkill || hasAdvanced;
+
+        html += `<div class="bestiary-card" style="margin:0.3rem 0;padding:0.5rem;border:1px solid var(--color-border);border-radius:4px;${hasAny ? '' : 'opacity:0.6;'}">`;
+        html += `<strong>${enemy.name}</strong> <span style="font-size:0.8rem;color:var(--color-text-dim);">[${enemy.rank}] ${enemy.tier}</span>`;
+
+        if (hasAny) {
+          // Show unlocked info
+          if (hasBasic) {
+            html += `<div style="font-size:0.8rem;margin:0.2rem 0;">📊 HP: ${enemy.baseStats.hp} | MP: ${enemy.baseStats.mp} | 速度: ${enemy.baseStats.speed} | 体质: ${enemy.baseStats.constitution}</div>`;
+            html += `<div style="font-size:0.8rem;">体术: ${enemy.baseStats.martialArts} | 咒力: ${enemy.baseStats.cursedEnergy} | 操控: ${enemy.baseStats.cursedEnergyControl}</div>`;
+          }
+          if (hasSkill && enemy.skills) {
+            html += '<div style="font-size:0.75rem;margin:0.2rem 0;color:#eab308;">技能: ';
+            html += enemy.skills.map(s => `${s.name}(倍率${s.damageMultiplier}${s.cost > 0 ? ',MP' + s.cost : ''})`).join(', ');
+            html += '</div>';
+          }
+          if (hasAdvanced) {
+            html += `<div style="font-size:0.75rem;color:#22c55e;">📋 ${enemy.intelData?.advanced?.description || '无特殊高级技巧。'}</div>`;
+          }
+        } else {
+          html += '<p style="color:var(--color-text-dim);font-size:0.8rem;">未获取情报 — 前往商店的「窗的情报」购买</p>';
+        }
+
+        // Purchase buttons for unowned intel levels
+        if (enemy.intelData) {
+          const missing = [];
+          if (!hasBasic) missing.push('basic');
+          if (!hasSkill) missing.push('skill');
+          if (!hasAdvanced) missing.push('advanced');
+          if (missing.length > 0) {
+            html += '<div style="display:flex;gap:0.3rem;margin-top:0.3rem;flex-wrap:wrap;">';
+            for (const lvl of missing) {
+              const lvlData = enemy.intelData[lvl];
+              if (lvlData) {
+                const canBuy = (state.money || 0) >= lvlData.price;
+                html += `<button class="btn btn-system btn-buy-intel" data-enemy="${enemy.id}" data-level="${lvl}" style="font-size:0.7rem;" ${canBuy ? '' : 'disabled'}>${lvlData.name} 💰${lvlData.price}</button>`;
+              }
+            }
+            html += '</div>';
+          }
+        }
+
+        html += '</div>';
+      }
+
+      html += '</div></div>';
+      this.showModal(html, { confirmOnly: false, useHTML: true });
+
+      setTimeout(() => {
+        document.querySelectorAll('.btn-buy-intel').forEach(btn => {
+          btn.onclick = () => {
+            const enemy = allEnemies.find(e => e.id === btn.dataset.enemy);
+            const result = this._hubSystem.purchaseIntel(state, btn.dataset.enemy, btn.dataset.level, enemy);
+            if (result.success && result.updatePayload) {
+              this.saveManager.applyGrowthUpdate(result.updatePayload);
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showBestiaryPanel(); } });
+            } else {
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+            }
+          };
+        });
+      }, 50);
+    });
   }
 }

@@ -641,6 +641,15 @@ json.dumps(generate_battle_rewards(BattleTracker(), None))
   }
 
   _completeExamQuest(examQuestId, tracker) {
+    // Phase 12 fix: 先回写战斗后 HP/MP 状态
+    const s = this.currentState;
+    const player = s?.player || (s?.units || []).find(u => u.unit_type === 'player');
+    if (player && this.uiManager.saveManager) {
+      this.uiManager.saveManager.applyBattleStatus(player.hp, player.mp);
+      const st = this.uiManager.saveManager.getState();
+      if (st) { st.hp = player.hp; st.mp = player.mp; }
+    }
+
     // 调用 HubSystem 完成考核
     if (this.uiManager._hubSystem && typeof this.uiManager._hubSystem.completeExam === 'function') {
       const state = this.uiManager.saveManager.getState();

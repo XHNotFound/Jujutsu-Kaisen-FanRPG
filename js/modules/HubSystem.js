@@ -508,3 +508,117 @@ export class HubSystem {
     };
   }
 }
+
+  // ================================================================
+  //  Phase 13: 咒具系统（纯函数，零 DOM 依赖）
+  // ================================================================
+
+  /**
+   * 装备咒具到指定槽位
+   * @param {object} characterState
+   * @param {string} slotId — "mainHand" | "offHand" | "accessory"
+   * @param {string} toolId — 咒具 ID（null 表示卸下）
+   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   */
+  equipTool(characterState, slotId, toolId) {
+    const slot = EQUIPMENT_SLOTS[slotId];
+    if (!slot) {
+      return { success: false, log: `无效的装备槽位: ${slotId}。`, updatePayload: null };
+    }
+
+    if (toolId === null) {
+      // 卸下装备
+      const equipment = characterState.equipment || { mainHand: null, offHand: null, accessory: null };
+      const current = equipment[slotId];
+      if (!current) {
+        return { success: false, log: '该槽位没有装备。', updatePayload: null };
+      }
+      const oldTool = getCursedTool(current);
+      return {
+        success: true,
+        log: `卸下了「${oldTool ? oldTool.name : current}」。`,
+        updatePayload: { equipment: { [slotId]: null } }
+      };
+    }
+
+    // 检查咒具是否存在
+    const tool = getCursedTool(toolId);
+    if (!tool) {
+      return { success: false, log: `未找到咒具: ${toolId}。`, updatePayload: null };
+    }
+
+    // 检查槽位兼容性
+    if (!canEquipToSlot(toolId, slotId)) {
+      return { success: false, log: `「${tool.name}」无法装备到${slot.name}槽位（需要类型: ${slot.acceptedTypes.join('/')}）。`, updatePayload: null };
+    }
+
+    // 检查是否已拥有该咒具（简单检查：如果已在其他槽位装备，先卸下）
+    const equipment = characterState.equipment || { mainHand: null, offHand: null, accessory: null };
+    const oldEquipLog = [];
+    for (const [otherSlot, otherToolId] of Object.entries(equipment)) {
+      if (otherToolId === toolId && otherSlot !== slotId) {
+        oldEquipLog.push(`（自动从${EQUIPMENT_SLOTS[otherSlot]?.name || otherSlot}卸下）`);
+        equipment[otherSlot] = null;
+      }
+    }
+
+    return {
+      success: true,
+      log: `装备了「${tool.name}」到${slot.name}。` + oldEquipLog.join(' '),
+      updatePayload: { equipment: { [slotId]: toolId } }
+    };
+  }
+
+  /**
+   * 卸下指定槽位的装备（equipTool 的语法糖）
+   * @param {object} characterState
+   * @param {string} slotId
+   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   */
+  unequipTool(characterState, slotId) {
+    return this.equipTool(characterState, slotId, null);
+  }
+
+  /**
+   * 计算最终属性（基础属性 + 装备加成）
+   * 严禁直接修改 characterState.attributes！
+   * 返回新的合并后的属性对象，供 UI 显示和战斗系统读取。
+   *
+   * @param {object} characterState — 玩家存档状态
+   * @returns {{ [attrName]: number }} 最终属性值
+   */
+  calculateFinalStats(characterState) {
+    const base = { ...(characterState.attributes || {}) };
+
+    // 遍历装备槽位，叠加咒具属性加成
+    const equipment = characterState.equipment || { mainHand: null, offHand: null, accessory: null };
+    for (const [slotId, toolId] of Object.entries(equipment)) {
+      if (!toolId) continue;
+      const tool = getCursedTool(toolId);
+      if (!tool || !tool.statsBonus) continue;
+      for (const [attr, bonus] of Object.entries(tool.statsBonus)) {
+        base[attr] = (base[attr] || 0) + bonus;
+      }
+    }
+
+    return base;
+  }
+
+  /**
+   * 获取所有装备后的属性加成摘要
+   * @param {object} characterState
+   * @returns {{ toolName: string, bonuses: object }[]}
+   */
+  getEquipmentBonuses(characterState) {
+    const result = [];
+    const equipment = characterState.equipment || { mainHand: null, offHand: null, accessory: null };
+    for (const [slotId, toolId] of Object.entries(equipment)) {
+      if (!toolId) continue;
+      const tool = getCursedTool(toolId);
+      if (tool) {
+        result.push({ slotId, slotName: EQUIPMENT_SLOTS[slotId]?.name || slotId, toolId, toolName: tool.name, bonuses: { ...tool.statsBonus }, tier: tool.tier });
+      }
+    }
+    return result;
+  }
+}

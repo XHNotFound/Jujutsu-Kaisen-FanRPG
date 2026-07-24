@@ -585,7 +585,7 @@ export class HubSystem {
    * 返回新的合并后的属性对象，供 UI 显示和战斗系统读取。
    *
    * @param {object} characterState — 玩家存档状态
-   * @returns {{ [attrName]: number }} 最终属性值
+   * @returns {object} 最终属性值（key 为属性名，value 为数值）
    */
   calculateFinalStats(characterState) {
     const base = { ...(characterState.attributes || {}) };
@@ -607,7 +607,7 @@ export class HubSystem {
   /**
    * 获取所有装备后的属性加成摘要
    * @param {object} characterState
-   * @returns {{ toolName: string, bonuses: object }[]}
+   * @returns {Array<{toolName: string, bonuses: object}>}
    */
   getEquipmentBonuses(characterState) {
     const result = [];

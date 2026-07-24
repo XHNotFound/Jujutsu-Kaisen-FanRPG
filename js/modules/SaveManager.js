@@ -424,6 +424,7 @@ export class SaveManager {
             this.state.inventory[itemId] = newQty;
           }
         }
+        continue;
       } else if (key === 'unlockedIntel' && typeof value === 'object') {
         // Phase 13: 情报数据更新（增量合并）
         if (!this.state.unlockedIntel) this.state.unlockedIntel = {};
@@ -435,12 +436,14 @@ export class SaveManager {
             }
           }
         }
+        continue;
       } else if (key === 'equipment' && typeof value === 'object') {
         // Phase 13: 装备更新（槽位级合并）
         if (!this.state.equipment) this.state.equipment = { mainHand: null, offHand: null, accessory: null };
         if (value.mainHand !== undefined) this.state.equipment.mainHand = value.mainHand;
         if (value.offHand !== undefined) this.state.equipment.offHand = value.offHand;
         if (value.accessory !== undefined) this.state.equipment.accessory = value.accessory;
+        continue;
       }
     }
 

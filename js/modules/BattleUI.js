@@ -273,17 +273,43 @@ init_battle(json.dumps(save_data))
     const hpBar = document.getElementById(prefix + '-hp-bar');
     const hpText = document.getElementById(prefix + '-hp-text');
     if (hpBar) hpBar.style.width = hpPct + '%';
-    if (hpText) hpText.textContent = data.hp + ' / ' + data.max_hp;
+
+    // Phase 13: 战斗中的 HP/MP 显示加成后的上限 (绿色)
     if (prefix === 'player') {
-      const mpPct = data.max_mp > 0 ? (data.mp / data.max_mp) * 100 : 0;
-      const mpBar = document.getElementById('player-mp-bar');
-      const mpText = document.getElementById('player-mp-text');
-      if (mpBar) mpBar.style.width = mpPct + '%';
-      if (mpText) mpText.textContent = data.mp + ' / ' + data.max_mp;
-    }
-    // Phase 8: 敌人 MP 条
-    if (prefix === 'enemy' && data.max_mp > 0) {
-      this._renderEnemyMp(data);
+      const saveSt = this.uiManager.saveManager?.getState();
+      const baseCon = (saveSt?.attributes?.constitution) || (data.constitution || 10);
+      const baseCE  = (saveSt?.attributes?.cursedEnergy) || (data.cursed_energy || 10);
+      // Calculate base max values from attributes (using SaveManager formula if available)
+      const sm = this.uiManager.saveManager;
+      const baseMaxHp = sm && sm._calcMaxHp ? sm._calcMaxHp(baseCon) : data.max_hp;
+      const baseMaxMp = sm && sm._calcMaxMp ? sm._calcMaxMp(baseCE) : data.max_mp;
+      const hpBonus = data.max_hp - baseMaxHp;
+      const mpBonus = data.max_mp - baseMaxMp;
+
+      if (hpBonus !== 0) {
+        if (hpText) hpText.innerHTML = `${data.hp} / ${data.max_hp} <span style="color:#22c55e;font-size:0.7rem;">(+${hpBonus})</span>`;
+      } else {
+        if (hpText) hpText.textContent = data.hp + ' / ' + data.max_hp;
+      }
+
+      if (prefix === 'player') {
+        const mpPct = data.max_mp > 0 ? (data.mp / data.max_mp) * 100 : 0;
+        const mpBar = document.getElementById('player-mp-bar');
+        const mpText = document.getElementById('player-mp-text');
+        if (mpBar) mpBar.style.width = mpPct + '%';
+        if (mpBonus !== 0) {
+          if (mpText) mpText.innerHTML = `${data.mp} / ${data.max_mp} <span style="color:#22c55e;font-size:0.7rem;">(+${mpBonus})</span>`;
+        } else {
+          if (mpText) mpText.textContent = data.mp + ' / ' + data.max_mp;
+        }
+      }
+    } else {
+      if (hpText) hpText.textContent = data.hp + ' / ' + data.max_hp;
+      if (prefix === 'enemy' && data.max_mp > 0) {
+        this._renderEnemyMp(data);
+      } else if (prefix === 'player') {
+        // handled above
+      }
     }
     const atbPct = (data.atb / 300) * 100;
     const atbBar = document.getElementById(prefix + '-atb-bar');

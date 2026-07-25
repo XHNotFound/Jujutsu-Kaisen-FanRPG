@@ -1,4 +1,6 @@
 // js/modules/SaveManager.js — 存档管理器（唯一负责 LocalStorage 读写）
+// Phase 13: 引用 CURSED_TOOLS 用于装备加成计算
+import { CURSED_TOOLS } from '../data/cursed_tools.js';
 
 /**
  * SaveManager 职责：
@@ -397,10 +399,18 @@ export class SaveManager {
 
       // 简单顶层字段: hp, ap, stamina, residual, money, skillPoints
       if (key === 'hp') {
-        // Phase 13 fix: 回血上限以基础属性为准（不受装备加成）
+        // Phase 13: 回血上限用装备加成后的 effectiveMaxHp
         const baseCon = (this.state.attributes && this.state.attributes.constitution) || 10;
-        const baseMaxHp = this._calcMaxHp(baseCon);
-        this.state.hp = Math.min(baseMaxHp, Math.max(0, (this.state.hp || baseMaxHp) + value));
+        // 计算装备加成
+        let bonusCon = 0;
+        const equip = this.state.equipment || {};
+        for (const toolId of Object.values(equip)) {
+          if (toolId && CURSED_TOOLS[toolId] && CURSED_TOOLS[toolId].statsBonus) {
+            bonusCon += CURSED_TOOLS[toolId].statsBonus.constitution || 0;
+          }
+        }
+        const effMaxHp = this._calcMaxHp(baseCon + bonusCon);
+        this.state.hp = Math.min(effMaxHp, Math.max(0, (this.state.hp || effMaxHp) + value));
       } else if (key === 'stamina') {
         this.state.stamina = Math.max(0, Math.min(caps.maxStamina, (this.state.stamina || 100) + value));
       } else if (key === 'ap') {
@@ -412,10 +422,17 @@ export class SaveManager {
       } else if (key === 'skillPoints') {
         this.state.skillPoints = Math.max(0, (this.state.skillPoints !== undefined ? this.state.skillPoints : 5) + value);
       } else if (key === 'mp') {
-        // Phase 13 fix: 回魔上限以基础属性为准（不受装备加成）
+        // Phase 13: 回魔上限用装备加成后的 effectiveMaxMp
         const baseCE = (this.state.attributes && this.state.attributes.cursedEnergy) || 10;
-        const baseMaxMp = this._calcMaxMp(baseCE);
-        this.state.mp = Math.min(baseMaxMp, Math.max(0, (this.state.mp || baseMaxMp) + value));
+        let bonusCE = 0;
+        const eq = this.state.equipment || {};
+        for (const toolId of Object.values(eq)) {
+          if (toolId && CURSED_TOOLS[toolId] && CURSED_TOOLS[toolId].statsBonus) {
+            bonusCE += CURSED_TOOLS[toolId].statsBonus.cursedEnergy || 0;
+          }
+        }
+        const effMaxMp = this._calcMaxMp(baseCE + bonusCE);
+        this.state.mp = Math.min(effMaxMp, Math.max(0, (this.state.mp || effMaxMp) + value));
       } else if (key === 'inventory' && typeof value === 'object') {
         // Phase 13: 道具背包更新（增量合并）
         if (!this.state.inventory) this.state.inventory = {};

@@ -10,6 +10,22 @@ import { EXAMS, getNextExam } from '../data/exams.js';
 import { ITEMS, getItem } from '../data/items.js';
 import { CURSED_TOOLS, EQUIPMENT_SLOTS, getCursedTool, canEquipToSlot } from '../data/cursed_tools.js';
 
+/**
+ * Phase 13 helper: 读取装备提供的属性加成
+ */
+function _equipBonus(characterState, attrName) {
+  const equipment = characterState.equipment || { mainHand: null, offHand: null, accessory: null };
+  let total = 0;
+  for (const toolId of Object.values(equipment)) {
+    if (!toolId) continue;
+    const tool = CURSED_TOOLS[toolId];
+    if (tool && tool.statsBonus) {
+      total += tool.statsBonus[attrName] || 0;
+    }
+  }
+  return total;
+}
+
 export class HubSystem {
   constructor() {
     // 无状态 — 所有操作基于传入的 characterState
@@ -100,20 +116,21 @@ export class HubSystem {
     // 处理不同效果类型
     const effect = action.effect;
     if (effect.type === 'heal') {
-      // 家入硝子的治疗 — 恢复 HP 和 MP 到最大值，清除残秽
-      // Phase 13 fix: 治疗回到基础属性的上限（不受装备加成）
+      // 家入硝子的治疗 — 恢复到装备加成后的有效上限
       const baseCon = (characterState.attributes && characterState.attributes.constitution) || 10;
       const baseCE  = (characterState.attributes && characterState.attributes.cursedEnergy) || 10;
-      const maxHp = (typeof this._calcMaxHp === 'function')
-        ? this._calcMaxHp(baseCon) : (characterState.maxHp || 100);
-      const maxMp = (typeof this._calcMaxMp === 'function')
-        ? this._calcMaxMp(baseCE) : (characterState.maxMp || 100);
+      const bonusCon = _equipBonus(characterState, 'constitution');
+      const bonusCE  = _equipBonus(characterState, 'cursedEnergy');
+      const effMaxHp = (typeof this._calcMaxHp === 'function')
+        ? this._calcMaxHp(baseCon + bonusCon) : (characterState.maxHp || 100);
+      const effMaxMp = (typeof this._calcMaxMp === 'function')
+        ? this._calcMaxMp(baseCE + bonusCE) : (characterState.maxMp || 100);
       const currentHp = characterState.hp || 0;
       const currentMp = characterState.mp || 0;
       const residual = characterState.residual || 0;
       const residualClear = Math.floor(residual * (effect.residualClearPct || 0.5));
-      const hpRestore = maxHp - currentHp;
-      const mpRestore = maxMp - currentMp;
+      const hpRestore = effMaxHp - currentHp;
+      const mpRestore = effMaxMp - currentMp;
 
       return {
         success: true,
@@ -253,24 +270,27 @@ export class HubSystem {
    * @returns {object}
    */
   rest(characterState) {
-    // Phase 13 fix: 休息恢复以基础属性为准（不受装备加成）
+    // Phase 13: 休息恢复可以回到装备加成后的有效上限
     const baseCon = (characterState.attributes && characterState.attributes.constitution) || 10;
     const baseCE  = (characterState.attributes && characterState.attributes.cursedEnergy) || 10;
-    // 用 SaveManager 的公式，如果没有则 fallback 到 state.maxHp
-    const baseMaxHp = typeof this._calcMaxHp === 'function'
-      ? this._calcMaxHp(baseCon)
+
+    // 装备加成后的 effective 上限（玩家可以恢复到的最多血量）
+    const bonusCon = _equipBonus(characterState, 'constitution');
+    const bonusCE  = _equipBonus(characterState, 'cursedEnergy');
+    const effMaxHp = typeof this._calcMaxHp === 'function'
+      ? this._calcMaxHp(baseCon + bonusCon)
       : (characterState.maxHp || 100);
-    const baseMaxMp = typeof this._calcMaxMp === 'function'
-      ? this._calcMaxMp(baseCE)
+    const effMaxMp = typeof this._calcMaxMp === 'function'
+      ? this._calcMaxMp(baseCE + bonusCE)
       : (characterState.maxMp || 100);
 
-    const currentHp = characterState.hp || baseMaxHp;
-    const hpGain = Math.floor(baseMaxHp * REST_CONFIG.hpRecoveryPct);
-    const actualHpGain = Math.min(hpGain, baseMaxHp - currentHp);
+    const currentHp = characterState.hp || effMaxHp;
+    const hpGain = Math.floor(effMaxHp * REST_CONFIG.hpRecoveryPct);
+    const actualHpGain = Math.min(hpGain, effMaxHp - currentHp);
 
-    const currentMp = characterState.mp || baseMaxMp;
-    const mpGain = Math.floor(baseMaxMp * REST_CONFIG.hpRecoveryPct);
-    const actualMpGain = Math.min(mpGain, baseMaxMp - currentMp);
+    const currentMp = characterState.mp || effMaxMp;
+    const mpGain = Math.floor(effMaxMp * REST_CONFIG.hpRecoveryPct);
+    const actualMpGain = Math.min(mpGain, effMaxMp - currentMp);
 
     const residual = characterState.residual || 0;
     const residualClear = Math.floor(residual * REST_CONFIG.residualClearPct);
@@ -430,10 +450,11 @@ export class HubSystem {
 
       case 'restore_hp':
         const hp = characterState.hp || 0;
-        // Phase 13 fix: 道具回复上限以基础属性为准（不受装备加成）
+        // Phase 13: 道具回复可以回到装备加成后的有效上限
         const baseConHp = (characterState.attributes && characterState.attributes.constitution) || 10;
+        const bonusConHp = _equipBonus(characterState, 'constitution');
         const realMaxHp = (typeof this._calcMaxHp === 'function')
-          ? this._calcMaxHp(baseConHp) : (characterState.maxHp || 100);
+          ? this._calcMaxHp(baseConHp + bonusConHp) : (characterState.maxHp || 100);
         const hpRestore = effect.pct
           ? Math.floor(realMaxHp * effect.pct)
           : (effect.amount || 0);
@@ -444,10 +465,11 @@ export class HubSystem {
 
       case 'restore_mp':
         const mp = characterState.mp || 0;
-        // Phase 13 fix: 道具回复上限以基础属性为准（不受装备加成）
+        // Phase 13: 道具回复可以回到装备加成后的有效上限
         const baseCeMp = (characterState.attributes && characterState.attributes.cursedEnergy) || 10;
+        const bonusCeMp = _equipBonus(characterState, 'cursedEnergy');
         const realMaxMp = (typeof this._calcMaxMp === 'function')
-          ? this._calcMaxMp(baseCeMp) : (characterState.maxMp || 100);
+          ? this._calcMaxMp(baseCeMp + bonusCeMp) : (characterState.maxMp || 100);
         const mpRestore = effect.pct
           ? Math.floor(realMaxMp * effect.pct)
           : (effect.amount || 0);

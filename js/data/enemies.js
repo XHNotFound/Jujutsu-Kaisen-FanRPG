@@ -21,12 +21,12 @@ export const ENEMIES = {
       baseStats: { hp: 50, max_hp: 50, mp: 0, max_mp: 0, speed: 7, constitution: 6, martial_arts: 8, cursed_energy: 0, cursed_energy_control: 0, cursed_energy_efficiency: 0, talent: 3 },
       skills: [{ id: "enemy_bite", name: "撕咬", cost: 0, type: "martial", damageMultiplier: 1.0, castTime: 8, baseRecoverySpeed: 28, minDistance: 0, maxDistance: 0 }],
       // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 80,
+      intelData: {
         basic: { name: "初级情报", price: 30, description: "显示蛸头的基础属性（HP/MP/等阶）。" },
         skill: { name: "技能情报", price: 60, description: "显示蛸头的技能列表及伤害倍率。" },
         advanced: { name: "高级情报", price: 150, description: "蛸头没有高级技巧——它太低级了。" }
       },
-      // Phase 14: 逃跑基础概率 (0-100)
-      escapeBaseChance: 80,
       rewards: { money: { min: 10, max: 30 }, skillExp: 3, skillPoints: 1, inspirationChance: 0.05 }
     },
     {

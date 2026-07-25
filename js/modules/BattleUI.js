@@ -243,6 +243,7 @@ init_battle(json.dumps(save_data))
       // Phase 14: 重伤惩罚
       this._showDefeatScreen(s);
     }
+  }
 
   _renderCollapsibleSection(containerId, bodyId, label, renderFn) {
     let container = document.getElementById(containerId);

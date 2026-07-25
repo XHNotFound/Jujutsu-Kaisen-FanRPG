@@ -397,8 +397,10 @@ export class SaveManager {
 
       // 简单顶层字段: hp, ap, stamina, residual, money, skillPoints
       if (key === 'hp') {
-        const maxHp = this.state.maxHp || 100;
-        this.state.hp = Math.min(maxHp, Math.max(0, (this.state.hp || maxHp) + value));
+        // Phase 13 fix: 回血上限以基础属性为准（不受装备加成）
+        const baseCon = (this.state.attributes && this.state.attributes.constitution) || 10;
+        const baseMaxHp = this._calcMaxHp(baseCon);
+        this.state.hp = Math.min(baseMaxHp, Math.max(0, (this.state.hp || baseMaxHp) + value));
       } else if (key === 'stamina') {
         this.state.stamina = Math.max(0, Math.min(caps.maxStamina, (this.state.stamina || 100) + value));
       } else if (key === 'ap') {
@@ -410,8 +412,10 @@ export class SaveManager {
       } else if (key === 'skillPoints') {
         this.state.skillPoints = Math.max(0, (this.state.skillPoints !== undefined ? this.state.skillPoints : 5) + value);
       } else if (key === 'mp') {
-        const maxMp = this.state.maxMp || 100;
-        this.state.mp = Math.min(maxMp, Math.max(0, (this.state.mp || maxMp) + value));
+        // Phase 13 fix: 回魔上限以基础属性为准（不受装备加成）
+        const baseCE = (this.state.attributes && this.state.attributes.cursedEnergy) || 10;
+        const baseMaxMp = this._calcMaxMp(baseCE);
+        this.state.mp = Math.min(baseMaxMp, Math.max(0, (this.state.mp || baseMaxMp) + value));
       } else if (key === 'inventory' && typeof value === 'object') {
         // Phase 13: 道具背包更新（增量合并）
         if (!this.state.inventory) this.state.inventory = {};

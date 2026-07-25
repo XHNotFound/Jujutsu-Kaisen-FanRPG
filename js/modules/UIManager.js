@@ -577,36 +577,43 @@ export class UIManager {
 
     // Phase 13 fix: 计算含装备加成的最终属性，用于 HUD 显示
     const finalStats = this._hubSystem.calculateFinalStats(state);
-    const baseMaxHp = state.maxHp || state.hp || 100;
-    const baseMaxMp = state.maxMp || state.mp || 100;
 
-    // 装备影响 maxHp/maxMp：体质→血量, 咒力总量→MP
-    // 直接取 finalStats 中的体质和咒力总量重新计算上限
-    const effectiveCon = finalStats.constitution || (state.attributes?.constitution || 10);
-    const effectiveCE  = finalStats.cursedEnergy || (state.attributes?.cursedEnergy || 10);
+    // baseMaxHp/Mp = 无装备时的基础上限（从基础属性重新计算）
+    const baseCon = state.attributes?.constitution || 10;
+    const baseCE  = state.attributes?.cursedEnergy || 10;
+    const baseMaxHp = this.saveManager._calcMaxHp
+      ? this.saveManager._calcMaxHp(baseCon)
+      : (state.maxHp || 100);
+    const baseMaxMp = this.saveManager._calcMaxMp
+      ? this.saveManager._calcMaxMp(baseCE)
+      : (state.maxMp || 100);
 
-    // 复用 SaveManager 的阶梯公式计算加成后的上限
+    // effectiveMaxHp/Mp = 含装备加成后的上限
+    const equipmentCon = finalStats.constitution || baseCon;
+    const equipmentCE  = finalStats.cursedEnergy || baseCE;
     const effectiveMaxHp = this.saveManager._calcMaxHp
-      ? this.saveManager._calcMaxHp(effectiveCon)
+      ? this.saveManager._calcMaxHp(equipmentCon)
       : baseMaxHp;
     const effectiveMaxMp = this.saveManager._calcMaxMp
-      ? this.saveManager._calcMaxMp(effectiveCE)
+      ? this.saveManager._calcMaxMp(equipmentCE)
       : baseMaxMp;
 
-    const hasHpBonus = effectiveMaxHp !== baseMaxHp;
-    const hasMpBonus = effectiveMaxMp !== baseMaxMp;
+    const hpBonus = effectiveMaxHp - baseMaxHp;
+    const mpBonus = effectiveMaxMp - baseMaxMp;
+    const hasHpBonus = hpBonus !== 0;
+    const hasMpBonus = mpBonus !== 0;
 
-    // HP 条
+    // HP 条 — 含装备的临时上限
     const hpPct = Math.max(0, (state.hp / effectiveMaxHp) * 100);
     document.getElementById('hud-hp-bar').style.width = hpPct + '%';
     document.getElementById('hud-hp-text').innerHTML =
-      `${state.hp} / ${effectiveMaxHp}` + (hasHpBonus ? ` <span style="color:#22c55e;font-size:0.75rem;">(+${effectiveMaxHp - baseMaxHp})</span>` : '');
+      `${state.hp} / ${effectiveMaxHp}` + (hasHpBonus ? ` <span style="color:#22c55e;font-size:0.75rem;">(+${hpBonus})</span>` : '');
 
-    // MP 条
+    // MP 条 — 含装备的临时上限
     const mpPct = Math.max(0, (state.mp / effectiveMaxMp) * 100);
     document.getElementById('hud-mp-bar').style.width = mpPct + '%';
     document.getElementById('hud-mp-text').innerHTML =
-      `${state.mp} / ${effectiveMaxMp}` + (hasMpBonus ? ` <span style="color:#22c55e;font-size:0.75rem;">(+${effectiveMaxMp - baseMaxMp})</span>` : '');
+      `${state.mp} / ${effectiveMaxMp}` + (hasMpBonus ? ` <span style="color:#22c55e;font-size:0.75rem;">(+${mpBonus})</span>` : '');
 
     // 资源
     document.getElementById('hud-money').textContent = state.money || 0;

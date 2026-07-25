@@ -101,10 +101,15 @@ export class HubSystem {
     const effect = action.effect;
     if (effect.type === 'heal') {
       // 家入硝子的治疗 — 恢复 HP 和 MP 到最大值，清除残秽
+      // Phase 13 fix: 治疗回到基础属性的上限（不受装备加成）
+      const baseCon = (characterState.attributes && characterState.attributes.constitution) || 10;
+      const baseCE  = (characterState.attributes && characterState.attributes.cursedEnergy) || 10;
+      const maxHp = (typeof this._calcMaxHp === 'function')
+        ? this._calcMaxHp(baseCon) : (characterState.maxHp || 100);
+      const maxMp = (typeof this._calcMaxMp === 'function')
+        ? this._calcMaxMp(baseCE) : (characterState.maxMp || 100);
       const currentHp = characterState.hp || 0;
-      const maxHp = characterState.maxHp || 100;
       const currentMp = characterState.mp || 0;
-      const maxMp = characterState.maxMp || 100;
       const residual = characterState.residual || 0;
       const residualClear = Math.floor(residual * (effect.residualClearPct || 0.5));
       const hpRestore = maxHp - currentHp;
@@ -248,15 +253,24 @@ export class HubSystem {
    * @returns {object}
    */
   rest(characterState) {
-    const maxHp = characterState.maxHp || 100;
-    const currentHp = characterState.hp || maxHp;
-    const hpGain = Math.floor(maxHp * REST_CONFIG.hpRecoveryPct);
-    const actualHpGain = Math.min(hpGain, maxHp - currentHp);
+    // Phase 13 fix: 休息恢复以基础属性为准（不受装备加成）
+    const baseCon = (characterState.attributes && characterState.attributes.constitution) || 10;
+    const baseCE  = (characterState.attributes && characterState.attributes.cursedEnergy) || 10;
+    // 用 SaveManager 的公式，如果没有则 fallback 到 state.maxHp
+    const baseMaxHp = typeof this._calcMaxHp === 'function'
+      ? this._calcMaxHp(baseCon)
+      : (characterState.maxHp || 100);
+    const baseMaxMp = typeof this._calcMaxMp === 'function'
+      ? this._calcMaxMp(baseCE)
+      : (characterState.maxMp || 100);
 
-    const maxMp = characterState.maxMp || 100;
-    const currentMp = characterState.mp || maxMp;
-    const mpGain = Math.floor(maxMp * REST_CONFIG.hpRecoveryPct);
-    const actualMpGain = Math.min(mpGain, maxMp - currentMp);
+    const currentHp = characterState.hp || baseMaxHp;
+    const hpGain = Math.floor(baseMaxHp * REST_CONFIG.hpRecoveryPct);
+    const actualHpGain = Math.min(hpGain, baseMaxHp - currentHp);
+
+    const currentMp = characterState.mp || baseMaxMp;
+    const mpGain = Math.floor(baseMaxMp * REST_CONFIG.hpRecoveryPct);
+    const actualMpGain = Math.min(mpGain, baseMaxMp - currentMp);
 
     const residual = characterState.residual || 0;
     const residualClear = Math.floor(residual * REST_CONFIG.residualClearPct);
@@ -416,22 +430,28 @@ export class HubSystem {
 
       case 'restore_hp':
         const hp = characterState.hp || 0;
-        const maxHp = characterState.maxHp || 100;
+        // Phase 13 fix: 道具回复上限以基础属性为准（不受装备加成）
+        const baseConHp = (characterState.attributes && characterState.attributes.constitution) || 10;
+        const realMaxHp = (typeof this._calcMaxHp === 'function')
+          ? this._calcMaxHp(baseConHp) : (characterState.maxHp || 100);
         const hpRestore = effect.pct
-          ? Math.floor(maxHp * effect.pct)
+          ? Math.floor(realMaxHp * effect.pct)
           : (effect.amount || 0);
-        const actualHp = Math.min(hpRestore, maxHp - hp);
+        const actualHp = Math.min(hpRestore, realMaxHp - hp);
         payload.hp = actualHp;
         logParts.push(`回复了 ${actualHp} 点生命值。`);
         break;
 
       case 'restore_mp':
         const mp = characterState.mp || 0;
-        const maxMp = characterState.maxMp || 100;
+        // Phase 13 fix: 道具回复上限以基础属性为准（不受装备加成）
+        const baseCeMp = (characterState.attributes && characterState.attributes.cursedEnergy) || 10;
+        const realMaxMp = (typeof this._calcMaxMp === 'function')
+          ? this._calcMaxMp(baseCeMp) : (characterState.maxMp || 100);
         const mpRestore = effect.pct
-          ? Math.floor(maxMp * effect.pct)
+          ? Math.floor(realMaxMp * effect.pct)
           : (effect.amount || 0);
-        const actualMp = Math.min(mpRestore, maxMp - mp);
+        const actualMp = Math.min(mpRestore, realMaxMp - mp);
         payload.mp = actualMp;
         logParts.push(`回复了 ${actualMp} 点咒力。`);
         break;

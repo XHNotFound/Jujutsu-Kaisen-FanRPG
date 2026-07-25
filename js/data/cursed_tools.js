@@ -143,6 +143,53 @@ export const CURSED_TOOLS = {
     description: "写满符文的和纸符咒，增强咒力总量。",
     flavorText: "「符纸虽薄，其力不可轻。」",
     statsBonus: { cursedEnergy: 8, cursedEnergyEfficiency: 3 }
+  },
+
+  // ================================================================
+  //  Tier 3: 特效咒具（含主动 Buff）
+  // ================================================================
+  playfulCloud: {
+    id: "playfulCloud",
+    name: "游云",
+    type: "weapon",
+    slot: "mainHand",
+    tier: 3,
+    price: 5000,
+    description: "东堂葵爱用的特级咒具，可随使用者心意变幻形态。",
+    flavorText: "「游云——随心而动，无拘无束。」",
+    statsBonus: { martialArts: 15 },
+    // Phase 14: 主动特效 Buff
+    activeBuff: {
+      id: "playful_cloud_buff",
+      name: "游云·重击",
+      type: "buff",
+      duration: 1, // 触发一次后消失
+      description: "下一次体术攻击倍率 +2.0，但扣除 10% 当前 HP。",
+      icon: "☁️",
+      effects: { nextMartialMultiplier: 2.0, hpCostRatio: 0.1 }
+    }
+  },
+
+  blackRope: {
+    id: "blackRope",
+    name: "黑绳",
+    type: "weapon",
+    slot: "mainHand",
+    tier: 3,
+    price: 4500,
+    description: "传说中能束缚一切诅咒的漆黑绳索，极强的防御性能但会侵蚀咒力。",
+    flavorText: "「黑绳——缚咒之力，以咒换体。」",
+    statsBonus: { constitution: 20, cursedEnergyEfficiency: -10 },
+    // Phase 14: 主动特效 Buff
+    activeBuff: {
+      id: "black_rope_buff",
+      name: "黑绳·缚咒",
+      type: "buff",
+      duration: 0, // 永久持续，直到卸下或战斗结束
+      description: "体质 +20，咒力效率 -10%。",
+      icon: "🪢",
+      effects: { constitutionBonus: 20, cursedEnergyEfficiencyPenalty: -10 }
+    }
   }
 };
 

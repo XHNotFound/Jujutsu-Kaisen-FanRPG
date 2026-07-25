@@ -399,10 +399,7 @@ def create_player_from_save(save_data):
     name = save_data.get("characterName", "无名咒术师"); attrs = save_data.get("attributes", {})
     con, ce = attrs.get("constitution",10), attrs.get("cursedEnergy",10)
 
-    # Phase 13: 读取装备加成，动态叠加到体质/咒力总量上用于计算 maxHp/maxMp
-    equipment = save_data.get("equipment", {})
-    equipment_bonus_con = 0
-    equipment_bonus_ce = 0
+    # Phase 14: 装备 activeBuff 注入
     EQUIPMENT_TOOLS = {
         "normalCursedBlade": {"statsBonus": {"martialArts": 5, "cursedEnergyControl": 2}},
         "ironBracers": {"statsBonus": {"constitution": 5}},
@@ -413,7 +410,21 @@ def create_player_from_save(save_data):
         "jadePendant": {"statsBonus": {"cursedEnergy": 6, "cursedEnergyControl": 5, "cursedEnergyEfficiency": 4}},
         "combatGloves": {"statsBonus": {"martialArts": 8, "talent": 4}},
         "spiritCharm": {"statsBonus": {"cursedEnergy": 8, "cursedEnergyEfficiency": 3}},
+        # Phase 14: Tier 3 特效咒具
+        "playfulCloud": {"statsBonus": {"martialArts": 15},
+            "activeBuff": {"id": "playful_cloud_buff", "name": "游云·重击", "type": "buff",
+                "duration": 1, "description": "下一次体术攻击倍率 +2.0，扣除 10% 当前 HP。",
+                "icon": "☁️", "effects": {"nextMartialMultiplier": 2.0, "hpCostRatio": 0.1}}},
+        "blackRope": {"statsBonus": {"constitution": 20, "cursedEnergyEfficiency": -10},
+            "activeBuff": {"id": "black_rope_buff", "name": "黑绳·缚咒", "type": "buff",
+                "duration": 0, "description": "体质 +20，咒力效率 -10%。",
+                "icon": "🪢", "effects": {"constitutionBonus": 20, "cursedEnergyEfficiencyPenalty": -10}}},
     }
+
+    # 读取装备加成用于 maxHp/maxMp
+    equipment = save_data.get("equipment", {})
+    equipment_bonus_con = 0
+    equipment_bonus_ce = 0
     if equipment:
         for slot_id, tool_id in equipment.items():
             if tool_id and tool_id in EQUIPMENT_TOOLS:
@@ -440,7 +451,29 @@ def create_player_from_save(save_data):
                 cursed_energy=ce,cursed_energy_control=attrs.get("cursedEnergyControl",10),
                 cursed_energy_efficiency=attrs.get("cursedEnergyEfficiency",10),talent=attrs.get("talent",10),
                 skills=_build_player_skills(tid, save_data.get("skillLevels", {})),
-                is_alive=True,distance=DISTANCE_MID,active_vow=None,recovery_speed=spd)
+                is_alive=True,distance=DISTANCE_MID,active_vow=None,recovery_speed=spd,
+                status_effects=_build_equipment_buffs(save_data))
+
+def _build_equipment_buffs(save_data):
+    """Phase 14: 从装备中提取 activeBuff 并构建 status_effects"""
+    buffs = []
+    equipment = save_data.get("equipment", {})
+    TOOLS = {
+        "playfulCloud": {
+            "id": "playful_cloud_buff", "name": "游云·重击", "type": "buff",
+            "duration": 1, "description": "下一次体术攻击倍率 +2.0，扣除 10% 当前 HP。",
+            "icon": "☁️", "effects": {"nextMartialMultiplier": 2.0, "hpCostRatio": 0.1}
+        },
+        "blackRope": {
+            "id": "black_rope_buff", "name": "黑绳·缚咒", "type": "buff",
+            "duration": 0, "description": "体质 +20，咒力效率 -10%。",
+            "icon": "🪢", "effects": {"constitutionBonus": 20, "cursedEnergyEfficiencyPenalty": -10}
+        }
+    }
+    for tool_id in equipment.values():
+        if tool_id and tool_id in TOOLS:
+            buffs.append(dict(TOOLS[tool_id]))
+    return buffs
 
 def _build_player_skills(tid, skill_levels=None):
     """Build skills based on unlocked skills in skillLevels. Only base + unlocked branch skills are included."""

@@ -237,8 +237,12 @@ init_battle(json.dumps(save_data))
     this._renderRCTButton(s);
     if (s.last_hit_was_black_flash) this._flashBlackFlashEffect();
     if (s.turn === 'player_win') { this._appendLog('━━ 胜利！诅咒被祓除了。 ━━'); this._disableAllSkills(); this._showVictoryScreen(s); }
-    else if (s.turn === 'enemy_win') { this._appendLog('━━ 败北…你失去了意识。 ━━'); this._disableAllSkills(); }
-  }
+    else if (s.turn === 'enemy_win') {
+      this._appendLog('━━ 败北…你失去了意识。 ━━');
+      this._disableAllSkills();
+      // Phase 14: 重伤惩罚
+      this._showDefeatScreen(s);
+    }
 
   _renderCollapsibleSection(containerId, bodyId, label, renderFn) {
     let container = document.getElementById(containerId);
@@ -735,6 +739,46 @@ json.dumps(generate_battle_rewards(BattleTracker(), None))
     document.querySelectorAll('#battle-vow-body .battle-vow-btn').forEach(b => b.disabled = true);
     const dBtn = document.querySelector('#battle-domain-bar .battle-domain-btn');
     if (dBtn) dBtn.disabled = true;
+    // Phase 14: 锁定逃跑按钮
+    const fleeBtn = document.getElementById('btn-battle-flee');
+    if (fleeBtn) fleeBtn.disabled = true;
+  }
+
+  // ===== Phase 14: 重伤惩罚画面 =====
+
+  _showDefeatScreen(s) {
+    const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    if (player && this.uiManager.saveManager) {
+      const st = this.uiManager.saveManager.getState();
+      if (st) {
+        st.hp = 1; // 保底 1 HP
+        st.mp = Math.max(0, player.mp);
+        this.uiManager.saveManager.setState(st);
+      }
+    }
+
+    // 调用重伤惩罚逻辑
+    const hub = this.uiManager._hubSystem;
+    const st = this.uiManager.saveManager.getState();
+    if (!st) return;
+
+    const result = hub.applyHeavyInjuryPenalty(st);
+    if (result.updatePayload) {
+      this.uiManager.saveManager.applyGrowthUpdate(result.updatePayload);
+    }
+
+    // 显示重伤弹窗
+    const penaltyText = result.penalties.join('\n');
+    this.uiManager.showModal(
+      `💀 重伤昏迷！\n\n${penaltyText}\n\n你被送回了咒术高专的医务室。`,
+      {
+        confirmOnly: true,
+        onConfirm: () => {
+          this.uiManager.hideModal();
+          this.uiManager.renderMainScreen();
+        }
+      }
+    );
   }
 
   async _executeAction(action) {

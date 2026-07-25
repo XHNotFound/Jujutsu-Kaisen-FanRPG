@@ -662,4 +662,53 @@ export class HubSystem {
     }
     return result;
   }
+
+  // ================================================================
+  //  Phase 14: 重伤惩罚机制（纯函数，零 DOM 依赖）
+  // ================================================================
+
+  /**
+   * 应用重伤惩罚 — 当玩家 HP <= 0 战斗失败时调用
+   * @param {object} characterState
+   * @returns {{ penalties: string[], updatePayload: object, gameDaysPassed: number }}
+   */
+  applyHeavyInjuryPenalty(characterState) {
+    const penalties = [];
+    const updatePayload = {};
+
+    // 随机推进 2~5 天
+    const daysPassed = 2 + Math.floor(Math.random() * 4); // 2-5
+    updatePayload.gameDay = daysPassed;
+    penalties.push(`重伤昏迷了 ${daysPassed} 天。`);
+
+    // 50% 概率触发随机惩罚
+    if (Math.random() < 0.5) {
+      // 扣除一半金钱（保底 0）
+      const money = characterState.money || 0;
+      const lostMoney = Math.floor(money * 0.5);
+      updatePayload.money = -lostMoney;
+      penalties.push(`失去了 ${lostMoney} 金币。`);
+
+      // 随机一项基础属性降低 1~2 点（保底 1）
+      const stats = ['constitution', 'martialArts', 'cursedEnergyControl', 'cursedEnergyEfficiency', 'talent'];
+      const randomStat = stats[Math.floor(Math.random() * stats.length)];
+      const dropAmount = Math.floor(Math.random() * 2) + 1; // 1-2
+      const attrNames = { constitution: '体质', martialArts: '体术水平', cursedEnergyControl: '咒力操控', cursedEnergyEfficiency: '咒力效率', talent: '天赋' };
+
+      const currentVal = (characterState.attributes && characterState.attributes[randomStat]) || 10;
+      const newVal = Math.max(1, currentVal - dropAmount); // 保底 1
+      const actualDrop = currentVal - newVal;
+
+      updatePayload[`attributes.${randomStat}`] = -actualDrop;
+      penalties.push(`${attrNames[randomStat] || randomStat} 永久降低了 ${actualDrop} 点。`);
+    } else {
+      penalties.push('万幸——没有留下永久性的损伤。');
+    }
+
+    return {
+      penalties,
+      updatePayload,
+      gameDaysPassed: daysPassed
+    };
+  }
 }

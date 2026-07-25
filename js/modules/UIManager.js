@@ -575,15 +575,39 @@ export class UIManager {
     document.getElementById('hud-name').textContent = state.characterName || '--';
     document.getElementById('hud-rank').textContent = state.rank || '--';
 
+    // Phase 13 fix: 计算含装备加成的最终属性，用于 HUD 显示
+    const finalStats = this._hubSystem.calculateFinalStats(state);
+    const baseMaxHp = state.maxHp || state.hp || 100;
+    const baseMaxMp = state.maxMp || state.mp || 100;
+
+    // 装备影响 maxHp/maxMp：体质→血量, 咒力总量→MP
+    const bonusCon = (finalStats.constitution || 0) - (state.attributes?.constitution || 0);
+    const bonusCE  = (finalStats.cursedEnergy || 0) - (state.attributes?.cursedEnergy || 0);
+
+    // 复用 SaveManager 的阶梯公式计算加成后的上限
+    const effectiveCon = (state.attributes?.constitution || 10) + bonusCon;
+    const effectiveMaxHp = this.saveManager._calcMaxHp
+      ? this.saveManager._calcMaxHp(effectiveCon)
+      : baseMaxHp + bonusCon * 5;
+    const effectiveCE = (state.attributes?.cursedEnergy || 10) + bonusCE;
+    const effectiveMaxMp = this.saveManager._calcMaxMp
+      ? this.saveManager._calcMaxMp(effectiveCE)
+      : baseMaxMp + bonusCE * 4;
+
+    const hasHpBonus = effectiveMaxHp > baseMaxHp;
+    const hasMpBonus = effectiveMaxMp > baseMaxMp;
+
     // HP 条
-    const hpPct = Math.max(0, (state.hp / state.maxHp) * 100);
+    const hpPct = Math.max(0, (state.hp / effectiveMaxHp) * 100);
     document.getElementById('hud-hp-bar').style.width = hpPct + '%';
-    document.getElementById('hud-hp-text').textContent = `${state.hp} / ${state.maxHp}`;
+    document.getElementById('hud-hp-text').innerHTML =
+      `${state.hp} / ${effectiveMaxHp}` + (hasHpBonus ? ` <span style="color:#22c55e;font-size:0.75rem;">(+${effectiveMaxHp - baseMaxHp})</span>` : '');
 
     // MP 条
-    const mpPct = Math.max(0, (state.mp / state.maxMp) * 100);
+    const mpPct = Math.max(0, (state.mp / effectiveMaxMp) * 100);
     document.getElementById('hud-mp-bar').style.width = mpPct + '%';
-    document.getElementById('hud-mp-text').textContent = `${state.mp} / ${state.maxMp}`;
+    document.getElementById('hud-mp-text').innerHTML =
+      `${state.mp} / ${effectiveMaxMp}` + (hasMpBonus ? ` <span style="color:#22c55e;font-size:0.75rem;">(+${effectiveMaxMp - baseMaxMp})</span>` : '');
 
     // 资源
     document.getElementById('hud-money').textContent = state.money || 0;
@@ -1683,6 +1707,7 @@ export class UIManager {
             const result = this._hubSystem.unequipTool(state, btn.dataset.slot);
             if (result.success && result.updatePayload) {
               this.saveManager.applyGrowthUpdate(result.updatePayload);
+              this._updateHUD(state);  // Phase 13: 装备更换后刷新 maxHp/maxMp
               this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showEquipmentPanel(); } });
             }
           };
@@ -1692,6 +1717,7 @@ export class UIManager {
             const result = this._hubSystem.equipTool(state, btn.dataset.slot, btn.dataset.tool);
             if (result.success && result.updatePayload) {
               this.saveManager.applyGrowthUpdate(result.updatePayload);
+              this._updateHUD(state);  // Phase 13: 装备更换后刷新 maxHp/maxMp
               this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showEquipmentPanel(); } });
             } else {
               this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });

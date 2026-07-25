@@ -6,7 +6,7 @@
  * @param {object} summoner — 召唤者 Unit
  * @param {object} skill — 技能定义（含 summonConfig）
  * @param {object[]} units — 当前 units 数组
- * @returns {{ valid: boolean, error?: string }}
+ * @returns {object}
  */
 export function validateSummon(summoner, skill, units) {
   if (!skill || skill.type !== 'summon') {

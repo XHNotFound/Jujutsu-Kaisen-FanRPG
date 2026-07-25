@@ -218,7 +218,7 @@ export function calculateRCTEfficiency(cursedEnergyEfficiency) {
  * 计算反转术式回复量（纯函数，不修改任何状态）
  * @param {number} consumeAmount - 消耗的咒力量
  * @param {number} cursedEnergyEfficiency - 咒力效率属性
- * @returns {{ healAmount: number, efficiency: number }} 回复量和效率
+ * @returns {object} 回复量和效率
  */
 export function calcRCTHeal(consumeAmount, cursedEnergyEfficiency) {
   const efficiency = calculateRCTEfficiency(cursedEnergyEfficiency);
@@ -342,7 +342,7 @@ export function clearAllStatusEffects(unit) {
 /**
  * 获取单位所有状态效果的摘要（用于 UI 渲染）
  * @param {object} unit
- * @returns {{ buffs: object[], debuffs: object[] }}
+ * @returns {object}
  */
 export function getStatusSummary(unit) {
   const buffs = [];

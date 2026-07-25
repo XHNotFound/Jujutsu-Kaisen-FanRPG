@@ -151,7 +151,7 @@ export const DOMAINS = {
  * 判断领域是完全领域还是不完全领域
  * @param {string} techniqueId — 术式 ID
  * @param {object} characterState — 玩家存档状态
- * @returns {{ canExpand: boolean, isComplete: boolean, reason: string }}
+ * @returns {object}
  */
 export function canExpandDomain(techniqueId, characterState) {
   const domainDef = DOMAINS[techniqueId];
@@ -199,7 +199,7 @@ export function canExpandDomain(techniqueId, characterState) {
  * @param {string} techniqueId
  * @param {object} characterState
  * @param {boolean} isComplete — 是否完全领域
- * @returns {{ hp: number, attackInterval: number, attackDamage: number, mpCostPerTick: number }}
+ * @returns {object}
  */
 export function calculateDomainStats(techniqueId, characterState, isComplete) {
   const domainDef = DOMAINS[techniqueId];

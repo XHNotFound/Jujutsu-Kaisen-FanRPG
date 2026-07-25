@@ -64,7 +64,7 @@ export class SaveManager {
   /**
    * 保存当前状态到第一个可用槽位
    * 若全满则返回 needOverwrite = true
-   * @returns {{ success: boolean, slot?: number, needOverwrite?: boolean }}
+   * @returns {object}
    */
   save() {
     if (!this.state) {
@@ -85,7 +85,7 @@ export class SaveManager {
   /**
    * 保存到指定槽位（覆盖）
    * @param {number} slot - 槽位编号 (0-2)
-   * @returns {{ success: boolean, slot?: number }}
+   * @returns {object}
    */
   saveToSlot(slot) {
     if (slot < 0 || slot >= MAX_SLOTS || !this.state) {
@@ -243,7 +243,7 @@ export class SaveManager {
    * Phase 4: 尝试升级技能
    * @param {string} skillId
    * @param {object} skillDef — 技能树定义（含 levelUpCosts / levelEffects）
-   * @returns {{ success: boolean, message: string, newLevel?: number }}
+   * @returns {object}
    */
   upgradeSkill(skillId, skillDef) {
     if (!this.state) return { success: false, message: '没有存档数据。' };

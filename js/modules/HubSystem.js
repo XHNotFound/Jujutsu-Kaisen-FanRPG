@@ -670,7 +670,7 @@ export class HubSystem {
   /**
    * 应用重伤惩罚 — 当玩家 HP <= 0 战斗失败时调用
    * @param {object} characterState
-   * @returns {{ penalties: string[], updatePayload: object, gameDaysPassed: number }}
+   * @returns {object} 重伤惩罚结果
    */
   applyHeavyInjuryPenalty(characterState) {
     const penalties = [];

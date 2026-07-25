@@ -96,7 +96,7 @@ export const ADVANCED_SKILLS = {
  * 检查高级技巧是否已解锁
  * @param {string} skillId — 高级技巧 ID
  * @param {object} characterState — 玩家存档状态
- * @returns {{ unlocked: boolean, reason?: string }}
+ * @returns {object}
  */
 export function checkAdvancedSkillUnlocked(skillId, characterState) {
   const skillDef = ADVANCED_SKILLS[skillId];

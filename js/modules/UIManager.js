@@ -581,18 +581,18 @@ export class UIManager {
     const baseMaxMp = state.maxMp || state.mp || 100;
 
     // 装备影响 maxHp/maxMp：体质→血量, 咒力总量→MP
-    const bonusCon = (finalStats.constitution || 0) - (state.attributes?.constitution || 0);
-    const bonusCE  = (finalStats.cursedEnergy || 0) - (state.attributes?.cursedEnergy || 0);
+    // 注意：finalStats 包含基础 + 装备加成，base max 使用 _calcMax 公式基于原始属性
+    // effective max 基于 finalStats 中的属性重新计算
+    const effectiveCon = finalStats.constitution || (state.attributes?.constitution || 10);
+    const effectiveCE  = finalStats.cursedEnergy || (state.attributes?.cursedEnergy || 10);
 
     // 复用 SaveManager 的阶梯公式计算加成后的上限
-    const effectiveCon = (state.attributes?.constitution || 10) + bonusCon;
     const effectiveMaxHp = this.saveManager._calcMaxHp
       ? this.saveManager._calcMaxHp(effectiveCon)
-      : baseMaxHp + bonusCon * 5;
-    const effectiveCE = (state.attributes?.cursedEnergy || 10) + bonusCE;
+      : baseMaxHp;
     const effectiveMaxMp = this.saveManager._calcMaxMp
       ? this.saveManager._calcMaxMp(effectiveCE)
-      : baseMaxMp + bonusCE * 4;
+      : baseMaxMp;
 
     const hasHpBonus = effectiveMaxHp > baseMaxHp;
     const hasMpBonus = effectiveMaxMp > baseMaxMp;

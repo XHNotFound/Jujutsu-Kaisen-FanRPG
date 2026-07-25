@@ -1549,6 +1549,8 @@ export class UIManager {
             const result = this._hubSystem.buyItem(state, btn.dataset.item);
             if (result.success && result.updatePayload) {
               this.saveManager.applyGrowthUpdate(result.updatePayload);
+              // Phase 13 fix: 刷新主界面 HUD 金钱显示
+              this._updateHUD(state);
               this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showShopPanel(); } });
             } else {
               this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
@@ -1602,6 +1604,7 @@ export class UIManager {
             const result = this._hubSystem.useItem(state, btn.dataset.item);
             if (result.success && result.updatePayload) {
               this.saveManager.applyGrowthUpdate(result.updatePayload);
+              this._updateHUD(state);  // Phase 13 fix: 刷新 HUD
               this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this.renderMainScreen(); } });
             } else {
               this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
@@ -1775,6 +1778,7 @@ export class UIManager {
             const result = this._hubSystem.purchaseIntel(state, btn.dataset.enemy, btn.dataset.level, enemy);
             if (result.success && result.updatePayload) {
               this.saveManager.applyGrowthUpdate(result.updatePayload);
+              this._updateHUD(state);  // Phase 13 fix: 刷新 HUD 金钱
               this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showBestiaryPanel(); } });
             } else {
               this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });

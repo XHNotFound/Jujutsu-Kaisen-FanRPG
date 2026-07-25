@@ -575,6 +575,11 @@ export class UIManager {
     document.getElementById('hud-name').textContent = state.characterName || '--';
     document.getElementById('hud-rank').textContent = state.rank || '--';
 
+    // Phase 14: 全局游戏天数显示
+    const gameDay = state.gameDay || 1;
+    const dayEl = document.getElementById('hud-game-day');
+    if (dayEl) dayEl.textContent = `第 ${gameDay} 天`;
+
     // Phase 13 fix: 计算含装备加成的最终属性，用于 HUD 显示
     const finalStats = this._hubSystem.calculateFinalStats(state);
 

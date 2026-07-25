@@ -363,6 +363,13 @@ body {
   border-radius: 3px;
 }
 
+/* Phase 14: 游戏天数显示 */
+.hud-game-day {
+  color: var(--color-text-dim);
+  font-size: 0.8rem;
+  margin-left: 0.25rem;
+}
+
 .hud-center {
   display: flex;
   flex-direction: column;

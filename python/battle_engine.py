@@ -398,11 +398,41 @@ def _resolve_enemy_turn(state: BattleState):
 def create_player_from_save(save_data):
     name = save_data.get("characterName", "无名咒术师"); attrs = save_data.get("attributes", {})
     con, ce = attrs.get("constitution",10), attrs.get("cursedEnergy",10)
+
+    # Phase 13: 读取装备加成，动态叠加到体质/咒力总量上用于计算 maxHp/maxMp
+    equipment = save_data.get("equipment", {})
+    equipment_bonus_con = 0
+    equipment_bonus_ce = 0
+    EQUIPMENT_TOOLS = {
+        "normalCursedBlade": {"statsBonus": {"martialArts": 5, "cursedEnergyControl": 2}},
+        "ironBracers": {"statsBonus": {"constitution": 5}},
+        "cursedRing": {"statsBonus": {"cursedEnergyEfficiency": 4, "cursedEnergy": 3}},
+        "woodenTalisman": {"statsBonus": {"cursedEnergyControl": 3, "talent": 2}},
+        "reinforcedBlade": {"statsBonus": {"martialArts": 10, "cursedEnergyControl": 4}},
+        "dragonScaleBracer": {"statsBonus": {"constitution": 10, "cursedEnergy": 3}},
+        "jadePendant": {"statsBonus": {"cursedEnergy": 6, "cursedEnergyControl": 5, "cursedEnergyEfficiency": 4}},
+        "combatGloves": {"statsBonus": {"martialArts": 8, "talent": 4}},
+        "spiritCharm": {"statsBonus": {"cursedEnergy": 8, "cursedEnergyEfficiency": 3}},
+    }
+    if equipment:
+        for slot_id, tool_id in equipment.items():
+            if tool_id and tool_id in EQUIPMENT_TOOLS:
+                bonus = EQUIPMENT_TOOLS[tool_id].get("statsBonus", {})
+                equipment_bonus_con += bonus.get("constitution", 0)
+                equipment_bonus_ce += bonus.get("cursedEnergy", 0)
+
+    effective_con = con + equipment_bonus_con
+    effective_ce  = ce  + equipment_bonus_ce
+
     hp = save_data.get("hp",100) or 100; mhp = save_data.get("maxHp",100) or 100
     mp = save_data.get("mp",50) or 50; mmp = save_data.get("maxMp",50) or 50
-    if mhp <= 0: mhp = 80 + con * 2
+    # Phase 13: 使用 effective_con/ce 重新计算 maxHp/maxMp（装备加成后的上限）
+    # 这样可以保证装备体质/咒力对应的额外血量在战斗中生效
+    if mhp <= 0 or True:  # 始终用 effective 属性重新计算
+        mhp = max(30, 80 + effective_con * 2)
     if hp <= 0: hp = mhp
-    if mmp <= 0: mmp = 30 + ce * 3
+    if mmp <= 0 or True:  # 始终用 effective 属性重新计算
+        mmp = max(30, 30 + effective_ce * 3)
     if mp <= 0: mp = mmp
     tid = save_data.get("techniqueId","cursedEnergyBoost"); spd = 8 + attrs.get("talent",10) // 3
     return Unit(id="player",name=name,unit_type=UNIT_PLAYER,hp=hp,max_hp=mhp,mp=mp,max_mp=mmp,

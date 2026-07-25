@@ -21,6 +21,7 @@ export class BattleUI {
     this._processing = false;
     this._delegationBound = false;
     this._controlledShikigami = null;  // Phase 9: 当前手动控制的式神 ID
+    this._escapeLocked = false;        // Phase 14: 逃跑是否已失败锁定
   }
 
   async start() {
@@ -129,16 +130,7 @@ init_battle(json.dumps(save_data))
         return;
       }
       if (e.target.closest('#btn-battle-flee')) {
-        if (this.currentState && this.uiManager.saveManager) {
-          const p = this.currentState.player;
-          const sm = this.uiManager.saveManager;
-          const st = sm.getState();
-          if (st) { st.hp = p.hp; st.mp = p.mp; sm.setState(st); }
-        }
-        this.uiManager.showModal('确定要撤离战斗吗？', {
-          onConfirm: () => { this.uiManager.hideModal(); this.uiManager.renderMainScreen(); },
-          onCancel: () => this.uiManager.hideModal()
-        });
+        this._handleEscapeAttempt();
         return;
       }
       const vowBtn = e.target.closest('.battle-vow-btn');
@@ -830,6 +822,79 @@ execute_action(json.dumps(_action), json.dumps(_state))
     if (!isComplete) { hp = Math.floor(hp * 0.6); atkDmg = Math.floor(atkDmg * 0.6); }
     const domainNames = { limitless: '无量空处', tenShadows: '嵌合暗翳庭', boogieWoogie: '不义游戏·领域', curseManipulation: '极之番·漩涡', pureMartial: '天与咒缚·体' };
     this._executeAction({ type: 'expand_domain', actor: 'player', domain_id: domainId, domain_name: domainNames[techId] || '领域', is_complete: isComplete, domain_hp: hp, attack_interval: 10, attack_damage: atkDmg, mp_cost: 5 });
+  }
+
+  // ===== Phase 14: 动态逃跑机制 =====
+
+  _calculateEscapeChance() {
+    const s = this.currentState;
+    if (!s) return 0;
+
+    const enemy = s.enemy || (s.units || []).find(u => u.unit_type === 'enemy');
+    const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    if (!enemy || !player) return 0;
+
+    // 从敌人数据中读取 baseChance (战斗中无法直接读 JS 数据, 使用敌人属性推断)
+    // 优先使用 enemy 对象上可能附带的 escapeBaseChance
+    const baseChance = enemy.escapeBaseChance !== undefined ? enemy.escapeBaseChance : 50;
+
+    // 攻击次数: 从 battle tracker 统计
+    const tracker = s._tracker || {};
+    const skillUsage = tracker.skill_usage || {};
+    let attackCount = 0;
+    for (const count of Object.values(skillUsage)) attackCount += count;
+
+    // HP 百分比
+    const hpRatio = player.max_hp > 0 ? (player.hp / player.max_hp) : 1;
+
+    // Phase 14 公式: max(0, baseChance - attackCount*20 - (1-hpRatio)*100*0.5)
+    let chance = baseChance - (attackCount * 20) - ((1 - hpRatio) * 100 * 0.5);
+    chance = Math.max(0, Math.min(100, Math.round(chance)));
+
+    // 如果已逃跑失败过, 锁定为 0
+    if (this._escapeLocked) chance = 0;
+
+    return chance;
+  }
+
+  _handleEscapeAttempt() {
+    const s = this.currentState;
+    if (!s) return;
+
+    // 逃跑失败已被锁定
+    if (this._escapeLocked) {
+      this._appendLog('逃跑已不可用——你错过了逃跑的最佳时机。');
+      return;
+    }
+
+    const chance = this._calculateEscapeChance();
+    const roll = Math.floor(Math.random() * 100) + 1; // 1-100
+
+    if (roll <= chance) {
+      // 逃跑成功
+      this._appendLog(`逃跑成功！（概率 ${chance}%，掷出 ${roll}）`);
+      this._disableAllSkills();
+      // 回写 HP/MP
+      const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+      if (player && this.uiManager.saveManager) {
+        const st = this.uiManager.saveManager.getState();
+        if (st) { st.hp = player.hp; st.mp = player.mp; this.uiManager.saveManager.setState(st); }
+      }
+      // 延迟返回主界面
+      setTimeout(() => {
+        this.uiManager.renderMainScreen();
+        this.uiManager.showScreen('screen-main');
+      }, 800);
+    } else {
+      // 逃跑失败 — 锁定逃跑按钮
+      this._escapeLocked = true;
+      this._appendLog(`逃跑失败！（概率 ${chance}%，掷出 ${roll}）———— 逃跑已不可用！`);
+      // 禁用逃跑按钮
+      const fleeBtn = document.getElementById('btn-battle-flee');
+      if (fleeBtn) { fleeBtn.disabled = true; fleeBtn.textContent = '逃跑(已失败)'; }
+      // 强制结束玩家回合
+      this._executeAction({ type: 'tick' });
+    }
   }
 
   // ===== Phase 12: 状态栏渲染（Buff/Debuff 显式化）=====

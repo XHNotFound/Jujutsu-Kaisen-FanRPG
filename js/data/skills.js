@@ -198,6 +198,8 @@ export const SKILL_TREES = {
         summonConfig: {
           unitType: "shikigami",
           name: "玉犬",
+          max_count: 2,  // Phase 17: 最多 2 只
+          domain_boost_extra: 1,  // Phase 17: 领域内额外 +1
           baseStats: { hp: 80, max_hp: 80, mp: 20, max_mp: 20, speed: 15, constitution: 12, martialArts: 25, cursedEnergy: 5, cursedEnergyControl: 5, cursedEnergyEfficiency: 5, talent: 8 },
           skills: [
             { id: "shikigami_bite", name: "撕咬", type: "martial", damageMultiplier: 1.5, cost: 0, castTime: 10, baseRecoverySpeed: 25, minDistance: 0, maxDistance: 0, description: "用利齿撕咬目标" }
@@ -216,6 +218,7 @@ export const SKILL_TREES = {
         summonConfig: {
           unitType: "shikigami",
           name: "鵺",
+          max_count: 1, domain_boost_extra: 1,
           baseStats: { hp: 60, max_hp: 60, mp: 30, max_mp: 30, speed: 20, constitution: 8, martialArts: 20, cursedEnergy: 15, cursedEnergyControl: 12, cursedEnergyEfficiency: 10, talent: 12 },
           skills: [
             { id: "shikigami_dive", name: "俯冲", type: "martial", damageMultiplier: 2.0, cost: 0, castTime: 12, baseRecoverySpeed: 22, minDistance: 0, maxDistance: 3, description: "从空中俯冲攻击" },
@@ -321,8 +324,8 @@ export const SKILL_TREES = {
         id: "piercing_blood", name: "穿血", description: "以高压血箭贯穿目标。全距离适用，穿刺伤害。极短咏唱。",
         type: "cursed", category: "cursed_attack", isBaseSkill: false, maxLevel: 6,
         requires: "blood_blade", requiresLevel: 3, branches: ["supernova", "crimson_binding", "blood_armor"],
-        // Phase 17: 极短咏唱 + 极慢补偿 + 全系扣血
-        cost: 14, damageMultiplier: 2.0, castTime: 5, baseRecoverySpeed: 10,
+8221        summonConfig: {
+8222          unitType: "shikigami",8221        summonConfig: {
         minDistance: 0, maxDistance: 3,
         levelUpCosts: [C(2,3,60), C(3,4,140), C(4,6,250), C(5,8,400), C(6,10,600)],
         levelEffects: [L(1,2.0,14,5,10,""), L(2,2.3,13,5,10,""), L(3,2.7,12,5,10,""), L(4,3.2,11,5,10,""), L(5,3.8,10,5,10,""), L(6,4.5,9,5,10,"")]

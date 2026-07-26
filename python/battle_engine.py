@@ -972,9 +972,24 @@ def _execute_summon(summoner, skill, state):
     if not sc: _log(state, f"[ERROR] 技能 {skill.id} 缺少 summonConfig。"); return
     sname = sc.get("name", "召唤物")
     utype = sc.get("unitType", UNIT_SHIKIGAMI)
-    # 检查同名式神是否已存在
-    existing = [u for u in state.units if u.unit_type == UNIT_SHIKIGAMI and u.owner == summoner.id and u.is_alive]
-    if existing:
+
+    # Phase 17: 式神数量限制 — 检查是否已满
+    max_count = sc.get("max_count", 1)  # 默认每种式神最多 1 只
+    # 检查是否在嵌合暗翳庭领域中（领域效果额外 +1）
+    domain_boost = sc.get("domain_boost_extra", 0)  # 领域提供的额外数量
+    active_shikigami_boost = getattr(state, 'shikigami_boost_active', False)
+    effective_max = max_count + (domain_boost if active_shikigami_boost else 0)
+
+    existing_same = [u for u in state.units
+                     if u.unit_type == UNIT_SHIKIGAMI and u.owner == summoner.id
+                     and u.is_alive and getattr(u, 'shikigami_type', '') == skill.id]
+    if len(existing_same) >= effective_max:
+        _log(state, f"{sname} 已达上限（{effective_max}），无法继续召唤。")
+        return
+
+    # 检查同名式神是否已存在（旧逻辑保留）
+    existing = [u for u in state.units if u.unit_type == UNIT_SHIKIGAMI and u.owner == summoner.id and u.is_alive and u.name == sname]
+    if existing and max_count == 1:
         _log(state, f"{summoner.name} 的式神 {existing[0].name} 仍在场，无法重复召唤。")
         return
     duration = sc.get("duration", 300)
@@ -1008,6 +1023,8 @@ def _execute_summon(summoner, skill, state):
         is_alive=True, distance=summoner.distance, owner=summoner.id,
         recovery_speed=st.get("speed", 15), summon_duration=duration
     )
+    # Phase 17: 标记式神类型用于数量追踪
+    summon_unit.shikigami_type = skill.id
     state.units.append(summon_unit)
     _log(state, f"{summoner.name} 召唤了 {sname}！（HP: {summon_unit.hp}, ATK: {summon_unit.martial_arts}, 持续: {duration} AV）")
 
@@ -1021,7 +1038,11 @@ def _tick_summon_duration(state):
                 u.is_alive = False
                 expired.append(u)
     for u in expired:
-        _log(state, f"{u.name} 的持续时间已到，消失在影子中。")
+        # Phase 17: 嵌合暗翳庭效果 — 式神死亡不扣除数量
+        if not getattr(state, 'shikigami_boost_active', False):
+            _log(state, f"{u.name} 的持续时间已到，消失在影子中。")
+        else:
+            _log(state, f"{u.name} 的持续时间已到，但在嵌合暗翳庭的保护下，影子将其回收。")
         state.units = [x for x in state.units if x.id != u.id]
 
 def _resolve_shikigami_turns(state):
@@ -1373,6 +1394,33 @@ def _is_enemy_domain(domain, state):
     return owner_unit is not None and owner_unit.unit_type == UNIT_ENEMY
 
 def _check_domain_clash(state):
+    """检查是否存在领域对拼（双方都展开了领域）"""
+    p_domain = _get_player_domain(state, "player")
+    e_domain = _get_player_domain(state, "enemy")
+
+    clash_active = p_domain is not None and e_domain is not None
+
+    if clash_active and not getattr(state, 'domain_clash_active', False):
+        state.domain_clash_active = True
+        _log(state, "⚠️ 领域对拼！" + p_domain.name + "VS" + e_domain.name + "——双方特殊效果失效，领域互相攻击！")
+    elif not clash_active and getattr(state, 'domain_clash_active', False):
+        state.domain_clash_active = False
+        _log(state, "领域对拼结束。")
+
+# Phase 17: 嵌合暗翳庭效果 — 式神全属性 +40%
+def _apply_shikigami_boost(state):
+    """嵌合暗翳庭：所有 shikigami 全属性 × 1.4"""
+    if getattr(state, 'shikigami_boost_active', False):
+        return
+    state.shikigami_boost_active = True
+    for u in state.units:
+        if u.unit_type == UNIT_SHIKIGAMI and u.is_alive:
+            u.max_hp = int(u.max_hp * 1.4)
+            u.hp = int(u.hp * 1.4)
+            u.martial_arts = int(u.martial_arts * 1.4)
+            u.speed = max(1, int(u.speed * 1.4))
+            u.recovery_speed = max(1, int(u.recovery_speed * 1.4))
+    _log(state, "嵌合暗翳庭：所有式神全属性提升 40%！")
     """检查是否存在领域对拼（双方都展开了领域）
     若对拼：两个领域的攻击目标互相切换为对方领域 Unit，且特殊效果失效
     若不对拼：恢复各自对敌方本体的攻击
@@ -1442,6 +1490,9 @@ def _resolve_domain_auto_attack(domain, state):
         # 完全领域展开时 domain_name 被设为领域名；不完全领域为 None
         if getattr(domain, 'domain_name', None):
             apply_domain_special_effect(domain, target, state)
+        # Phase 17: 嵌合暗翳庭 — 式神全属性 +40%
+        if getattr(domain, 'domain_name', None) and "嵌合暗翳庭" in (domain.name or ""):
+            _apply_shikigami_boost(state)
 
     _check_battle_end(state)
     if state.turn in ("player_win","enemy_win"): return

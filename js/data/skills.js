@@ -195,7 +195,7 @@ export const SKILL_TREES = {
         requires: null, requiresLevel: 0, branches: ["nue", "orochi"],
         cost: 30, damageMultiplier: 0, castTime: 25, baseRecoverySpeed: 20,
         minDistance: 0, maxDistance: 3,
-            summonConfig: {
+        summonConfig: {
           unitType: "shikigami",
           name: "玉犬",
           max_count: 2, domain_boost_extra: 1,

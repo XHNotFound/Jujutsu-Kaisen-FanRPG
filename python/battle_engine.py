@@ -871,6 +871,23 @@ def _handle_use_skill(action, state, tracker=None):
     for s in actor.skills:
         if s.id == sid: skill = s; break
     if not skill: _log(state, f"[ERROR] 未找到技能: {sid}"); return
+    # Phase 17: 完整咒词 — 从 action 中读取标记，动态替换技能数值
+    full_chant = action.get("use_full_chant", False)
+    if full_chant:
+        # 从 action 传递的 full_chant 数据中读取已计算好的数值
+        fc_cost = action.get("full_chant_cost", 0)
+        fc_ct = action.get("full_chant_cast_time", 0)
+        fc_rec = action.get("full_chant_recovery_speed", 0)
+        fc_dmg = action.get("full_chant_damage_multiplier", 0)
+        if fc_cost > 0: skill.cost = fc_cost
+        if fc_ct > 0: skill.cast_time = fc_ct
+        if fc_rec > 0: skill.base_recovery_speed = fc_rec
+        if fc_dmg > 0: skill.damage_multiplier = fc_dmg
+    # Phase 17: 无限制虚式茈
+    if sid == "murasaki" and action.get("use_ultimate", False):
+        _execute_ultimate_murasaki(actor, skill, target, state)
+        if tracker: tracker.record_skill_use(sid)
+        return
     if actor.mp < skill.cost and skill.type in ("cursed","summon"):
         _log(state, f"咒力不足！需要 {skill.cost} MP，当前 {actor.mp} MP。"); return
     if tracker: tracker.record_skill_use(sid)
@@ -1549,7 +1566,31 @@ def _handle_use_item(action, state):
         _log(state, f"{actor.name} 使用肾上腺素注射剂，回复了 {heal} HP。")
         return
 
-    _log(state, f"未知的战斗道具: {item_id}")
+    _log(state, f"未知的道具: {item_id}")
+
+# Phase 17: 无限制虚式茈 — 消耗 80% 当前咒力，造成 3.0 倍伤害，自身扣 20% 最大 HP
+def _execute_ultimate_murasaki(actor, skill, target, state):
+    mp_cost = int(actor.mp * 0.8)
+    self_hp_cost = int(actor.max_hp * 0.2)
+    actor.mp = max(0, actor.mp - mp_cost)
+    actor.atb = 0
+    # 3.0 倍基础伤害
+    dmg = calculate_damage(actor, skill, target, False)
+    dmg = max(1, int(dmg * 3.0))
+    target.hp = max(0, target.hp - dmg)
+    actor.hp = max(1, actor.hp - self_hp_cost)
+    update_aggro(actor, target, dmg, "damage")
+    _log(state, f"{actor.name} 施展了无限制虚式·茈！消耗 {mp_cost} MP、扣除 {self_hp_cost} HP，造成 {dmg} 点毁灭性伤害。")
+    _log(state, f"{actor.name} 自身遭受茈的反噬，HP 下降了 {self_hp_cost}。")
+    state.last_hit_was_black_flash = False
+    _check_battle_end(state)
+    if state.turn in ("player_win","enemy_win"): return
+    # 补偿恢复
+    actor.recovery_speed = max(1, 5)
+    recovery_frames = math.ceil(300 / actor.recovery_speed) + math.ceil(300 / actor.speed)
+    _log(state, f"反噬过后 {actor.name} 进入漫长的恢复（{recovery_frames} 帧）。")
+    _advance_time(state, recovery_frames)
+    _check_battle_end(state)
 
 # Phase 16: 咒具主动技能
 def _handle_tool_active(action, state):

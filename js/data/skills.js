@@ -65,6 +65,8 @@ export const SKILL_TREES = {
         requires: null, requiresLevel: 0, branches: ["aoi_strike", "aoi_max"],
         cost: 15, damageMultiplier: 2.2, castTime: 20, baseRecoverySpeed: 25,
         minDistance: 0, maxDistance: 3,
+        // Phase 17: 完整咒词 — 吟唱更长但伤害更高
+        fullChant: { castTime: 40, recoverySpeed: 15, damageMultiplier: 4.4, cursedEnergyCostMultiplier: 1.5 },
         levelUpCosts: [C(2,2,30), C(3,3,80), C(4,4,150), C(5,5,250), C(6,6,400), C(7,8,600), C(8,10,900), C(9,12,1300), C(10,15,2000)],
         levelEffects: [L(1,2.2,15,20,25,"基础苍"), L(2,2.4,14,19,26,""), L(3,2.6,13,18,27,""), L(4,2.9,12,17,28,""), L(5,3.2,11,16,29,""), L(6,3.5,10,15,30,""), L(7,3.9,9,14,31,""), L(8,4.3,8,13,32,""), L(9,4.8,7,12,33,""), L(10,5.3,6,10,35,"极致苍")]
       },
@@ -90,8 +92,12 @@ export const SKILL_TREES = {
         id: "aka", name: "赫", description: "术式反转「赫」。排斥一切的术式，远程大范围攻击。",
         type: "cursed", category: "cursed_attack", isBaseSkill: true, maxLevel: 8,
         requires: null, requiresLevel: 0, branches: ["aka_max"],
+        // Phase 17: 反转术式前置
+        unlockRequires: { advancedSkill: "rct" },
         cost: 25, damageMultiplier: 3.0, castTime: 30, baseRecoverySpeed: 18,
         minDistance: 1, maxDistance: 3,
+        // Phase 17: 完整咒词
+        fullChant: { castTime: 55, recoverySpeed: 10, damageMultiplier: 6.0, cursedEnergyCostMultiplier: 1.5 },
         levelUpCosts: [C(2,3,50), C(3,4,120), C(4,5,200), C(5,6,300), C(6,8,500), C(7,10,800), C(8,13,1200)],
         levelEffects: [L(1,3.0,25,30,18,""), L(2,3.3,23,29,19,""), L(3,3.7,21,28,20,""), L(4,4.2,19,26,21,""), L(5,4.8,17,24,22,""), L(6,5.5,15,22,23,""), L(7,6.3,13,20,24,""), L(8,7.3,11,18,25,"")]
       },
@@ -110,6 +116,11 @@ export const SKILL_TREES = {
         requires: "aka", requiresLevel: 5, branches: [],
         cost: 50, damageMultiplier: 6.0, castTime: 45, baseRecoverySpeed: 10,
         minDistance: 0, maxDistance: 3,
+        // Phase 17: 完整咒词
+        fullChant: { castTime: 80, recoverySpeed: 5, damageMultiplier: 12.0, cursedEnergyCostMultiplier: 1.8 },
+        // Phase 17: Lv5 解锁无限制虚式茈
+        ultimateAtLevel: 5,
+        ultimateEffect: { name: "无限制虚式·茈", costRatio: 0.8, damageMultiplier: 18.0, selfHpCostRatio: 0.2 },
         levelUpCosts: [C(2,8,150), C(3,10,300), C(4,15,500), C(5,20,800)],
         levelEffects: [L(1,6.0,50,45,10,""), L(2,7.0,47,42,11,""), L(3,8.2,44,39,12,""), L(4,9.6,40,36,13,""), L(5,11.5,35,32,14,"")]
       }

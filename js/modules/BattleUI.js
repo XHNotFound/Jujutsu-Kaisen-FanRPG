@@ -130,6 +130,12 @@ init_battle(json.dumps(save_data))
         }
         return;
       }
+      // Phase 17: 完整咒词 skill 数据传给 Python 时保留 fullChant 标记
+      // 当完整咒词激活时，use_skill action 传入 use_full_chant: true
+      if (skillBtn.dataset.skillId && this._fullChantActive) {
+        this._executeAction({ type: 'use_skill', actor: 'player', skill_id: skillBtn.dataset.skillId, target: this.currentState?.enemy?.id || 'enemy_1', use_full_chant: true });
+        return;
+      }
       const skillBtn = e.target.closest('.battle-skill-btn');
       if (skillBtn && !skillBtn.disabled) {
         this._executeAction({ type: 'use_skill', actor: 'player', skill_id: skillBtn.dataset.skillId, target: this.currentState?.enemy?.id || 'enemy_1' });
@@ -251,6 +257,8 @@ init_battle(json.dumps(save_data))
     this._renderCollapsibleSection('battle-attack-section', 'battle-attack-body', '⚔️ 攻击', () => this._renderSkillButtons(s.player));
     this._renderCollapsibleSection('battle-vow-section', 'battle-vow-body', '🔗 束缚', () => this._renderVowButtons(s.player));
     this._renderCollapsibleSection('battle-domain-section', 'battle-domain-body', '🏛️ 领域', () => this._renderDomainPanel(s));
+    // Phase 17: 完整咒词切换开关
+    this._renderFullChantToggle(s);
     // Phase 16: 道具与咒具面板
     this._renderCollapsibleSection('battle-items-section', 'battle-items-body', '🎒 道具', () => this._renderItemPanel(s));
     this._renderCollapsibleSection('battle-tools-section', 'battle-tools-body', '⚔️ 咒具', () => this._renderToolPanel(s));
@@ -525,28 +533,43 @@ init_battle(json.dumps(save_data))
     if (!body) { const c = document.getElementById('battle-skills'); if (c) { body = document.createElement('div'); body.id = 'battle-attack-body'; c.appendChild(body); } else return; }
     body.innerHTML = '';
     const skills = playerData.skills || [];
+    // Phase 17: 完整咒词开关状态
+    const fullChantActive = this._fullChantActive || false;
     for (const skill of skills) {
+      // Phase 17: 如果完整咒词激活且技能有 fullChant 配置，使用完整数值
+      let effectiveSkill = skill;
+      if (fullChantActive && skill.fullChant) {
+        effectiveSkill = {
+          ...skill,
+          cast_time: skill.fullChant.castTime,
+          base_recovery_speed: skill.fullChant.recoverySpeed,
+          damage_multiplier: skill.fullChant.damageMultiplier,
+          cost: Math.ceil(skill.cost * (skill.fullChant.cursedEnergyCostMultiplier || 1.0)),
+          name: skill.name + '【完整】'
+        };
+      }
       const btn = document.createElement('button');
       btn.className = 'btn battle-skill-btn'; btn.dataset.skillId = skill.id;
-      if (skill.type === 'martial') btn.classList.add('skill-martial');
-      else if (skill.type === 'cursed') btn.classList.add('skill-cursed');
-      else if (skill.type === 'movement') btn.classList.add('skill-movement');
-      else if (skill.type === 'summon') btn.classList.add('skill-summon');
-      if (skill.cost > 0 && playerData.mp < skill.cost) btn.classList.add('cost-too-high');
+      if (effectiveSkill.type === 'martial') btn.classList.add('skill-martial');
+      else if (effectiveSkill.type === 'cursed') btn.classList.add('skill-cursed');
+      else if (effectiveSkill.type === 'movement') btn.classList.add('skill-movement');
+      else if (effectiveSkill.type === 'summon') btn.classList.add('skill-summon');
+      // Phase 17: 完整咒词按钮高亮
+      if (fullChantActive && skill.fullChant) btn.classList.add('skill-chant-full');
+      if (effectiveSkill.cost > 0 && playerData.mp < effectiveSkill.cost) btn.classList.add('cost-too-high');
       const dn = ['贴身', '近', '中', '远'];
-      const minD = skill.min_distance !== undefined ? dn[skill.min_distance] : '?';
-      const maxD = skill.max_distance !== undefined ? dn[skill.max_distance] : '?';
-      const dr = (skill.type === 'movement') ? '' : ' [' + minD + '~' + maxD + ']';
-      const cl = skill.cost > 0 ? ' (MP ' + skill.cost + ')' : '';
-      const ctl = skill.cast_time !== undefined ? ' 咏唱' + skill.cast_time + '帧' : '';
-      const rvl = skill.base_recovery_speed !== undefined ? ' 补偿' + skill.base_recovery_speed : '';
-      // Phase 16: 基准伤害（不含20%浮动）
+      const minD = effectiveSkill.min_distance !== undefined ? dn[effectiveSkill.min_distance] : '?';
+      const maxD = effectiveSkill.max_distance !== undefined ? dn[effectiveSkill.max_distance] : '?';
+      const dr = (effectiveSkill.type === 'movement') ? '' : ' [' + minD + '~' + maxD + ']';
+      const cl = effectiveSkill.cost > 0 ? ' (MP ' + effectiveSkill.cost + ')' : '';
+      const ctl = effectiveSkill.cast_time !== undefined ? ' 咏唱' + effectiveSkill.cast_time + '帧' : '';
+      const rvl = effectiveSkill.base_recovery_speed !== undefined ? ' 补偿' + effectiveSkill.base_recovery_speed : '';
       const enemyData = this.currentState?.enemy || (this.currentState?.units || []).find(u => u.unit_type === 'enemy');
-      if (skill.damage_multiplier > 0 && enemyData) {
-          const baseDmg = Math.max(1, Math.floor(playerData.martial_arts * 2 + skill.damage_multiplier * 10 - (enemyData.constitution || 10) * 0.5));
-          btn.innerHTML = '<span class="skill-name">' + skill.name + dr + ' <span style="color:#fbbf24;font-size:0.7rem;">基础' + baseDmg + '</span></span><span class="skill-cost">' + cl + ctl + rvl + '</span>';
+      if (effectiveSkill.damage_multiplier > 0 && enemyData) {
+          const baseDmg = Math.max(1, Math.floor(playerData.martial_arts * 2 + effectiveSkill.damage_multiplier * 10 - (enemyData.constitution || 10) * 0.5));
+          btn.innerHTML = '<span class="skill-name">' + effectiveSkill.name + dr + ' <span style="color:#fbbf24;font-size:0.7rem;">基础' + baseDmg + '</span></span><span class="skill-cost">' + cl + ctl + rvl + '</span>';
       } else {
-          btn.innerHTML = '<span class="skill-name">' + skill.name + dr + '</span><span class="skill-cost">' + cl + ctl + rvl + '</span>';
+          btn.innerHTML = '<span class="skill-name">' + effectiveSkill.name + dr + '</span><span class="skill-cost">' + cl + ctl + rvl + '</span>';
       }
       body.appendChild(btn);
     }
@@ -1109,6 +1132,51 @@ execute_action(json.dumps(_action), json.dumps(_state))
   }
 
   _renderRCTButton(s) {
+    // Create or get the RCT button container
+    let container = document.getElementById('battle-rct-area');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'battle-rct-area';
+      container.className = 'battle-rct-area';
+      const skillsEl = document.getElementById('battle-skills');
+      if (skillsEl && skillsEl.parentNode) {
+        skillsEl.parentNode.insertBefore(container, skillsEl);
+      }
+    }
+
+  /**
+   * Phase 17: 完整咒词切换开关 — 仅限无下限术式玩家
+   */
+  _renderFullChantToggle(s) {
+    let container = document.getElementById('battle-chant-toggle-area');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'battle-chant-toggle-area';
+      container.className = 'battle-chant-toggle-area';
+      const skillsEl = document.getElementById('battle-skills');
+      if (skillsEl && skillsEl.parentNode) {
+        skillsEl.parentNode.insertBefore(container, skillsEl);
+      }
+    }
+    const st = this.uiManager.saveManager?.getState();
+    const isLimitless = st?.techniqueId === 'limitless';
+    if (!isLimitless) { container.innerHTML = ''; return; }
+
+    const fullChantActive = this._fullChantActive || false;
+    container.innerHTML = '<button id="btn-chant-toggle" class="btn btn-system" style="font-size:0.8rem;margin:0.2rem 0;">' +
+      (fullChantActive ? '📜 完整咒词 ·开' : '📜 完整咒词 ·关') +
+      '</button>';
+
+    setTimeout(() => {
+      const btn = document.getElementById('btn-chant-toggle');
+      if (btn) {
+        btn.onclick = () => {
+          this._fullChantActive = !this._fullChantActive;
+          this._renderAll();
+        };
+      }
+    }, 50);
+  }
     // Create or get the RCT button container
     let container = document.getElementById('battle-rct-area');
     if (!container) {

@@ -5,3 +5,6 @@ __pycache__/
 python_env/
 run.bat
 __pycache__/
+
+# Exported save files
+Jujutsu_Save_*.json

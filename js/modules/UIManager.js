@@ -688,25 +688,9 @@ export class UIManager {
       this._handleRest();
     };
 
-    // 存档
-    document.getElementById('btn-save').onclick = () => {
-      this._handleSave();
-    };
-
-    // 读档
-    document.getElementById('btn-load').onclick = () => {
-      const slots = this.saveManager.getAllSlots();
-      this.renderLoadScreen(slots);
-    };
-
-    // Phase 15: 导出存档
-    document.getElementById('btn-export').onclick = () => {
-      this._handleExport();
-    };
-
-    // Phase 15: 导入存档
-    document.getElementById('btn-import').onclick = () => {
-      this._handleImport();
+    // Phase 15: 存档管理面板（整合 存档/读档/导出/导入）
+    document.getElementById('btn-save-manager').onclick = () => {
+      this._showSaveManagerPanel();
     };
 
     // 返回标题
@@ -1302,6 +1286,73 @@ export class UIManager {
       const slots = this.saveManager.getAllSlots();
       this.renderOverwriteScreen(slots);
     }
+  }
+
+  /**
+   * Phase 15: 存档管理面板 — 整合存档/读档/导出/导入四个功能
+   */
+  _showSaveManagerPanel() {
+    const state = this.saveManager.getState();
+    const hasState = !!state;
+
+    const html = `
+      <div class="save-manager-panel">
+        <h3>💾 存档管理</h3>
+        <p style="color:var(--color-text-dim);font-size:0.85rem;margin-bottom:1rem;">
+          管理你的游戏存档。存档保存在浏览器的本地存储（localStorage）中，导出文件可备份到本地防止丢失。
+        </p>
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <button id="btn-sm-save" class="btn btn-primary" ${hasState ? '' : 'disabled'}>
+            📥 存档 — 将当前进度保存到本地槽位
+          </button>
+          <button id="btn-sm-load" class="btn btn-primary">
+            📂 读档 — 从本地槽位加载已有存档
+          </button>
+          <button id="btn-sm-export" class="btn btn-primary" ${hasState ? '' : 'disabled'}>
+            📤 导出 — 下载存档文件到本地备份
+          </button>
+          <button id="btn-sm-import" class="btn btn-primary">
+            📥 导入 — 从本地文件恢复存档
+          </button>
+        </div>
+      </div>
+    `;
+
+    this.showModal(html, { confirmOnly: false, useHTML: true });
+
+    // 绑定子按钮事件
+    setTimeout(() => {
+      const btnSave = document.getElementById('btn-sm-save');
+      const btnLoad = document.getElementById('btn-sm-load');
+      const btnExport = document.getElementById('btn-sm-export');
+      const btnImport = document.getElementById('btn-sm-import');
+
+      if (btnSave) {
+        btnSave.onclick = () => {
+          this.hideModal();
+          this._handleSave();
+        };
+      }
+      if (btnLoad) {
+        btnLoad.onclick = () => {
+          this.hideModal();
+          const slots = this.saveManager.getAllSlots();
+          this.renderLoadScreen(slots);
+        };
+      }
+      if (btnExport) {
+        btnExport.onclick = () => {
+          this.hideModal();
+          this._handleExport();
+        };
+      }
+      if (btnImport) {
+        btnImport.onclick = () => {
+          this.hideModal();
+          this._handleImport();
+        };
+      }
+    }, 50);
   }
 
   /**

@@ -41,21 +41,27 @@ class Skill:
     id: str
     name: str
     cost: int
-    type: str              # "martial" | "cursed" | "movement" | "domain_expand"
+    type: str              # "martial" | "cursed" | "movement" | "domain_expand" | "summon"
+    category: str = ""     # Phase 16: "martial"|"cursed_martial"|"cursed_attack"|"cursed_summon"|"cursed_buff"|"cursed_control"
     damage_multiplier: float = 1.0
     description: str = ""
     min_distance: int = DISTANCE_CLOSE
     max_distance: int = DISTANCE_FAR
     cast_time: int = 5
     base_recovery_speed: int = 30
+    summon_config: Optional[dict] = None  # Phase 9: summon skill config
 
     def to_dict(self):
-        return {
+        d = {
             "id": self.id, "name": self.name, "cost": self.cost, "type": self.type,
+            "category": self.category,
             "damage_multiplier": self.damage_multiplier,
             "min_distance": self.min_distance, "max_distance": self.max_distance,
             "cast_time": self.cast_time, "base_recovery_speed": self.base_recovery_speed
         }
+        if self.summon_config:
+            d["summon_config"] = self.summon_config
+        return d
 
 
 # ===== Phase 7: 通用战斗单位 (取代单一 Character) =====
@@ -527,6 +533,8 @@ def _handle_expand_domain(action, state):
     ic=action.get("is_complete",True); dh=action.get("domain_hp",500)
     ai=action.get("attack_interval",15); ad=action.get("attack_damage",50); mc=action.get("mp_cost",5)
     du=Unit(id=f"{aid}_domain_{did}",name=dn,unit_type=UNIT_DOMAIN,hp=dh,max_hp=dh,mp=0,max_mp=0,atb=0,speed=0,owner=aid,attack_interval=ai,attack_damage=ad,domain_maintenance_cost=mc)
+    # Phase 16: 记录领域是否完全展开（用于特殊效果判定）
+    du.domain_name = dn if ic else None
     lt="完全领域" if ic else "不完全领域"
     _log(state, f"{owner.name} 展开了{lt}\"{dn}\"！领域 HP: {dh}, 攻击间隔: {ai} 帧, 伤害: {ad}")
     state.units.append(du); _advance_time(state, 10)
@@ -553,9 +561,85 @@ def _handle_domain_attack(action, state):
     if not target or not target.is_alive: return
     dmg=domain.attack_damage; target.hp=max(0,target.hp-dmg)
     _log(state,f"{domain.name} 自动攻击 {target.name}，造成 {dmg} 点伤害。")
+    # Phase 16: 完全领域施加特殊效果
+    if getattr(domain, 'domain_name', None):
+        _apply_domain_special_combined(domain, target, state)
     penalty=max(0,int(domain.max_hp*0.05))
     if owner.hp<owner.max_hp*0.5: domain.hp=max(0,domain.hp-penalty); _log(state,f"{owner.name} HP 低于 50%，领域维系损耗（-{penalty} HP）。")
     if domain.hp<=0: _handle_cancel_domain({"domain_id":did},state); _log(state,f"{domain.name} 破碎了！")
+
+# Phase 16: 领域特殊效果（combined 简化版）
+DOMAIN_SPECIAL_EFFECTS = {
+    "info_overflow": {
+        "debuff_id": "info_overload_stun",
+        "debuff_name": "信息过载·行动推迟",
+        "debuff_duration": 80,
+        "brain_damage_id": "domain_burnout_brain",
+        "brain_damage_name": "脑损伤（领域禁止）",
+        "brain_damage_duration": 160,
+        "description": "将目标拉入无限的虚空，所有感知信息被无限放大"
+    },
+    "shadow_territory": {
+        "debuff_id": "shadow_bound",
+        "debuff_name": "影缚",
+        "debuff_duration": 60,
+        "brain_damage_id": None,
+        "brain_damage_name": None,
+        "brain_damage_duration": 0,
+        "description": "影子覆盖一切，领域内的式神能力大幅提升"
+    }
+}
+
+def check_domain_defense(target, state):
+    """检查目标是否有有效领域防御"""
+    has_own_domain = any(
+        u.unit_type == UNIT_DOMAIN and u.owner == target.id and u.hp > 0
+        for u in state.units
+    )
+    if has_own_domain:
+        return True
+    if target.status_effects:
+        for se in target.status_effects:
+            if se.get("id") in ("simple_domain_active", "falling_blossom_active", "hollow_wicker_active"):
+                return True
+    return False
+
+def _apply_domain_special_combined(domain, target, state):
+    """Phase 16: 领域特殊效果施加（combined 版）"""
+    special_key = None
+    if "无量空处" in (domain.name or ""):
+        special_key = "info_overflow"
+    elif "嵌合暗翳庭" in (domain.name or ""):
+        special_key = "shadow_territory"
+
+    if not special_key:
+        return
+
+    effect_cfg = DOMAIN_SPECIAL_EFFECTS.get(special_key)
+    if not effect_cfg:
+        return
+
+    if check_domain_defense(target, state):
+        _log(state, f"{target.name} 的领域防御抵消了「{domain.name}」的特殊效果。")
+        return
+
+    # 施加 Debuff
+    debuff_id = effect_cfg.get("debuff_id")
+    debuff_name = effect_cfg.get("debuff_name")
+    debuff_dur = effect_cfg.get("debuff_duration", 80)
+    if debuff_id:
+        target.status_effects = [s for s in target.status_effects if s.get("id") != debuff_id]
+        target.status_effects.append({"id": debuff_id, "name": debuff_name, "type": "debuff", "duration": debuff_dur})
+        target.atb = max(0, target.atb - 80)
+        _log(state, f"{target.name} 被「{domain.name}」的特殊效果击中——{debuff_name}！")
+
+    brain_id = effect_cfg.get("brain_damage_id")
+    brain_name = effect_cfg.get("brain_damage_name")
+    brain_dur = effect_cfg.get("brain_damage_duration", 160)
+    if brain_id:
+        target.status_effects = [s for s in target.status_effects if s.get("id") != brain_id]
+        target.status_effects.append({"id": brain_id, "name": brain_name, "type": "debuff", "duration": brain_dur})
+        _log(state, f"{target.name} 遭受脑损伤——{brain_name}！（{brain_dur} AV 内禁止展开领域）")
 
 # ===== 初始化 =====
 def init_battle(save_data_json):

@@ -89,6 +89,107 @@ def has_domain_counter(unit):
     """检查 Unit 是否有任何激活的领域对抗 Buff"""
     return len(unit.domain_counter_buffs) > 0
 
+# Phase 16: 领域防御检测
+DOMAIN_DEFENSE_STATUS_IDS = ("simple_domain_active", "falling_blossom_active", "hollow_wicker_active")
+
+def check_domain_defense(target, state):
+    """检查目标单位是否有有效领域防御。
+    有效防御包括:
+    1. 拥有 type === 'domain' 的 Unit 且 HP > 0
+    2. status_effects 中包含 simple_domain_active
+    3. status_effects 中包含 falling_blossom_active
+    4. status_effects 中包含 hollow_wicker_active
+    返回 True 表示有防御。
+    """
+    # 1. 检查是否拥有活跃的领域 Unit
+    has_own_domain = any(
+        u.unit_type == UNIT_DOMAIN and u.owner == target.id and u.hp > 0
+        for u in state.units
+    )
+    if has_own_domain:
+        return True
+
+    # 2-4. 检查 status_effects 中的领域对抗 Buff
+    if target.status_effects:
+        for se in target.status_effects:
+            if se.get("id") in DOMAIN_DEFENSE_STATUS_IDS:
+                return True
+
+    return False
+
+# Phase 16: 领域特殊效果配置
+DOMAIN_SPECIAL_EFFECTS = {
+    "info_overflow": {
+        "debuff_id": "info_overload_stun",
+        "debuff_name": "信息过载·行动推迟",
+        "debuff_duration": 80,  # 下次行动前等待 80 AV
+        "brain_damage_id": "domain_burnout_brain",
+        "brain_damage_name": "脑损伤（领域禁止）",
+        "brain_damage_duration": 160,  # 160 AV 内禁止展开领域
+        "description": "将目标拉入无限的虚空，所有感知信息被无限放大"
+    },
+    "shadow_territory": {
+        "debuff_id": "shadow_bound",
+        "debuff_name": "影缚",
+        "debuff_duration": 60,
+        "brain_damage_id": None,  # 十种影法术领域无脑损伤
+        "brain_damage_name": None,
+        "brain_damage_duration": 0,
+        "description": "影子覆盖一切，领域内的式神能力大幅提升"
+    }
+}
+
+def apply_domain_special_effect(domain, target, state):
+    """Phase 16: 领域特殊效果施加 — 仅完全领域生效，且需检查目标防御。
+    领域对拼中不施加特殊效果。
+    """
+    # 领域对拼时不施加特殊效果
+    if getattr(state, 'domain_clash_active', False):
+        return
+
+    # 获取领域对应的特殊效果键 — 从 domain 的 owner 来推断
+    owner = state.find_unit(domain.owner) if domain.owner else None
+    if not owner:
+        return
+
+    # 通过领域名推断特殊效果 key（与 JS domains.js 中的 specialEffect 对应）
+    # 暂时只实装 info_overflow (无量空处)
+    special_key = None
+    if "无量空处" in (domain.name or ""):
+        special_key = "info_overflow"
+    elif "嵌合暗翳庭" in (domain.name or ""):
+        special_key = "shadow_territory"
+
+    if not special_key:
+        return
+
+    effect_cfg = DOMAIN_SPECIAL_EFFECTS.get(special_key)
+    if not effect_cfg:
+        return
+
+    # 检查目标是否有防御
+    if check_domain_defense(target, state):
+        _log(state, f"「{domain.name}」的特殊效果被 {target.name} 的领域防御抵消了。")
+        return
+
+    # 施加行动推迟 Debuff
+    debuff_id = effect_cfg.get("debuff_id")
+    debuff_name = effect_cfg.get("debuff_name")
+    debuff_dur = effect_cfg.get("debuff_duration", 80)
+    if debuff_id and not has_status(target, debuff_id):
+        add_status_effect(target, debuff_id, debuff_dur)
+        # 额外: 直接增加目标下一次行动的等待
+        target.atb = max(0, target.atb - 80)
+        _log(state, f"{target.name} 被「{domain.name}」的特殊效果击中——{debuff_name}！(持续 {debuff_dur} AV)")
+
+    # 施加脑损伤 Debuff（禁止领域展开）
+    brain_id = effect_cfg.get("brain_damage_id")
+    brain_name = effect_cfg.get("brain_damage_name")
+    brain_dur = effect_cfg.get("brain_damage_duration", 160)
+    if brain_id and not has_status(target, brain_id):
+        add_status_effect(target, brain_id, brain_dur)
+        _log(state, f"{target.name} 遭受脑损伤——{brain_name}！（{brain_dur} AV 内禁止展开领域）")
+
 # ===== Phase 12: Status Effects 系统 =====
 
 def _tick_status_effects(state):
@@ -138,11 +239,17 @@ def add_status_effect(unit, status_id, duration_override=None):
             "effects": {"negate_domain_special": True, "domain_damage_reduction": 0.8, "mp_drain_per_10av": 8}
         },
         # Phase 12: RCT related
-        "rct_cooldown": {
-            "id": "rct_cooldown", "name": "反转术式冷却", "type": "debuff",
-            "duration": 60, "description": "反转术式使用后的咒力调整期，无法再次使用反转术式。",
-            "icon": "💚",
-            "effects": {"forbid_rct": True}
+        "info_overload_stun": {
+            "id": "info_overload_stun", "name": "信息过载·行动推迟", "type": "debuff",
+            "duration": 80, "description": "下一次行动前强制增加 80 AV 等待时间。",
+            "icon": "🧠",
+            "effects": {"atb_delay": 80}
+        },
+        "domain_burnout_brain": {
+            "id": "domain_burnout_brain", "name": "脑损伤（领域禁止）", "type": "debuff",
+            "duration": 160, "description": "大脑受损，在持续时间内禁止展开领域。",
+            "icon": "🧨",
+            "effects": {"forbid_domain_expand": True}
         },
         "rct_active": {
             "id": "rct_active", "name": "反转术式", "type": "buff",
@@ -1169,6 +1276,11 @@ def _handle_expand_domain(action, state):
     ic=action.get("is_complete",True); dh=action.get("domain_hp",500)
     ai=action.get("attack_interval",15); ad=action.get("attack_damage",50); mc=action.get("mp_cost",5)
     du=Unit(id=f"{aid}_domain_{did}",name=dn,unit_type=UNIT_DOMAIN,hp=dh,max_hp=dh,mp=0,max_mp=0,atb=0,speed=0,owner=aid,attack_interval=ai,attack_damage=ad,domain_maintenance_cost=mc)
+    # Phase 16: 记录领域是否完全展开（用于特殊效果判定）
+    if ic:
+        du.domain_name = dn  # 完全领域记录名称，不完全领域为 None
+    else:
+        du.domain_name = None
     lt="完全领域" if ic else "不完全领域"
     _log(state, f"{owner.name} 展开了{lt}\"{dn}\"！领域 HP: {dh}, 攻击间隔: {ai} 帧, 伤害: {ad}")
     state.units.append(du); _advance_time(state, 10)
@@ -1281,6 +1393,11 @@ def _resolve_domain_auto_attack(domain, state):
                 _log(state, f"{target.name} 因落花之情额外消耗 {extra_mp} 咒力。")
         else:
             _log(state, f"{domain.name} 自动攻击 {target.name}，造成 {eff_dmg} 点伤害。")
+        # Phase 16: 完全领域施加特殊效果
+        # 通过 domain Unit 的 domain_name 字段判断是否为完全领域
+        # 完全领域展开时 domain_name 被设为领域名；不完全领域为 None
+        if getattr(domain, 'domain_name', None):
+            apply_domain_special_effect(domain, target, state)
 
     _check_battle_end(state)
     if state.turn in ("player_win","enemy_win"): return

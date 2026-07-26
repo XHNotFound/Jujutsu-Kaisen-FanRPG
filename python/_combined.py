@@ -597,6 +597,38 @@ def _handle_use_item(action, state):
 
     _log(state, f"未知的战斗道具: {item_id}")
 
+# Phase 16: 咒具主动技能
+def _handle_tool_active(action, state):
+    """使用咒具的主动 Buff 技能"""
+    actor = state.find_unit(action.get("actor", "player"))
+    if not actor: return
+
+    # 检查是否已用过
+    if getattr(state, 'used_tool_active_skill', False):
+        _log(state, f"{actor.name} 本场战斗已经使用过咒具主动技能了。")
+        return
+
+    tool_id = action.get("tool_id", "")
+
+    # 游云主动效果
+    if tool_id == "playfulCloud":
+        ma_bonus = int(actor.martial_arts * 0.5)
+        ce_bonus = int(actor.cursed_energy_control * 0.5)
+        total_bonus = ma_bonus + ce_bonus
+        actor.status_effects.append({
+            "id": "playful_cloud_active", "name": "游云·重击", "type": "buff",
+            "duration": 80,
+            "description": f"体术伤害 +{ma_bonus}，咒术伤害 +{ce_bonus}",
+            "icon": "☁️",
+            "effects": {"martial_damage_bonus": ma_bonus, "cursed_damage_bonus": ce_bonus}
+        })
+        actor.atb = 0
+        state.used_tool_active_skill = True
+        _log(state, f"{actor.name} 激发了游云的力量！体术伤害 +{ma_bonus}，咒术伤害 +{ce_bonus}，持续 80 AV。ATB 归零。")
+        return
+
+    _log(state, f"未实装的咒具主动技能: {tool_id}")
+
 # Phase 16: 领域特殊效果（combined 简化版）
 DOMAIN_SPECIAL_EFFECTS = {
     "info_overflow": {

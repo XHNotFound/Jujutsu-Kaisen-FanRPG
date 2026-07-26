@@ -391,6 +391,16 @@ def calculate_damage(actor, skill, target, is_bf=False):
     if is_bf: ed *= 0.5
     dmg = max(1, int(ba + sb - ed))
     if is_bf: dmg = max(1, int(dmg * 2.5))
+    # Phase 16: 游云 active buff — 体术/咒术伤害加成
+    for se in (actor.status_effects or []):
+        if se.get("id") == "playful_cloud_active":
+            martial_bonus = se.get("effects", {}).get("martial_damage_bonus", 0)
+            cursed_bonus = se.get("effects", {}).get("cursed_damage_bonus", 0)
+            if skill.category in ("martial", "cursed_martial"):
+                dmg += martial_bonus
+            elif skill.category in ("cursed_attack", "cursed_control"):
+                dmg += cursed_bonus
+            break
     cb = 1.0 + min(0.5, actor.cursed_energy_control * 0.01)
     return max(1, int(dmg * cb))
 

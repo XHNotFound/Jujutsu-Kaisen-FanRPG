@@ -132,11 +132,11 @@ init_battle(json.dumps(save_data))
       }
       // Phase 17: 完整咒词 skill 数据传给 Python 时保留 fullChant 标记
       // 当完整咒词激活时，use_skill action 传入 use_full_chant: true
-      if (skillBtn.dataset.skillId && this._fullChantActive) {
+      const skillBtn = e.target.closest('.battle-skill-btn');
+      if (skillBtn && !skillBtn.disabled && skillBtn.dataset.skillId && this._fullChantActive) {
         this._executeAction({ type: 'use_skill', actor: 'player', skill_id: skillBtn.dataset.skillId, target: this.currentState?.enemy?.id || 'enemy_1', use_full_chant: true });
         return;
       }
-      const skillBtn = e.target.closest('.battle-skill-btn');
       if (skillBtn && !skillBtn.disabled) {
         this._executeAction({ type: 'use_skill', actor: 'player', skill_id: skillBtn.dataset.skillId, target: this.currentState?.enemy?.id || 'enemy_1' });
         return;

@@ -202,6 +202,18 @@ init_battle(json.dumps(save_data))
         this._showRCTDialog();
         return;
       }
+      // Phase 16: use item
+      const itemBtn = e.target.closest('[data-action="use-item"]');
+      if (itemBtn && !itemBtn.disabled) {
+        this._executeAction({ type: 'use_item', actor: 'player', item_id: itemBtn.dataset.itemId });
+        return;
+      }
+      // Phase 16: use tool active skill
+      const toolBtn = e.target.closest('[data-action="use-tool-active"]');
+      if (toolBtn && !toolBtn.disabled) {
+        this._executeAction({ type: 'tool_active', actor: 'player', tool_id: toolBtn.dataset.toolId });
+        return;
+      }
     });
 
     // Phase 12: mouseover/mouseout delegation for status badge hover expansion
@@ -235,6 +247,9 @@ init_battle(json.dumps(save_data))
     this._renderCollapsibleSection('battle-attack-section', 'battle-attack-body', '⚔️ 攻击', () => this._renderSkillButtons(s.player));
     this._renderCollapsibleSection('battle-vow-section', 'battle-vow-body', '🔗 束缚', () => this._renderVowButtons(s.player));
     this._renderCollapsibleSection('battle-domain-section', 'battle-domain-body', '🏛️ 领域', () => this._renderDomainPanel(s));
+    // Phase 16: 道具与咒具面板
+    this._renderCollapsibleSection('battle-items-section', 'battle-items-body', '🎒 道具', () => this._renderItemPanel(s));
+    this._renderCollapsibleSection('battle-tools-section', 'battle-tools-body', '⚔️ 咒具', () => this._renderToolPanel(s));
     // Phase 12: 反转术式按钮
     this._renderRCTButton(s);
     if (s.last_hit_was_black_flash) this._flashBlackFlashEffect();
@@ -521,7 +536,14 @@ init_battle(json.dumps(save_data))
       const cl = skill.cost > 0 ? ' (MP ' + skill.cost + ')' : '';
       const ctl = skill.cast_time !== undefined ? ' 咏唱' + skill.cast_time + '帧' : '';
       const rvl = skill.base_recovery_speed !== undefined ? ' 补偿' + skill.base_recovery_speed : '';
-      btn.innerHTML = '<span class="skill-name">' + skill.name + dr + '</span><span class="skill-cost">' + cl + ctl + rvl + '</span>';
+      // Phase 16: 基准伤害（不含20%浮动）
+      const enemyData = this.currentState?.enemy || (this.currentState?.units || []).find(u => u.unit_type === 'enemy');
+      if (skill.damage_multiplier > 0 && enemyData) {
+          const baseDmg = Math.max(1, Math.floor(playerData.martial_arts * 2 + skill.damage_multiplier * 10 - (enemyData.constitution || 10) * 0.5));
+          btn.innerHTML = '<span class="skill-name">' + skill.name + dr + ' <span style="color:#fbbf24;font-size:0.7rem;">基础' + baseDmg + '</span></span><span class="skill-cost">' + cl + ctl + rvl + '</span>';
+      } else {
+          btn.innerHTML = '<span class="skill-name">' + skill.name + dr + '</span><span class="skill-cost">' + cl + ctl + rvl + '</span>';
+      }
       body.appendChild(btn);
     }
   }
@@ -1024,6 +1046,55 @@ execute_action(json.dumps(_action), json.dumps(_state))
   }
 
   // ===== Phase 12: 反转术式 UI（技能按钮 + 消耗滑块弹窗）=====
+
+  _renderItemPanel(s) {
+    const body = document.getElementById('battle-items-body');
+    if (!body) return;
+    const playerData = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    if (!playerData) return;
+
+    const st = this.uiManager.saveManager?.getState();
+    const inventory = st?.inventory || {};
+
+    // 战斗可用道具：烟雾弹、肾上腺素
+    const battleItems = [
+      { id: 'smokeBomb', name: '烟雾弹', desc: '必定逃跑成功' },
+      { id: 'adrenalineShot', name: '肾上腺素', desc: '恢复 60 HP' }
+    ];
+
+    let html = '';
+    for (const item of battleItems) {
+      const owned = inventory[item.id] || 0;
+      const canUse = owned > 0;
+      html += `<button class="btn btn-primary battle-item-btn" data-action="use-item" data-item-id="${item.id}" ${canUse ? '' : 'disabled'}>
+        ${item.name} (持有: ${owned}) — ${item.desc}
+      </button>`;
+    }
+    body.innerHTML = html || '<span style="color:var(--color-text-dim);">没有可用的战斗道具。</span>';
+  }
+
+  _renderToolPanel(s) {
+    const body = document.getElementById('battle-tools-body');
+    if (!body) return;
+    const st = this.uiManager.saveManager?.getState();
+    const equipment = st?.equipment || {};
+
+    // 检查已装备中的有 activeBuff 的咒具
+    const toolsWithActive = [
+      { id: 'playfulCloud', name: '游云', desc: '体术伤害 +体术×0.5，咒术 +咒力操控×0.5，持续80AV。ATB归零。' },
+    ];
+
+    let html = '';
+    for (const tool of toolsWithActive) {
+      const isEquipped = Object.values(equipment).includes(tool.id);
+      if (!isEquipped) continue;
+      const alreadyUsed = s.used_tool_active_skill;
+      html += `<button class="btn btn-primary battle-tool-btn" data-action="use-tool-active" data-tool-id="${tool.id}" ${alreadyUsed ? 'disabled' : ''}>
+        ${tool.name} — ${tool.desc} ${alreadyUsed ? '(已使用)' : ''}
+      </button>`;
+    }
+    body.innerHTML = html || '<span style="color:var(--color-text-dim);">未装备具备主动技能的咒具。</span>';
+  }
 
   _renderRCTButton(s) {
     // Create or get the RCT button container

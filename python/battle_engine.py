@@ -928,6 +928,8 @@ def _execute_attack_framed(actor, skill, target, state):
     actor.mp = max(0, actor.mp - cost); target.hp = max(0, target.hp - dmg)
     # Phase 9: aggro — enemy resents attacker
     update_aggro(actor, target, dmg, "damage")
+    # Phase 17: 赤血操术全系扣血 — 扣除 max_hp * 5%，保底 1
+    _apply_blood_technique_cost(actor, skill, state)
     actor.atb = 0
     bf_text = "【黑闪！】" if is_bf else ""
     cost_text = f"（消耗 {cost} MP）" if cost > 0 else ""

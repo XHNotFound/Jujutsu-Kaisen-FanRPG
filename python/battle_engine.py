@@ -1506,3 +1506,64 @@ def _create_enemy_by_id(enemy_id):
             )
     # Fallback
     return create_enemy_from_save({"rank": "四级"})
+
+# Phase 16: 战斗道具
+def _handle_use_item(action, state):
+    """战斗中使用的道具"""
+    item_id = action.get("item_id", "")
+    actor_id = action.get("actor", "player")
+    actor = state.find_unit(actor_id)
+    if not actor: return
+
+    # 烟雾弹：确保逃跑必定成功
+    if item_id == "smokeBomb":
+        _log(state, f"{actor.name} 使用了烟雾弹！浓烟弥漫，趁机脱离战斗。")
+        e = state.find_enemy()
+        if e: e.hp = 0; e.is_alive = False
+        state.turn = "player_win"
+        _log(state, f"{actor.name} 成功逃离了战斗。")
+        _check_battle_end(state)
+        return
+
+    # 肾上腺素注射剂：回复 60 HP
+    if item_id == "adrenalineShot":
+        heal = min(60, actor.max_hp - actor.hp)
+        actor.hp += heal
+        _log(state, f"{actor.name} 使用肾上腺素注射剂，回复了 {heal} HP。")
+        return
+
+    _log(state, f"未知的战斗道具: {item_id}")
+
+# Phase 16: 咒具主动技能
+def _handle_tool_active(action, state):
+    """使用咒具的主动 Buff 技能"""
+    actor = state.find_unit(action.get("actor", "player"))
+    if not actor: return
+
+    # 检查是否已用过
+    if getattr(state, 'used_tool_active_skill', False):
+        _log(state, f"{actor.name} 本场战斗已经使用过咒具主动技能了。")
+        return
+
+    tool_id = action.get("tool_id", "")
+
+    # 游云主动效果
+    if tool_id == "playfulCloud":
+        # 设置 Buff：体术伤害加成 = 体术 * 0.5 + 咒力操控 * 0.5
+        ma_bonus = int(actor.martial_arts * 0.5)
+        ce_bonus = int(actor.cursed_energy_control * 0.5)
+        total_bonus = ma_bonus + ce_bonus
+        actor.status_effects.append({
+            "id": "playful_cloud_active", "name": "游云·重击", "type": "buff",
+            "duration": 80,
+            "description": f"体术伤害 +{ma_bonus}，咒术伤害 +{ce_bonus}",
+            "icon": "☁️",
+            "effects": {"martial_damage_bonus": ma_bonus, "cursed_damage_bonus": ce_bonus}
+        })
+        # ATB 归零
+        actor.atb = 0
+        state.used_tool_active_skill = True
+        _log(state, f"{actor.name} 激发了游云的力量！体术伤害 +{ma_bonus}，咒术伤害 +{ce_bonus}，持续 80 AV。ATB 归零。")
+        return
+
+    _log(state, f"未实装的咒具主动技能: {tool_id}")

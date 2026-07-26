@@ -195,11 +195,10 @@ export const SKILL_TREES = {
         requires: null, requiresLevel: 0, branches: ["nue", "orochi"],
         cost: 30, damageMultiplier: 0, castTime: 25, baseRecoverySpeed: 20,
         minDistance: 0, maxDistance: 3,
-        summonConfig: {
+            summonConfig: {
           unitType: "shikigami",
           name: "玉犬",
-          max_count: 2,  // Phase 17: 最多 2 只
-          domain_boost_extra: 1,  // Phase 17: 领域内额外 +1
+          max_count: 2, domain_boost_extra: 1,
           baseStats: { hp: 80, max_hp: 80, mp: 20, max_mp: 20, speed: 15, constitution: 12, martialArts: 25, cursedEnergy: 5, cursedEnergyControl: 5, cursedEnergyEfficiency: 5, talent: 8 },
           skills: [
             { id: "shikigami_bite", name: "撕咬", type: "martial", damageMultiplier: 1.5, cost: 0, castTime: 10, baseRecoverySpeed: 25, minDistance: 0, maxDistance: 0, description: "用利齿撕咬目标" }

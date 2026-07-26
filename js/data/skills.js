@@ -318,13 +318,36 @@ export const SKILL_TREES = {
         levelEffects: [L(1,1.8,14,16,24,"消耗5HP"), L(2,2.1,12,15,25,"消耗4HP"), L(3,2.5,10,14,26,"消耗4HP"), L(4,3.0,8,12,27,"消耗3HP")]
       },
       {
-        id: "piercing_blood", name: "穿血", description: "以高压血箭贯穿目标。全距离适用，穿刺伤害。",
+        id: "piercing_blood", name: "穿血", description: "以高压血箭贯穿目标。全距离适用，穿刺伤害。极短咏唱。",
         type: "cursed", category: "cursed_attack", isBaseSkill: false, maxLevel: 6,
-        requires: "blood_blade", requiresLevel: 3, branches: ["supernova", "crimson_binding"],
-        cost: 14, damageMultiplier: 2.0, castTime: 16, baseRecoverySpeed: 24,
+        requires: "blood_blade", requiresLevel: 3, branches: ["supernova", "crimson_binding", "blood_armor"],
+        // Phase 17: 极短咏唱 + 极慢补偿 + 全系扣血
+        cost: 14, damageMultiplier: 2.0, castTime: 5, baseRecoverySpeed: 10,
         minDistance: 0, maxDistance: 3,
         levelUpCosts: [C(2,3,60), C(3,4,140), C(4,6,250), C(5,8,400), C(6,10,600)],
-        levelEffects: [L(1,2.0,14,16,24,""), L(2,2.3,13,15,25,""), L(3,2.7,12,14,26,""), L(4,3.2,11,13,27,""), L(5,3.8,10,12,28,""), L(6,4.5,9,10,30,"")]
+        levelEffects: [L(1,2.0,14,5,10,""), L(2,2.3,13,5,10,""), L(3,2.7,12,5,10,""), L(4,3.2,11,5,10,""), L(5,3.8,10,5,10,""), L(6,4.5,9,5,10,"")]
+      },
+      {
+        id: "blood_armor", name: "血铠", description: "以凝固血液形成铠甲，大幅降低受到的伤害。",
+        type: "cursed", category: "cursed_buff", isBaseSkill: false, maxLevel: 3,
+        requires: "piercing_blood", requiresLevel: 3, branches: [],
+        cost: 40, damageMultiplier: 0, castTime: 15, baseRecoverySpeed: 20,
+        minDistance: 0, maxDistance: 0,
+        // Phase 17: self buff — 持续 40 AV, 伤害减免 25%~40%
+        buffEffect: { type: "damage_reduction", value: 0.25, duration: 40 },
+        levelUpCosts: [C(2,5,100), C(3,8,200)],
+        levelEffects: [L(1,0,40,15,20,"减伤25%"), L(2,0,37,14,21,"减伤33%"), L(3,0,34,13,23,"减伤40%")]
+      },
+      {
+        id: "blood_bind", name: "血缚", description: "以血液束缚敌人的行动，降低对方 ATB 填充速度。",
+        type: "cursed", category: "cursed_control", isBaseSkill: false, maxLevel: 3,
+        requires: "blood_blade", requiresLevel: 2, branches: [],
+        cost: 30, damageMultiplier: 0, castTime: 18, baseRecoverySpeed: 18,
+        minDistance: 0, maxDistance: 2,
+        // Phase 17: 对敌 debuff — 持续 60 AV, 减速 20%~40%
+        debuffEffect: { type: "speed_debuff", value: 0.20, duration: 60 },
+        levelUpCosts: [C(2,4,80), C(3,6,160)],
+        levelEffects: [L(1,0,30,18,18,"减速20%"), L(2,0,27,16,19,"减速30%"), L(3,0,24,14,20,"减速40%")]
       },
       {
         id: "supernova", name: "超新星", description: "将凝固的血液以超高速度射出，造成毁灭性打击。",
@@ -336,13 +359,15 @@ export const SKILL_TREES = {
         levelEffects: [L(1,3.0,22,22,18,"消耗10HP"), L(2,3.6,20,20,19,"消耗8HP"), L(3,4.3,18,18,20,"消耗8HP"), L(4,5.2,16,16,22,"消耗6HP")]
       },
       {
-        id: "crimson_binding", name: "赤鳞跃动", description: "全面强化身体机能，提升伤害输出与速度。",
+        id: "crimson_binding", name: "赤鳞跃动", description: "全面强化身体机能，提升ATB填充速度与伤害输出。",
         type: "cursed", category: "cursed_buff", isBaseSkill: false, maxLevel: 3,
         requires: "piercing_blood", requiresLevel: 2, branches: [],
         cost: 20, damageMultiplier: 2.2, castTime: 18, baseRecoverySpeed: 22,
         minDistance: 0, maxDistance: 0,
+        // Phase 17: speed_boost buff — 持续 100 AV, 加速 30%~50%
+        buffEffect: { type: "speed_boost", value: 0.30, duration: 100 },
         levelUpCosts: [C(2,4,80), C(3,6,180)],
-        levelEffects: [L(1,2.2,20,18,22,"速度+2"), L(2,2.6,18,16,23,"速度+3"), L(3,3.1,16,14,25,"速度+4")]
+        levelEffects: [L(1,2.2,20,18,22,"加速30%"), L(2,2.6,18,16,23,"加速40%"), L(3,3.1,16,14,25,"加速50%")]
       },
       {
         id: "canal", name: "运河", description: "在战场上布下血液的轨迹，限制敌人移动并造成持续伤害。",

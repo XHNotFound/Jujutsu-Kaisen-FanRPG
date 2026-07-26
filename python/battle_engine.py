@@ -853,6 +853,8 @@ def execute_action(action_json, state_json):
     elif at == "use_item": _handle_use_item(action, state)
     # Phase 16: 咒具主动技能
     elif at == "tool_active": _handle_tool_active(action, state)
+    # Phase 17: use buff / debuff skill (赤鳞跃动 etc.)
+    elif at == "use_buff_skill": _handle_buff_skill(action, state)
     result = state.to_dict(); result["_tracker"] = tracker.to_dict()
     # Phase 16 fix: 传递道具使用标记给 JS 端
     if hasattr(state, '_item_used'):
@@ -918,6 +920,11 @@ def _execute_attack_framed(actor, skill, target, state):
     dmg = calculate_damage(actor, skill, target, is_bf)
     dmg = apply_damage_variance(dmg, is_bf)  # Phase 8: 伤害偏移
     cost = calculate_mp_cost(actor, skill)
+    # Phase 17: 赤血操术全系扣血 — 扣除 max_hp * 5%，保底 1
+    if skill.category and skill.category.startswith("cursed_") and "blood" in actor.name.lower():
+        pass  # 由 _apply_blood_cost 统一处理
+    if actor.unit_type == UNIT_PLAYER:
+        _apply_blood_technique_cost(actor, skill, state)
     actor.mp = max(0, actor.mp - cost); target.hp = max(0, target.hp - dmg)
     # Phase 9: aggro — enemy resents attacker
     update_aggro(actor, target, dmg, "damage")
@@ -1592,6 +1599,25 @@ def _execute_ultimate_murasaki(actor, skill, target, state):
     _advance_time(state, recovery_frames)
     _check_battle_end(state)
 
+# Phase 17: 赤血操术全系扣血（HP 保底 1）
+def _apply_blood_technique_cost(actor, skill, state):
+    """赤血操术系列技能释放后扣除 max_hp * 5%"""
+    blood_skills = {"blood_blade", "slicing_exorcism", "piercing_blood",
+                    "supernova", "crimson_binding", "blood_armor", "blood_bind", "canal"}
+    if skill.id in blood_skills:
+        hp_cost = max(1, int(actor.max_hp * 0.05))
+        actor.hp = max(1, actor.hp - hp_cost)
+
+def get_effective_speed(unit):
+    """Phase 17: 计算 ATB 填充速度 — 应用 speed_boost/speed_debuff，保底 10%"""
+    multiplier = 1.0
+    for se in (unit.status_effects or []):
+        if se.get("id") == "speed_boost":
+            multiplier += se.get("value", 0)
+        if se.get("id") == "speed_debuff":
+            multiplier -= se.get("value", 0)
+    return max(unit.speed * 0.1, unit.speed * multiplier)
+
 # Phase 16: 咒具主动技能
 def _handle_tool_active(action, state):
     """使用咒具的主动 Buff 技能"""
@@ -1625,3 +1651,51 @@ def _handle_tool_active(action, state):
         return
 
     _log(state, f"未实装的咒具主动技能: {tool_id}")
+
+# Phase 17: Buff/Debuff 技能处理（赤鳞跃动、血铠、血缚）
+def _handle_buff_skill(action, state):
+    actor = state.find_unit(action.get("actor", "player"))
+    if not actor: return
+    sid = action.get("skill_id", "")
+    target_id = action.get("target", "")
+    target = state.find_unit(target_id) if target_id else None
+
+    if sid == "crimson_binding":
+        # 赤鳞跃动：自我加速 100 AV
+        lv = action.get("level", 1)
+        val = 0.30 + (lv - 1) * 0.10
+        existing = [s for s in actor.status_effects if s.get("id") == "speed_boost"]
+        if existing:
+            existing[0]["duration"] = max(existing[0].get("duration", 0), 100)
+            existing[0]["value"] = max(existing[0].get("value", 0), val)
+        else:
+            actor.status_effects.append({"id":"speed_boost","name":"赤鳞跃动","type":"buff","duration":100,"value":val,"description":f"ATB速度+{int(val*100)}%"})
+        actor.atb = 0
+        _log(state, f"{actor.name} 激发了赤鳞跃动！ATB 填充速度 +{int(val*100)}%，持续 100 AV。")
+
+    elif sid == "blood_armor":
+        lv = action.get("level", 1)
+        val = 0.25 + (lv - 1) * 0.07
+        existing = [s for s in actor.status_effects if s.get("id") == "damage_reduction"]
+        if existing:
+            existing[0]["duration"] = max(existing[0].get("duration", 0), 40)
+            existing[0]["value"] = max(existing[0].get("value", 0), val)
+        else:
+            actor.status_effects.append({"id":"damage_reduction","name":"血铠","type":"buff","duration":40,"value":val,"description":f"受到伤害-{int(val*100)}%"})
+        actor.atb = 0
+        _log(state, f"{actor.name} 展开血铠！受到伤害 -{int(val*100)}%，持续 40 AV。")
+
+    elif sid == "blood_bind":
+        if not target: return
+        lv = action.get("level", 1)
+        val = 0.20 + (lv - 1) * 0.10
+        existing = [s for s in target.status_effects if s.get("id") == "speed_debuff"]
+        if existing:
+            existing[0]["duration"] = max(existing[0].get("duration", 0), 60)
+            existing[0]["value"] = max(existing[0].get("value", 0), val)
+        else:
+            target.status_effects.append({"id":"speed_debuff","name":"血缚","type":"debuff","duration":60,"value":val,"description":f"ATB速度-{int(val*100)}%"})
+        actor.atb = 0
+        _log(state, f"{actor.name} 以血缚限制 {target.name}！{target.name} ATB 填充速度 -{int(val*100)}%，持续 60 AV。")
+
+    _apply_blood_technique_cost(actor, {"id": sid}, state)

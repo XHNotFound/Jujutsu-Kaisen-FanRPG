@@ -838,6 +838,10 @@ def execute_action(action_json, state_json):
     elif at == "repair_domain": _handle_repair_domain(action, state)
     # Phase 12: reverse cursed technique heal
     elif at == "rct_heal": _handle_rct_heal(action, state)
+    # Phase 16: 战斗道具
+    elif at == "use_item": _handle_use_item(action, state)
+    # Phase 16: 咒具主动技能
+    elif at == "tool_active": _handle_tool_active(action, state)
     result = state.to_dict(); result["_tracker"] = tracker.to_dict()
     return json.dumps(result, ensure_ascii=False)
 

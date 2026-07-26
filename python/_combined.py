@@ -413,6 +413,8 @@ def execute_action(action_json, state_json):
     elif at == "apply_vow": _handle_apply_vow(action, state)
     elif at == "expand_domain": _handle_expand_domain(action, state)
     elif at == "cancel_domain": _handle_cancel_domain(action, state)
+    elif at == "use_item": _handle_use_item(action, state)
+    elif at == "tool_active": _handle_tool_active(action, state)
     result = state.to_dict(); result["_tracker"] = tracker.to_dict()
     return json.dumps(result, ensure_ascii=False)
 
@@ -567,6 +569,33 @@ def _handle_domain_attack(action, state):
     penalty=max(0,int(domain.max_hp*0.05))
     if owner.hp<owner.max_hp*0.5: domain.hp=max(0,domain.hp-penalty); _log(state,f"{owner.name} HP 低于 50%，领域维系损耗（-{penalty} HP）。")
     if domain.hp<=0: _handle_cancel_domain({"domain_id":did},state); _log(state,f"{domain.name} 破碎了！")
+
+# Phase 16: 战斗道具
+def _handle_use_item(action, state):
+    """战斗中使用的道具"""
+    item_id = action.get("item_id", "")
+    actor_id = action.get("actor", "player")
+    actor = state.find_unit(actor_id)
+    if not actor: return
+
+    # 烟雾弹：确保逃跑必定成功
+    if item_id == "smokeBomb":
+        _log(state, f"{actor.name} 使用了烟雾弹！浓烟弥漫，趁机脱离战斗。")
+        e = state.find_enemy()
+        if e: e.hp = 0; e.is_alive = False
+        state.turn = "player_win"
+        _log(state, f"{actor.name} 成功逃离了战斗。")
+        _check_battle_end(state)
+        return
+
+    # 肾上腺素注射剂：回复 60 HP
+    if item_id == "adrenalineShot":
+        heal = min(60, actor.max_hp - actor.hp)
+        actor.hp += heal
+        _log(state, f"{actor.name} 使用肾上腺素注射剂，回复了 {heal} HP。")
+        return
+
+    _log(state, f"未知的战斗道具: {item_id}")
 
 # Phase 16: 领域特殊效果（combined 简化版）
 DOMAIN_SPECIAL_EFFECTS = {

@@ -699,6 +699,16 @@ export class UIManager {
       this.renderLoadScreen(slots);
     };
 
+    // Phase 15: 导出存档
+    document.getElementById('btn-export').onclick = () => {
+      this._handleExport();
+    };
+
+    // Phase 15: 导入存档
+    document.getElementById('btn-import').onclick = () => {
+      this._handleImport();
+    };
+
     // 返回标题
     document.getElementById('btn-back-title').onclick = () => {
       this.showModal('确定要返回标题画面吗？\n未保存的进度将丢失。', {
@@ -1292,6 +1302,133 @@ export class UIManager {
       const slots = this.saveManager.getAllSlots();
       this.renderOverwriteScreen(slots);
     }
+  }
+
+  /**
+   * Phase 15: 导出存档 — 将当前激活槽位的数据导出为 JSON 文件下载
+   */
+  _handleExport() {
+    const state = this.saveManager.getState();
+    if (!state) {
+      this.showModal('没有可导出的存档数据。请先存档或读档。', {
+        confirmOnly: true,
+        onConfirm: () => this.hideModal()
+      });
+      return;
+    }
+
+    const slot = this.saveManager._findCurrentSlot();
+    const slotIndex = slot >= 0 ? slot : 0;
+
+    const dataStr = JSON.stringify(state, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const exportFileName = 'Jujutsu_Save_Slot' + (slotIndex + 1) + '_' + dateStr + '.json';
+
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileName);
+    linkElement.click();
+    linkElement.remove();
+
+    this.showModal('存档已导出为文件：\n' + exportFileName, {
+      confirmOnly: true,
+      onConfirm: () => this.hideModal()
+    });
+  }
+
+  /**
+   * Phase 15: 导入存档 — 弹出文件选择器，读取 JSON 并写入 localStorage
+   * 使用 FileReader 读取本地文件（不涉及网络请求）
+   */
+  _handleImport() {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.json';
+    fileInput.style.display = 'none';
+    document.body.appendChild(fileInput);
+
+    fileInput.onchange = () => {
+      const file = fileInput.files[0];
+      fileInput.remove();
+
+      if (!file) return;
+
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        try {
+          const raw = reader.result;
+          const data = JSON.parse(raw);
+
+          // 校验数据结构
+          if (!data || typeof data !== 'object') {
+            throw new Error('文件格式无效：不是有效的 JSON 对象。');
+          }
+          if (!data.characterName || !data.attributes || !data.rank) {
+            throw new Error('存档数据不完整：缺少角色名、属性或评定。');
+          }
+
+          // 找到可用的槽位写入（优先空槽）
+          const slots = this.saveManager.getAllSlots();
+          const emptySlot = slots.find(s => s.data === null);
+          const targetSlot = emptySlot ? emptySlot.slot : 0;
+
+          // 生成新的 saveId 和时间戳
+          data.saveId = (this.saveManager.saveCounter || 0) + 1;
+          data.savedAt = new Date().toISOString();
+
+          // 写入 localStorage
+          localStorage.setItem('jjk_save_' + targetSlot, JSON.stringify(data));
+
+          // 更新 SaveManager 内部状态
+          this.saveManager.state = data;
+          this.saveManager.saveCounter = (this.saveManager.saveCounter || 0) + 1;
+          this.saveManager._saveCounter();
+
+          // 刷新游戏界面
+          this.renderMainScreen();
+          this.hideModal();
+
+          this.showModal(
+            '存档导入成功！\n角色「' + data.characterName + '」已恢复到槽位 ' + (targetSlot + 1) + '。',
+            { confirmOnly: true, onConfirm: () => this.hideModal() }
+          );
+        } catch (err) {
+          this.hideModal();
+          this.showModal(
+            '导入失败：' + (err.message || '无法解析存档文件。'),
+            { confirmOnly: true, onConfirm: () => this.hideModal() }
+          );
+        }
+      };
+
+      reader.onerror = () => {
+        fileInput.remove();
+        this.showModal(
+          '读取文件失败，请重试。',
+          { confirmOnly: true, onConfirm: () => this.hideModal() }
+        );
+      };
+
+      reader.readAsText(file);
+    };
+
+    // 取消选择时清理
+    fileInput.oncancel = () => {
+      fileInput.remove();
+    };
+
+    // 触发文件选择
+    fileInput.click();
+
+    // 兜底清理（用户取消时 oncancel 不总是触发）
+    setTimeout(() => {
+      if (fileInput.parentNode && !fileInput.files.length) {
+        fileInput.remove();
+      }
+    }, 30000);
   }
 
   // ================================================================

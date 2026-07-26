@@ -425,6 +425,8 @@ def execute_action(action_json, state_json):
     elif at == "cancel_domain": _handle_cancel_domain(action, state)
     elif at == "use_item": _handle_use_item(action, state)
     elif at == "tool_active": _handle_tool_active(action, state)
+    elif at == "use_buff_skill": _handle_buff_skill(action, state)
+    elif at == "gambling_domain_roll": _handle_gambling_roll(action, state)
     result = state.to_dict(); result["_tracker"] = tracker.to_dict()
     if hasattr(state, '_item_used'):
         result["_item_used"] = state._item_used

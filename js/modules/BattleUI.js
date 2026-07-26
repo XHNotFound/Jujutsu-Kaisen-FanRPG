@@ -655,7 +655,6 @@ init_battle(json.dumps(save_data))
       const st = this.uiManager.saveManager.getState();
       if (st && st.inventory && st.inventory[s._item_used] > 0) {
         st.inventory[s._item_used]--;
-        this.uiManager.saveManager.saveToSlot(this.uiManager.saveManager._findCurrentSlot());
       }
     }
 

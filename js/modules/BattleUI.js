@@ -6,6 +6,8 @@
 
 import { getActiveSummons, getAggroRanking } from './summonSystem.js';
 import { getStatusSummary, calculateRCTEfficiency } from './statusSystem.js';
+import { isBattleUsable } from '../data/items.js';
+import { CURSED_TOOLS } from '../data/cursed_tools.js';
 
 // Phase 12: simple HTML escape (no DOM needed — just for safe attribute interpolation)
 function escapeHtml(str) {

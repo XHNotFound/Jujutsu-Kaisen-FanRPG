@@ -230,7 +230,11 @@ def _log(state: BattleState, msg: str):
     state.log.append(f"[{state.global_action_time} AV] {msg}")
 
 def _capped(v, lo, hi): return max(lo, min(hi, v))
-def _check_black_flash(actor): return random.random() < (BLACK_FLASH_BASE_RATE + actor.talent * BLACK_FLASH_TALENT_RATE)
+def _check_black_flash(actor, skill=None):
+    """Phase 16: 黑闪仅 martial/cursed_martial 类别可触发"""
+    if skill is not None and skill.category and skill.category not in ("martial", "cursed_martial"):
+        return False
+    return random.random() < (BLACK_FLASH_BASE_RATE + actor.talent * BLACK_FLASH_TALENT_RATE)
 
 # ===== 距离 =====
 def calculate_move_cost(actor, frm, to):
@@ -440,7 +444,8 @@ def _execute_attack_framed(actor, skill, target, state):
     _advance_time(state, ct)
     # Step 3: 伤害结算
     is_bf = False
-    if skill.type == "martial" and _check_black_flash(actor): is_bf = True
+    if skill.category in ("martial", "cursed_martial"):
+        is_bf = _check_black_flash(actor, skill)
     dmg = calculate_damage(actor, skill, target, is_bf)
     cost = calculate_mp_cost(actor, skill)
     actor.mp = max(0, actor.mp - cost); target.hp = max(0, target.hp - dmg)

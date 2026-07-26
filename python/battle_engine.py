@@ -16,7 +16,11 @@ def _log(state: BattleState, msg: str):
     state.log.append(f"[{state.global_action_time} AV] {msg}")
 
 def _capped(v, lo, hi): return max(lo, min(hi, v))
-def _check_black_flash(actor): return random.random() < (BLACK_FLASH_BASE_RATE + actor.talent * BLACK_FLASH_TALENT_RATE)
+def _check_black_flash(actor, skill=None):
+    """Phase 16: 黑闪仅 martial/cursed_martial 类别可触发"""
+    if skill is not None and skill.category and skill.category not in ("martial", "cursed_martial"):
+        return False
+    return random.random() < (BLACK_FLASH_BASE_RATE + actor.talent * BLACK_FLASH_TALENT_RATE)
 
 # ===== Phase 9: 仇恨机制 =====
 def update_aggro(attacker, target, damage, action_type="damage"):
@@ -478,27 +482,27 @@ def _build_equipment_buffs(save_data):
 def _build_player_skills(tid, skill_levels=None):
     """Build skills based on unlocked skills in skillLevels. Only base + unlocked branch skills are included."""
     if skill_levels is None: skill_levels = {}
-    B=[("attack","体术平A",0,"martial",1.0,5,30,0,0,"基础体术"),("advance","逼近",0,"movement",0.0,3,35,0,3,"逼近1档"),("retreat","后退",0,"movement",0.0,3,35,0,3,"后退1档")]
-    sk=[Skill(id=i,name=n,cost=c,type=t,damage_multiplier=m,cast_time=ct,base_recovery_speed=r,min_distance=mn,max_distance=mx,description=d) for (i,n,c,t,m,ct,r,mn,mx,d) in B]
-    TS={"cursedEnergyBoost":[("cursed_boost","咒力强化拳",10,"cursed",1.8,12,28,0,0,"以咒力强化拳击")],
-        "limitless":[("aoi","苍",15,"cursed",2.2,20,25,0,3,"空之涡"),("aka","赫",25,"cursed",3.0,30,18,1,3,"排斥一切"),("aoi_strike","苍·打击",22,"cursed",3.0,25,20,0,0,"近身苍"),("aoi_max","苍·最大出力",30,"cursed",4.0,35,15,0,3,"极致苍"),("aka_max","赫·最大出力",40,"cursed",4.5,40,12,1,3,"极致赫"),("murasaki","虚式·茈",50,"cursed",6.0,45,10,0,3,"撕裂空间")],
-        "tenShadows":[("gyokuken","玉犬",30,"summon",0,25,20,0,3,"召唤黑白玉犬",
+    B=[("attack","体术平A",0,"martial","martial",1.0,5,30,0,0,"基础体术"),("advance","逼近",0,"movement","",0.0,3,35,0,3,"逼近1档"),("retreat","后退",0,"movement","",0.0,3,35,0,3,"后退1档")]
+    sk=[Skill(id=i,name=n,cost=c,type=t,category=cat,damage_multiplier=m,cast_time=ct,base_recovery_speed=r,min_distance=mn,max_distance=mx,description=d) for (i,n,c,t,cat,m,ct,r,mn,mx,d) in B]
+    TS={"cursedEnergyBoost":[("cursed_boost","咒力强化拳",10,"cursed","cursed_martial",1.8,12,28,0,0,"以咒力强化拳击")],
+        "limitless":[("aoi","苍",15,"cursed","cursed_attack",2.2,20,25,0,3,"空之涡"),("aka","赫",25,"cursed","cursed_attack",3.0,30,18,1,3,"排斥一切"),("aoi_strike","苍·打击",22,"cursed","cursed_attack",3.0,25,20,0,0,"近身苍"),("aoi_max","苍·最大出力",30,"cursed","cursed_attack",4.0,35,15,0,3,"极致苍"),("aka_max","赫·最大出力",40,"cursed","cursed_attack",4.5,40,12,1,3,"极致赫"),("murasaki","虚式·茈",50,"cursed","cursed_attack",6.0,45,10,0,3,"撕裂空间")],
+        "tenShadows":[("gyokuken","玉犬",30,"summon","cursed_summon",0,25,20,0,3,"召唤黑白玉犬",
                     {"unitType":"shikigami","name":"玉犬","baseStats":{"hp":80,"max_hp":80,"mp":20,"max_mp":20,"speed":15,"constitution":12,"martialArts":25,"cursedEnergy":5,"cursedEnergyControl":5,"cursedEnergyEfficiency":5,"talent":8},"skills":[{"id":"shikigami_bite","name":"撕咬","type":"martial","damageMultiplier":1.5,"cost":0,"castTime":10,"baseRecoverySpeed":25,"minDistance":0,"maxDistance":0,"description":"用利齿撕咬目标"}],"duration":300}),
-                   ("nue","鵺",35,"summon",0,30,18,0,3,"召唤鵺",
+                   ("nue","鵺",35,"summon","cursed_summon",0,30,18,0,3,"召唤鵺",
                     {"unitType":"shikigami","name":"鵺","baseStats":{"hp":60,"max_hp":60,"mp":30,"max_mp":30,"speed":20,"constitution":8,"martialArts":20,"cursedEnergy":15,"cursedEnergyControl":12,"cursedEnergyEfficiency":10,"talent":12},"skills":[{"id":"shikigami_dive","name":"俯冲","type":"martial","damageMultiplier":2.0,"cost":0,"castTime":12,"baseRecoverySpeed":22,"minDistance":0,"maxDistance":3,"description":"从空中俯冲攻击"},{"id":"shikigami_shock","name":"电击","type":"cursed","damageMultiplier":1.8,"cost":10,"castTime":16,"baseRecoverySpeed":18,"minDistance":1,"maxDistance":3,"description":"释放雷电攻击远处目标"}],"duration":300}),
-                   ("orochi","大蛇",30,"summon",0,25,20,0,2,"召唤巨蛇",
+                   ("orochi","大蛇",30,"summon","cursed_summon",0,25,20,0,2,"召唤巨蛇",
                     {"unitType":"shikigami","name":"大蛇","baseStats":{"hp":100,"max_hp":100,"mp":15,"max_mp":15,"speed":10,"constitution":16,"martialArts":22,"cursedEnergy":8,"cursedEnergyControl":8,"cursedEnergyEfficiency":5,"talent":8},"skills":[{"id":"shikigami_constrict","name":"缠绕","type":"martial","damageMultiplier":1.5,"cost":0,"castTime":14,"baseRecoverySpeed":22,"minDistance":0,"maxDistance":1,"description":"缠绕目标造成持续伤害","dotDamage":8,"dotTurns":2}],"duration":350}),
-                   ("max_elephant","满象",40,"summon",0,35,15,0,2,"召唤满象",
+                   ("max_elephant","满象",40,"summon","cursed_summon",0,35,15,0,2,"召唤满象",
                     {"unitType":"shikigami","name":"满象","baseStats":{"hp":150,"max_hp":150,"mp":10,"max_mp":10,"speed":8,"constitution":22,"martialArts":30,"cursedEnergy":5,"cursedEnergyControl":5,"cursedEnergyEfficiency":3,"talent":6},"skills":[{"id":"shikigami_crush","name":"碾压","type":"martial","damageMultiplier":2.5,"cost":0,"castTime":18,"baseRecoverySpeed":16,"minDistance":0,"maxDistance":2,"description":"以巨大身躯碾压目标，无视30%防御"}],"duration":300}),
-                   ("tora_no_fun","虎葬",35,"summon",0,25,18,0,3,"召唤虎形神",
+                   ("tora_no_fun","虎葬",35,"summon","cursed_summon",0,25,18,0,3,"召唤虎形神",
                     {"unitType":"shikigami","name":"虎葬","baseStats":{"hp":70,"max_hp":70,"mp":20,"max_mp":20,"speed":25,"constitution":10,"martialArts":28,"cursedEnergy":10,"cursedEnergyControl":10,"cursedEnergyEfficiency":8,"talent":14},"skills":[{"id":"shikigami_rush","name":"突袭","type":"martial","damageMultiplier":2.2,"cost":0,"castTime":8,"baseRecoverySpeed":26,"minDistance":0,"maxDistance":3,"description":"闪电突袭目标，先制攻击"}],"duration":250}),
-                   ("makora","魔虚罗",60,"cursed",8.0,60,5,0,3,"终极式神")],
-        "bloodManipulation":[("blood_blade","血刃",8,"cursed",1.4,12,28,0,1,"血液利刃"),("slicing_exorcism","血涂",14,"cursed",1.8,16,24,0,1,"切割线"),("piercing_blood","穿血",14,"cursed",2.0,16,24,0,3,"高压血箭"),("supernova","超新星",22,"cursed",3.0,22,18,0,3,"凝固血液"),("crimson_binding","赤鳞跃动",20,"cursed",2.2,18,22,0,0,"强化身体"),("canal","运河",16,"cursed",2.0,20,20,0,3,"血液轨迹")],
-        "boogieWoogie":[("clap_swap","拍手换位",6,"cursed",1.2,8,32,0,3,"交换位置"),("tactical_combo","战术连携",12,"cursed",2.0,12,28,0,0,"连续攻击")],
-        "overtime":[("weakness","基础弱点",8,"cursed",1.3,10,30,0,1,"7:3弱点"),("ratio_strike","咒力钝器·七三",14,"cursed",2.0,15,25,0,0,"精准打击"),("collapse","瓦解",18,"cursed",2.5,20,20,0,0,"削弱防御"),("overtime","极之番·加班",25,"cursed",3.5,25,18,0,1,"加班模式")],
-        "curseManipulation":[("curse_absorb","基础吞噬",10,"cursed",1.2,12,28,0,1,"吞噬咒灵"),("curse_sphere","咒灵玉储存",20,"cursed",2.5,22,20,0,3,"释放咒力"),("uzumaki_pseudo","极之番·伪",35,"cursed",4.0,30,14,0,3,"全部释放")],
-        "strawDoll":[("doll_basic","基础操控",10,"cursed",1.5,14,26,0,1,"人偶攻击"),("doll_scout","远程侦查",12,"cursed",1.6,16,24,1,3,"远程侦查"),("doll_resonance","共鸣",13,"cursed",1.9,18,22,0,3,"远程冲击"),("doll_overload","傀儡自爆",30,"cursed",5.0,30,10,1,1,"引爆傀儡")],
-        "pureMartial":[("martial_combo","体术连击",0,"martial",1.2,8,30,0,0,"高速连击"),("black_flash_boost","黑闪强化",0,"martial",1.5,6,32,0,0,"提升黑闪"),("rush_strike","疾风突袭",0,"martial",2.0,10,26,0,1,"速度突袭")]}
+                   ("makora","魔虚罗",60,"cursed","cursed_summon",8.0,60,5,0,3,"终极式神")],
+        "bloodManipulation":[("blood_blade","血刃",8,"cursed","cursed_martial",1.4,12,28,0,1,"血液利刃"),("slicing_exorcism","血涂",14,"cursed","cursed_attack",1.8,16,24,0,1,"切割线"),("piercing_blood","穿血",14,"cursed","cursed_attack",2.0,16,24,0,3,"高压血箭"),("supernova","超新星",22,"cursed","cursed_attack",3.0,22,18,0,3,"凝固血液"),("crimson_binding","赤鳞跃动",20,"cursed","cursed_buff",2.2,18,22,0,0,"强化身体"),("canal","运河",16,"cursed","cursed_control",2.0,20,20,0,3,"血液轨迹")],
+        "boogieWoogie":[("clap_swap","拍手换位",6,"cursed","cursed_control",1.2,8,32,0,3,"交换位置"),("tactical_combo","战术连携",12,"cursed","cursed_martial",2.0,12,28,0,0,"连续攻击")],
+        "overtime":[("weakness","基础弱点",8,"cursed","cursed_martial",1.3,10,30,0,1,"7:3弱点"),("ratio_strike","咒力钝器·七三",14,"cursed","cursed_martial",2.0,15,25,0,0,"精准打击"),("collapse","瓦解",18,"cursed","cursed_martial",2.5,20,20,0,0,"削弱防御"),("overtime","极之番·加班",25,"cursed","cursed_buff",3.5,25,18,0,1,"加班模式")],
+        "curseManipulation":[("curse_absorb","基础吞噬",10,"cursed","cursed_martial",1.2,12,28,0,1,"吞噬咒灵"),("curse_sphere","咒灵玉储存",20,"cursed","cursed_attack",2.5,22,20,0,3,"释放咒力"),("uzumaki_pseudo","极之番·伪",35,"cursed","cursed_attack",4.0,30,14,0,3,"全部释放")],
+        "strawDoll":[("doll_basic","基础操控",10,"cursed","cursed_attack",1.5,14,26,0,1,"人偶攻击"),("doll_scout","远程侦查",12,"cursed","cursed_control",1.6,16,24,1,3,"远程侦查"),("doll_resonance","共鸣",13,"cursed","cursed_attack",1.9,18,22,0,3,"远程冲击"),("doll_overload","傀儡自爆",30,"cursed","cursed_attack",5.0,30,10,1,1,"引爆傀儡")],
+        "pureMartial":[("martial_combo","体术连击",0,"martial","martial",1.2,8,30,0,0,"高速连击"),("black_flash_boost","黑闪强化",0,"martial","martial",1.5,6,32,0,0,"提升黑闪"),("rush_strike","疾风突袭",0,"martial","martial",2.0,10,26,0,1,"速度突袭")]}
     for e in TS.get(tid, TS.get("cursedEnergyBoost",[])):
         skill_id = e[0]
         branch_skills = {"aoi_strike","aoi_max","aka_max","murasaki","nue","orochi","max_elephant","tora_no_fun","makora",
@@ -767,7 +771,8 @@ def _execute_attack_framed(actor, skill, target, state):
     _advance_time(state, ct)
     # Step 3: 伤害结算
     is_bf = False
-    if skill.type == "martial" and _check_black_flash(actor): is_bf = True
+    if skill.category in ("martial", "cursed_martial"):
+        is_bf = _check_black_flash(actor, skill)
     dmg = calculate_damage(actor, skill, target, is_bf)
     dmg = apply_damage_variance(dmg, is_bf)  # Phase 8: 伤害偏移
     cost = calculate_mp_cost(actor, skill)
@@ -887,7 +892,7 @@ def _resolve_shikigami_action(shiki, state):
         # 清除手动标记（仅当次行动）
         shiki._manual_skill = None
         _resolve_distance(shiki, skill, target, state)
-        is_bf = _check_black_flash(shiki)
+        is_bf = _check_black_flash(shiki, sk)
         dmg = calculate_damage(shiki, skill, target, is_bf)
         dmg = apply_damage_variance(dmg, is_bf)
         cost = calculate_mp_cost(shiki, skill)
@@ -915,7 +920,7 @@ def _resolve_shikigami_action(shiki, state):
     skill = avail[0]
     distance_cost = _resolve_distance(shiki, skill, target, state)
     if distance_cost < 0: return  # ATB 不足
-    is_bf = _check_black_flash(shiki)
+    is_bf = _check_black_flash(shiki, skill)
     dmg = calculate_damage(shiki, skill, target, is_bf)
     dmg = apply_damage_variance(dmg, is_bf)
     cost = calculate_mp_cost(shiki, skill)
@@ -1052,7 +1057,7 @@ def _resolve_ally_action(ally, state):
     avail.sort(key=lambda s: -s.damage_multiplier)
     skill = avail[0]
     _resolve_distance(ally, skill, target, state)
-    is_bf = _check_black_flash(ally)
+    is_bf = _check_black_flash(ally, skill)
     dmg = calculate_damage(ally, skill, target, is_bf)
     dmg = apply_damage_variance(dmg, is_bf)
     cost = calculate_mp_cost(ally, skill)

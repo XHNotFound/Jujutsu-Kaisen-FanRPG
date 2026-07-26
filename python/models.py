@@ -41,7 +41,8 @@ class Skill:
     id: str
     name: str
     cost: int
-    type: str              # "martial" | "cursed" | "movement" | "domain_expand"
+    type: str              # "martial" | "cursed" | "movement" | "domain_expand" | "summon"
+    category: str = ""     # Phase 16: "martial"|"cursed_martial"|"cursed_attack"|"cursed_summon"|"cursed_buff"|"cursed_control"
     damage_multiplier: float = 1.0
     description: str = ""
     min_distance: int = DISTANCE_CLOSE
@@ -53,6 +54,7 @@ class Skill:
     def to_dict(self):
         d = {
             "id": self.id, "name": self.name, "cost": self.cost, "type": self.type,
+            "category": self.category,
             "damage_multiplier": self.damage_multiplier,
             "min_distance": self.min_distance, "max_distance": self.max_distance,
             "cast_time": self.cast_time, "base_recovery_speed": self.base_recovery_speed

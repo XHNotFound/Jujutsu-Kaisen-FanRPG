@@ -426,6 +426,8 @@ def execute_action(action_json, state_json):
     elif at == "use_item": _handle_use_item(action, state)
     elif at == "tool_active": _handle_tool_active(action, state)
     result = state.to_dict(); result["_tracker"] = tracker.to_dict()
+    if hasattr(state, '_item_used'):
+        result["_item_used"] = state._item_used
     return json.dumps(result, ensure_ascii=False)
 
 def _handle_use_skill(action, state, tracker=None):

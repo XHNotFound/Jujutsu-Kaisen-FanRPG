@@ -575,6 +575,55 @@ export const SKILL_TREES = {
         levelEffects: [L(1,1.8,10,12,28,""), L(2,2.1,9,11,29,""), L(3,2.4,8,11,30,""), L(4,2.7,7,10,31,""), L(5,3.1,6,9,32,""), L(6,3.6,5,8,33,"")]
       }
     ]
+  },
+
+  // ====================================================================
+  //  Phase 17: 坐杀博徒 (Hakari's Gambling) — 全新赌狗术式
+  // ====================================================================
+  hakariGambling: {
+    baseSkills: ["steel_ball", "gambling_door"],
+    domain: {
+      id: "hakari_domain",
+      name: "坐杀博徒",
+      flavorText: "将一切赌在概率之上——中大奖则逆转战局，未中则继续押注。",
+      // Phase 17: 不完全领域门槛降低 30%
+      incompleteRequirements: {
+        techniqueLevel: 3,
+        barrierLevel: 3,
+        inspiration: 1,
+        cursedEnergyControl: 25
+      },
+      completeRequirements: {
+        techniqueLevel: 5,
+        barrierLevel: 5,
+        inspiration: 2,
+        cursedEnergyControl: 40
+      },
+      // 领域攻击力为 0 — 特殊效果替代伤害
+      baseStats: { hpPerBarrier: 40, hpPerCEC: 3, intervalBase: 15, damagePerTech: 0, mpCostPerTick: 3 }
+    },
+    nodes: [
+      {
+        id: "steel_ball", name: "小钢珠", description: "投掷咒力凝缩的钢珠，可叠加提升后续体术伤害。",
+        type: "cursed", category: "cursed_buff", isBaseSkill: true, maxLevel: 3,
+        requires: null, requiresLevel: 0, branches: ["gambling_door"],
+        cost: 10, damageMultiplier: 1.0, castTime: 8, baseRecoverySpeed: 30,
+        minDistance: 1, maxDistance: 3,
+        // Phase 17: 叠层 buff — 每层 +10% 体术伤害 (满级 +20%)
+        buffEffect: { type: "steel_ball_stack", value: 0.10, maxStacks: 5 },
+        levelUpCosts: [C(2,2,40), C(3,3,100)],
+        levelEffects: [L(1,1.0,10,8,30,"每层+10%体术"), L(2,1.2,10,8,30,"每层+15%体术"), L(3,1.5,10,8,30,"每层+20%体术")]
+      },
+      {
+        id: "gambling_door", name: "门", description: "以咒力击穿空间的近战一击。朴实但骰子已握在手中。",
+        type: "cursed", category: "cursed_martial", isBaseSkill: false, maxLevel: 5,
+        requires: "steel_ball", requiresLevel: 1, branches: [],
+        cost: 15, damageMultiplier: 1.2, castTime: 10, baseRecoverySpeed: 28,
+        minDistance: 0, maxDistance: 1,
+        levelUpCosts: [C(2,2,30), C(3,3,80), C(4,4,150), C(5,6,250)],
+        levelEffects: [L(1,1.2,15,10,28,""), L(2,1.5,14,9,29,""), L(3,1.8,13,8,30,""), L(4,2.2,12,7,31,""), L(5,2.6,11,6,32,"")]
+      }
+    ]
   }
 };
 

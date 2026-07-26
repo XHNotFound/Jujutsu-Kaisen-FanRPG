@@ -855,6 +855,8 @@ def execute_action(action_json, state_json):
     elif at == "tool_active": _handle_tool_active(action, state)
     # Phase 17: use buff / debuff skill (赤鳞跃动 etc.)
     elif at == "use_buff_skill": _handle_buff_skill(action, state)
+    # Phase 17: 坐杀博徒 — 展开领域 + 抽奖
+    elif at == "gambling_domain_roll": _handle_gambling_roll(action, state)
     result = state.to_dict(); result["_tracker"] = tracker.to_dict()
     # Phase 16 fix: 传递道具使用标记给 JS 端
     if hasattr(state, '_item_used'):
@@ -1752,3 +1754,48 @@ def _handle_buff_skill(action, state):
         _log(state, f"{actor.name} 以血缚限制 {target.name}！{target.name} ATB 填充速度 -{int(val*100)}%，持续 60 AV。")
 
     _apply_blood_technique_cost(actor, {"id": sid}, state)
+
+# Phase 17: 坐杀博徒领域抽奖逻辑
+def _handle_gambling_roll(action, state):
+    """坐杀博徒领域自动抽奖：每次领域攻击后触发，检查中奖概率"""
+    actor = state.find_unit(action.get("actor", "player"))
+    if not actor: return
+
+    # 统计小钢珠叠层数
+    steel_count = sum(1 for se in (actor.status_effects or []) if se.get("id") == "steel_ball_stack")
+    # 基础概率 5%，确变叠加 ×2
+    luck = getattr(state, 'gambling_luck_boost', 0)
+    chance = min(0.5, 0.05 * (1 + luck)) * (1 + steel_count * 0.02)  # 每层钢珠 +2%
+
+    roll = random.random()
+    if roll < chance:
+        # 中大奖：关闭领域，施加 auto_rct + auto_ce
+        _log(state, f"🎰 大奖！概率 {chance*100:.1f}%，roll={roll*100:.0f}%")
+        domain = None
+        for u in state.units:
+            if u.unit_type == UNIT_DOMAIN and u.owner == actor.id:
+                domain = u; break
+        if domain:
+            _handle_cancel_domain({"domain_id": domain.id}, state)
+        # 施加自动回复 Buff
+        dur = 200
+        for u in state.units:
+            if u.id == actor.id:
+                existing_rct = [s for s in u.status_effects if s.get("id") == "auto_rct"]
+                existing_ce = [s for s in u.status_effects if s.get("id") == "auto_ce"]
+                if existing_rct:
+                    existing_rct[0]["duration"] = dur
+                else:
+                    u.status_effects.append({"id":"auto_rct","name":"自动反转术式","type":"buff","duration":dur,"description":"每20AV回复200HP"})
+                if existing_ce:
+                    existing_ce[0]["duration"] = dur
+                else:
+                    u.status_effects.append({"id":"auto_ce","name":"自动咒力回复","type":"buff","duration":dur,"description":"每20AV回复50MP"})
+        _log(state, f"{actor.name} 中了坐杀博徒大奖！获得自动反转术式 + 自动咒力回复（{dur} AV）！")
+        # 时短叠加
+        state.gambling_time_short = getattr(state, 'gambling_time_short', 0) + 1
+        state.gambling_luck_boost = 0  # 重置运气
+    else:
+        # 未中：叠加运气
+        _log(state, f"🎲 未中… (概率 {chance*100:.1f}%，roll={roll*100:.0f}%) — 下次概率翻倍！")
+        state.gambling_luck_boost = getattr(state, 'gambling_luck_boost', 0) + 1

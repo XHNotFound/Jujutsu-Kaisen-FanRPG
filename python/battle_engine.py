@@ -548,13 +548,12 @@ def create_player_from_save(save_data):
 
     hp = save_data.get("hp",100) or 100; mhp = save_data.get("maxHp",100) or 100
     mp = save_data.get("mp",50) or 50; mmp = save_data.get("maxMp",50) or 50
-    # Phase 13: 使用 effective_con/ce 重新计算 maxHp/maxMp（装备加成后的上限）
-    # 这样可以保证装备体质/咒力对应的额外血量在战斗中生效
-    if mhp <= 0 or True:  # 始终用 effective 属性重新计算
-        mhp = max(30, 80 + effective_con * 2)
+    # Bug #2 fix: 直接使用 JS 端已按阶梯公式计算好的 maxHp/maxMp，不再用线形公式重算
+    # JS SaveManager._calcMaxHp/_calcMaxMp 的阶梯公式（体质≤20: +5/点, 20~40: +10/点, >40: +15/点）是正确的
+    # 仅做钳制防溢出
+    if hp > mhp: hp = mhp
     if hp <= 0: hp = mhp
-    if mmp <= 0 or True:  # 始终用 effective 属性重新计算
-        mmp = max(30, 30 + effective_ce * 3)
+    if mp > mmp: mp = mmp
     if mp <= 0: mp = mmp
     tid = save_data.get("techniqueId","cursedEnergyBoost"); spd = 8 + attrs.get("talent",10) // 3
     return Unit(id="player",name=name,unit_type=UNIT_PLAYER,hp=hp,max_hp=mhp,mp=mp,max_mp=mmp,

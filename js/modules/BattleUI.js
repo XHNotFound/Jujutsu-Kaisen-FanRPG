@@ -30,6 +30,10 @@ export class BattleUI {
     this.uiManager.showScreen('screen-battle');
     this._showLoading(true);
     this.currentState = null;
+    // Bug #1 fix: 每次新战斗重置逃跑状态
+    this._escapeLocked = false;
+    const fleeBtn = document.getElementById('btn-battle-flee');
+    if (fleeBtn) { fleeBtn.disabled = false; fleeBtn.textContent = '逃跑'; }
     const logContainer = document.getElementById('battle-log');
     if (logContainer) logContainer.innerHTML = '';
 

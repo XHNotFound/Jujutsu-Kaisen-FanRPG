@@ -1883,8 +1883,9 @@ export class UIManager {
           html += `<button class="btn btn-system btn-unequip" data-slot="${slotId}">卸下</button>`;
         } else {
           html += '<p style="color:var(--color-text-dim);">空</p>';
-          // 列出可装备的咒具
-          const available = Object.values(CURSED_TOOLS).filter(t => slot.acceptedTypes.includes(t.type));
+          // Bug #3 fix: 列出可装备的咒具 — 仅显示已拥有的
+          const ownedTools = state.ownedCursedTools || [];
+          const available = Object.values(CURSED_TOOLS).filter(t => slot.acceptedTypes.includes(t.type) && ownedTools.includes(t.id));
           if (available.length > 0) {
             html += '<div style="display:flex;flex-wrap:wrap;gap:0.3rem;margin-top:0.3rem;">';
             for (const t of available) {

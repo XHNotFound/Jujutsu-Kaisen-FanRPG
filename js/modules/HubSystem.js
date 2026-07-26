@@ -31,6 +31,36 @@ export class HubSystem {
     // 无状态 — 所有操作基于传入的 characterState
   }
 
+  // Bug #4 fix: _calcMaxHp/_calcMaxMp 与 SaveManager 同公式，供 rest()/useItem()/consult() 使用
+  _calcMaxHp(con) {
+    con = con || 10;
+    let hp = 30;
+    if (con <= 20) {
+      hp = 30 + con * 5;
+    } else if (con <= 40) {
+      hp = 30 + 20 * 5 + (con - 20) * 10;
+    } else {
+      hp = 30 + 20 * 5 + 20 * 10 + (con - 40) * 15;
+    }
+    return hp;
+  }
+
+  _calcMaxMp(ce) {
+    ce = ce || 10;
+    let mp = 30;
+    const t1 = Math.min(ce, 20);
+    mp += t1 * 4;
+    if (ce <= 20) return mp;
+    const t2 = Math.min(ce - 20, 10);
+    mp += t2 * 8;
+    if (ce <= 30) return mp;
+    const t3 = Math.min(ce - 30, 15);
+    mp += t3 * 15;
+    if (ce <= 45) return mp;
+    mp += (ce - 45) * 20;
+    return mp;
+  }
+
   /**
    * 修炼指定属性
    * @param {object} characterState — SaveManager.getState() 的返回值
@@ -591,6 +621,12 @@ export class HubSystem {
     // 检查槽位兼容性
     if (!canEquipToSlot(toolId, slotId)) {
       return { success: false, log: `「${tool.name}」无法装备到${slot.name}槽位（需要类型: ${slot.acceptedTypes.join('/')}）。`, updatePayload: null };
+    }
+
+    // Bug #3 fix: 检查是否已拥有该咒具
+    const owned = characterState.ownedCursedTools || [];
+    if (!owned.includes(toolId)) {
+      return { success: false, log: `你尚未拥有「${tool.name}」。请先购买或获取此咒具。`, updatePayload: null };
     }
 
     // 检查是否已拥有该咒具（简单检查：如果已在其他槽位装备，先卸下）

@@ -324,6 +324,8 @@ export class SaveManager {
     if (!this.state.inventory) this.state.inventory = {};
     if (!this.state.unlockedIntel) this.state.unlockedIntel = {};
     if (!this.state.equipment) this.state.equipment = { mainHand: null, offHand: null, accessory: null };
+    // Bug #3 fix: 已拥有的咒具列表
+    if (!this.state.ownedCursedTools) this.state.ownedCursedTools = [];
 
     const caps = {
       maxAp: 100, maxStamina: 100, maxResidual: 100,
@@ -464,6 +466,15 @@ export class SaveManager {
         if (value.mainHand !== undefined) this.state.equipment.mainHand = value.mainHand;
         if (value.offHand !== undefined) this.state.equipment.offHand = value.offHand;
         if (value.accessory !== undefined) this.state.equipment.accessory = value.accessory;
+        // Bug #5 fix: 装备变更后重算含装备加成的 maxHp/maxMp 并钳制 hp/mp
+        this._recalcCapsFromEquipment();
+        continue;
+      } else if (key === 'ownedCursedTools_add' && typeof value === 'string') {
+        // Bug #3 fix: 新获得咒具时加入拥有列表
+        if (!this.state.ownedCursedTools) this.state.ownedCursedTools = [];
+        if (!this.state.ownedCursedTools.includes(value)) {
+          this.state.ownedCursedTools.push(value);
+        }
         continue;
       }
     }
@@ -473,6 +484,28 @@ export class SaveManager {
     if (slot >= 0) {
       this.saveToSlot(slot);
     }
+  }
+
+  /**
+   * Bug #5 fix: 装备变更后重算 effective maxHp/maxMp 并钳制 hp/mp
+   */
+  _recalcCapsFromEquipment() {
+    if (!this.state || !this.state.attributes) return;
+    const baseCon = this.state.attributes.constitution || 10;
+    const baseCE  = this.state.attributes.cursedEnergy || 10;
+    let bonusCon = 0;
+    let bonusCE  = 0;
+    const equip = this.state.equipment || {};
+    for (const toolId of Object.values(equip)) {
+      if (toolId && CURSED_TOOLS[toolId] && CURSED_TOOLS[toolId].statsBonus) {
+        bonusCon += CURSED_TOOLS[toolId].statsBonus.constitution || 0;
+        bonusCE  += CURSED_TOOLS[toolId].statsBonus.cursedEnergy || 0;
+      }
+    }
+    this.state.maxHp = this._calcMaxHp(baseCon + bonusCon);
+    this.state.maxMp = this._calcMaxMp(baseCE + bonusCE);
+    this.state.hp = Math.min(this.state.maxHp, this.state.hp || this.state.maxHp);
+    this.state.mp = Math.min(this.state.maxMp, this.state.mp || this.state.maxMp);
   }
 
   /**

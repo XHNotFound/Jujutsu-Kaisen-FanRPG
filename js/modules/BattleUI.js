@@ -532,13 +532,7 @@ init_battle(json.dumps(save_data))
       const dn = ['贴身', '近', '中', '远'];
       const minD = skill.min_distance !== undefined ? dn[skill.min_distance] : '?';
       const maxD = skill.max_distance !== undefined ? dn[skill.max_distance] : '?';
-      if (minD === 'undefined' || isNaN(skill.min_distance)) {
-        // Python engine 可能传 undefined min_distance; fallback to 0
-        skill.min_distance = 0;
-      }
-      const minDisplay = skill.min_distance !== undefined ? dn[skill.min_distance] : '?';
-      const maxDisplay = skill.max_distance !== undefined ? dn[skill.max_distance] : '?';
-      const dr = (skill.type === 'movement') ? '' : ' [' + minDisplay + '~' + maxDisplay + ']';
+      const dr = (skill.type === 'movement') ? '' : ' [' + minD + '~' + maxD + ']';
       const cl = skill.cost > 0 ? ' (MP ' + skill.cost + ')' : '';
       const ctl = skill.cast_time !== undefined ? ' 咏唱' + skill.cast_time + '帧' : '';
       const rvl = skill.base_recovery_speed !== undefined ? ' 补偿' + skill.base_recovery_speed : '';

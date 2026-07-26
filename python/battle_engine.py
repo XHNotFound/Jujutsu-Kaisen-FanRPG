@@ -619,9 +619,9 @@ def _build_player_skills(tid, skill_levels=None):
                          "black_flash_boost","rush_strike"}
         if skill_id in branch_skills and skill_levels.get(skill_id, 0) < 1:
             continue
-        # Phase 9: handle optional summon_config (11th element)
-        sc = e[10] if len(e) > 10 else None
-        sk.append(Skill(id=e[0],name=e[1],cost=e[2],type=e[3],damage_multiplier=e[4],cast_time=e[5],base_recovery_speed=e[6],min_distance=e[7],max_distance=e[8],description=e[9],summon_config=sc))
+        # Phase 9: handle optional summon_config (after category, shifted +1)
+        sc = e[11] if len(e) > 11 else None
+        sk.append(Skill(id=e[0],name=e[1],cost=e[2],type=e[3],category=e[4],damage_multiplier=e[5],cast_time=e[6],base_recovery_speed=e[7],min_distance=e[8],max_distance=e[9],description=e[10],summon_config=sc))
     return sk
 
 def create_default_enemy(tier="normal"):

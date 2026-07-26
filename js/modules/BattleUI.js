@@ -650,6 +650,15 @@ init_battle(json.dumps(save_data))
     const tracker = s._tracker || {};
     const usage = tracker.skill_usage || {};
 
+    // Phase 16 fix: 消耗战斗中使用过的道具
+    if (s._item_used && this.uiManager.saveManager) {
+      const st = this.uiManager.saveManager.getState();
+      if (st && st.inventory && st.inventory[s._item_used] > 0) {
+        st.inventory[s._item_used]--;
+        this.uiManager.saveManager.saveToSlot(this.uiManager.saveManager._findCurrentSlot());
+      }
+    }
+
     const examQuestId = this.uiManager.saveManager?.getState()?._examQuestId;
     if (examQuestId) {
       // Phase 11: 考核战斗胜利 - 完成考核任务

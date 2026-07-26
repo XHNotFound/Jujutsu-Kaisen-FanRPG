@@ -1529,9 +1529,11 @@ def _handle_use_item(action, state):
     # 烟雾弹：确保逃跑必定成功
     if item_id == "smokeBomb":
         _log(state, f"{actor.name} 使用了烟雾弹！浓烟弥漫，趁机脱离战斗。")
+        # 消耗道具：将 item_id 传回 JS 端处理 inventory 扣减
         e = state.find_enemy()
         if e: e.hp = 0; e.is_alive = False
         state.turn = "player_win"
+        state._item_used = item_id  # Phase 16 fix: 标记道具已使用，供 JS 端扣减
         _log(state, f"{actor.name} 成功逃离了战斗。")
         _check_battle_end(state)
         return
@@ -1540,6 +1542,7 @@ def _handle_use_item(action, state):
     if item_id == "adrenalineShot":
         heal = min(60, actor.max_hp - actor.hp)
         actor.hp += heal
+        state._item_used = item_id  # Phase 16 fix: 标记道具已使用
         _log(state, f"{actor.name} 使用肾上腺素注射剂，回复了 {heal} HP。")
         return
 

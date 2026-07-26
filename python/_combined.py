@@ -355,17 +355,17 @@ def create_player_from_save(save_data):
 def _build_player_skills(tid, skill_levels=None):
     """Build skills based on unlocked skills in skillLevels. Only base + unlocked branch skills are included."""
     if skill_levels is None: skill_levels = {}
-    B=[("attack","体术平A",0,"martial",1.0,5,30,0,0,"基础体术"),("advance","逼近",0,"movement",0.0,3,35,0,3,"逼近1档"),("retreat","后退",0,"movement",0.0,3,35,0,3,"后退1档")]
-    sk=[Skill(id=i,name=n,cost=c,type=t,damage_multiplier=m,cast_time=ct,base_recovery_speed=r,min_distance=mn,max_distance=mx,description=d) for (i,n,c,t,m,ct,r,mn,mx,d) in B]
-    TS={"cursedEnergyBoost":[("cursed_boost","咒力强化拳",10,"cursed",1.8,12,28,0,0,"以咒力强化拳击")],
-        "limitless":[("aoi","苍",15,"cursed",2.2,20,25,0,3,"空之涡"),("aka","赫",25,"cursed",3.0,30,18,1,3,"排斥一切"),("aoi_strike","苍·打击",22,"cursed",3.0,25,20,0,0,"近身苍"),("aoi_max","苍·最大出力",30,"cursed",4.0,35,15,0,3,"极致苍"),("aka_max","赫·最大出力",40,"cursed",4.5,40,12,1,3,"极致赫"),("murasaki","虚式·茈",50,"cursed",6.0,45,10,0,3,"撕裂空间")],
-        "tenShadows":[("gyokuken","玉犬",12,"cursed",1.6,15,28,0,1,"召唤双犬"),("nue","鵺",18,"cursed",2.0,22,22,0,3,"俯冲攻击"),("orochi","大蛇",16,"cursed",1.8,18,24,0,1,"巨蛇缠绕"),("max_elephant","满象",22,"cursed",2.5,25,20,0,1,"召唤满象"),("tora_no_fun","虎葬",25,"cursed",3.0,20,22,0,3,"虎形式神"),("makora","魔虚罗",60,"cursed",8.0,60,5,0,3,"终极式神")],
-        "bloodManipulation":[("blood_blade","血刃",8,"cursed",1.4,12,28,0,1,"血液利刃"),("slicing_exorcism","血涂",14,"cursed",1.8,16,24,0,1,"切割线"),("piercing_blood","穿血",14,"cursed",2.0,16,24,0,3,"高压血箭"),("supernova","超新星",22,"cursed",3.0,22,18,0,3,"凝固血液"),("crimson_binding","赤鳞跃动",20,"cursed",2.2,18,22,0,0,"强化身体"),("canal","运河",16,"cursed",2.0,20,20,0,3,"血液轨迹")],
-        "boogieWoogie":[("clap_swap","拍手换位",6,"cursed",1.2,8,32,0,3,"交换位置"),("tactical_combo","战术连携",12,"cursed",2.0,12,28,0,0,"连续攻击")],
-        "overtime":[("weakness","基础弱点",8,"cursed",1.3,10,30,0,1,"7:3弱点"),("ratio_strike","咒力钝器·七三",14,"cursed",2.0,15,25,0,0,"精准打击"),("collapse","瓦解",18,"cursed",2.5,20,20,0,0,"削弱防御"),("overtime","极之番·加班",25,"cursed",3.5,25,18,0,1,"加班模式")],
-        "curseManipulation":[("curse_absorb","基础吞噬",10,"cursed",1.2,12,28,0,1,"吞噬咒灵"),("curse_sphere","咒灵玉储存",20,"cursed",2.5,22,20,0,3,"释放咒力"),("uzumaki_pseudo","极之番·伪",35,"cursed",4.0,30,14,0,3,"全部释放")],
-        "strawDoll":[("doll_basic","基础操控",10,"cursed",1.5,14,26,0,1,"人偶攻击"),("doll_scout","远程侦查",12,"cursed",1.6,16,24,1,3,"远程侦查"),("doll_resonance","共鸣",13,"cursed",1.9,18,22,0,3,"远程冲击"),("doll_overload","傀儡自爆",30,"cursed",5.0,30,10,1,1,"引爆傀儡")],
-        "pureMartial":[("martial_combo","体术连击",0,"martial",1.2,8,30,0,0,"高速连击"),("black_flash_boost","黑闪强化",0,"martial",1.5,6,32,0,0,"提升黑闪"),("rush_strike","疾风突袭",0,"martial",2.0,10,26,0,1,"速度突袭")]}
+    B=[("attack","体术平A",0,"martial","martial",1.0,5,30,0,0,"基础体术"),("advance","逼近",0,"movement","",0.0,3,35,0,3,"逼近1档"),("retreat","后退",0,"movement","",0.0,3,35,0,3,"后退1档")]
+    sk=[Skill(id=i,name=n,cost=c,type=t,category=cat,damage_multiplier=m,cast_time=ct,base_recovery_speed=r,min_distance=mn,max_distance=mx,description=d) for (i,n,c,t,cat,m,ct,r,mn,mx,d) in B]
+    TS={"cursedEnergyBoost":[("cursed_boost","咒力强化拳",10,"cursed","cursed_martial",1.8,12,28,0,0,"以咒力强化拳击")],
+        "limitless":[("aoi","苍",15,"cursed","cursed_attack",2.2,20,25,0,3,"空之涡"),("aka","赫",25,"cursed","cursed_attack",3.0,30,18,1,3,"排斥一切"),("aoi_strike","苍·打击",22,"cursed","cursed_attack",3.0,25,20,0,0,"近身苍"),("aoi_max","苍·最大出力",30,"cursed","cursed_attack",4.0,35,15,0,3,"极致苍"),("aka_max","赫·最大出力",40,"cursed","cursed_attack",4.5,40,12,1,3,"极致赫"),("murasaki","虚式·茈",50,"cursed","cursed_attack",6.0,45,10,0,3,"撕裂空间")],
+        "tenShadows":[("gyokuken","玉犬",30,"summon","cursed_summon",0,25,20,0,3,"召唤黑白玉犬"),("nue","鵺",35,"summon","cursed_summon",0,30,18,0,3,"召唤鵺"),("orochi","大蛇",30,"summon","cursed_summon",0,25,20,0,2,"召唤巨蛇"),("max_elephant","满象",40,"summon","cursed_summon",0,35,15,0,2,"召唤满象"),("tora_no_fun","虎葬",35,"summon","cursed_summon",0,25,18,0,3,"召唤虎形神"),("makora","魔虚罗",60,"cursed","cursed_summon",8.0,60,5,0,3,"终极式神")],
+        "bloodManipulation":[("blood_blade","血刃",8,"cursed","cursed_martial",1.4,12,28,0,1,"血液利刃"),("slicing_exorcism","血涂",14,"cursed","cursed_attack",1.8,16,24,0,1,"切割线"),("piercing_blood","穿血",14,"cursed","cursed_attack",2.0,16,24,0,3,"高压血箭"),("supernova","超新星",22,"cursed","cursed_attack",3.0,22,18,0,3,"凝固血液"),("crimson_binding","赤鳞跃动",20,"cursed","cursed_buff",2.2,18,22,0,0,"强化身体"),("canal","运河",16,"cursed","cursed_control",2.0,20,20,0,3,"血液轨迹")],
+        "boogieWoogie":[("clap_swap","拍手换位",6,"cursed","cursed_control",1.2,8,32,0,3,"交换位置"),("tactical_combo","战术连携",12,"cursed","cursed_martial",2.0,12,28,0,0,"连续攻击")],
+        "overtime":[("weakness","基础弱点",8,"cursed","cursed_martial",1.3,10,30,0,1,"7:3弱点"),("ratio_strike","咒力钝器·七三",14,"cursed","cursed_martial",2.0,15,25,0,0,"精准打击"),("collapse","瓦解",18,"cursed","cursed_martial",2.5,20,20,0,0,"削弱防御"),("overtime","极之番·加班",25,"cursed","cursed_buff",3.5,25,18,0,1,"加班模式")],
+        "curseManipulation":[("curse_absorb","基础吞噬",10,"cursed","cursed_martial",1.2,12,28,0,1,"吞噬咒灵"),("curse_sphere","咒灵玉储存",20,"cursed","cursed_attack",2.5,22,20,0,3,"释放咒力"),("uzumaki_pseudo","极之番·伪",35,"cursed","cursed_attack",4.0,30,14,0,3,"全部释放")],
+        "strawDoll":[("doll_basic","基础操控",10,"cursed","cursed_attack",1.5,14,26,0,1,"人偶攻击"),("doll_scout","远程侦查",12,"cursed","cursed_control",1.6,16,24,1,3,"远程侦查"),("doll_resonance","共鸣",13,"cursed","cursed_attack",1.9,18,22,0,3,"远程冲击"),("doll_overload","傀儡自爆",30,"cursed","cursed_attack",5.0,30,10,1,1,"引爆傀儡")],
+        "pureMartial":[("martial_combo","体术连击",0,"martial","martial",1.2,8,30,0,0,"高速连击"),("black_flash_boost","黑闪强化",0,"martial","martial",1.5,6,32,0,0,"提升黑闪"),("rush_strike","疾风突袭",0,"martial","martial",2.0,10,26,0,1,"速度突袭")]}
     for e in TS.get(tid, TS.get("cursedEnergyBoost",[])):
         # Fix: only include branch skills if unlocked in skillLevels (not all skills)
         skill_id = e[0]
@@ -378,7 +378,7 @@ def _build_player_skills(tid, skill_levels=None):
                          "black_flash_boost","rush_strike"}
         if skill_id in branch_skills and skill_levels.get(skill_id, 0) < 1:
             continue  # skip unlocked branch skills
-        sk.append(Skill(id=e[0],name=e[1],cost=e[2],type=e[3],damage_multiplier=e[4],cast_time=e[5],base_recovery_speed=e[6],min_distance=e[7],max_distance=e[8],description=e[9]))
+        sk.append(Skill(id=e[0],name=e[1],cost=e[2],type=e[3],category=e[4],damage_multiplier=e[5],cast_time=e[6],base_recovery_speed=e[7],min_distance=e[8],max_distance=e[9],description=e[10]))
     return sk
 
 def create_default_enemy(tier="normal"):

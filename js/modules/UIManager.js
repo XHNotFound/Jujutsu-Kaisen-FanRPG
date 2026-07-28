@@ -1802,6 +1802,8 @@ export class UIManager {
     const money = state.money || 0;
     let rows = '';
     for (const [id, item] of Object.entries(ITEMS)) {
+      // Phase 18: 钱袋不在常驻商店展示（通过在 items.js 中设置 category: 'misc' 且无 usableInBattle 等方式区分）
+      // 所有 ITEMS 均显示
       const owned = (state.inventory || {})[id] || 0;
       const canBuy = money >= item.price;
       const usableText = item.usableInBattle ? '【战斗中可用】' : '';
@@ -1833,6 +1835,7 @@ export class UIManager {
             document.getElementById('shop-tab-content').innerHTML = this._renderPermanentShopPanel();
             this._bindPermanentShopButtons();
           }
+          this._updateHUD(state);
           this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
         } else {
           this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });

@@ -140,6 +140,34 @@ export const DOMAINS = {
       damagePerTech: 0,
       mpCostPerTick: 0
     }
+  },
+
+  // ====================================================================
+  //  Phase 17: 坐杀博徒 (Hakari's Gambling) — 低门槛赌狗领域
+  // ====================================================================
+  hakariGambling: {
+    name: "坐杀博徒",
+    specialEffect: "hakari_gambling",
+    flavorText: "将一切赌在概率之上——中大奖则逆转战局，未中则继续押注。领域不造成伤害，以自动回复替代。",
+    completeRequirements: {
+      techniqueLevel: 5,
+      barrierLevel: 5,
+      inspiration: 2,
+      cursedEnergyControl: 40
+    },
+    incompleteRequirements: {
+      techniqueLevel: 3,  // Phase 17: 门槛降低 30%
+      barrierLevel: 3,
+      inspiration: 1,
+      cursedEnergyControl: 25
+    },
+    baseStats: {
+      hpPerBarrier: 40,
+      hpPerCEC: 3,
+      intervalBase: 15,
+      damagePerTech: 0,   // 领域攻击力为 0
+      mpCostPerTick: 3
+    }
   }
 };
 
@@ -151,7 +179,7 @@ export const DOMAINS = {
  * 判断领域是完全领域还是不完全领域
  * @param {string} techniqueId — 术式 ID
  * @param {object} characterState — 玩家存档状态
- * @returns {{ canExpand: boolean, isComplete: boolean, reason: string }}
+ * @returns {object}
  */
 export function canExpandDomain(techniqueId, characterState) {
   const domainDef = DOMAINS[techniqueId];
@@ -199,7 +227,7 @@ export function canExpandDomain(techniqueId, characterState) {
  * @param {string} techniqueId
  * @param {object} characterState
  * @param {boolean} isComplete — 是否完全领域
- * @returns {{ hp: number, attackInterval: number, attackDamage: number, mpCostPerTick: number }}
+ * @returns {object}
  */
 export function calculateDomainStats(techniqueId, characterState, isComplete) {
   const domainDef = DOMAINS[techniqueId];

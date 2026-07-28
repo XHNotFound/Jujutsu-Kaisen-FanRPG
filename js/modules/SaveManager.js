@@ -1,4 +1,6 @@
 // js/modules/SaveManager.js — 存档管理器（唯一负责 LocalStorage 读写）
+// Phase 13: 引用 CURSED_TOOLS 用于装备加成计算
+import { CURSED_TOOLS } from '../data/cursed_tools.js';
 
 /**
  * SaveManager 职责：
@@ -62,7 +64,7 @@ export class SaveManager {
   /**
    * 保存当前状态到第一个可用槽位
    * 若全满则返回 needOverwrite = true
-   * @returns {{ success: boolean, slot?: number, needOverwrite?: boolean }}
+   * @returns {object}
    */
   save() {
     if (!this.state) {
@@ -83,7 +85,7 @@ export class SaveManager {
   /**
    * 保存到指定槽位（覆盖）
    * @param {number} slot - 槽位编号 (0-2)
-   * @returns {{ success: boolean, slot?: number }}
+   * @returns {object}
    */
   saveToSlot(slot) {
     if (slot < 0 || slot >= MAX_SLOTS || !this.state) {
@@ -212,7 +214,25 @@ export class SaveManager {
       }
     }
 
+    // Phase 12 fix: 战斗后 HP/MP 从战斗状态回写，确保不自动回满
+    // applyBattleRewards 只处理金币/技能点/灵感/熟练度，HP/MP 由 _showVictoryScreen 前独立回写
+
     // 5. 立即持久化
+    const slot = this._findCurrentSlot();
+    if (slot >= 0) {
+      this.saveToSlot(slot);
+    }
+  }
+
+  /**
+   * Phase 12: 将战斗结束后的 HP/MP 回写到存档状态
+   * @param {number} hp — 战斗后的 HP
+   * @param {number} mp — 战斗后的 MP
+   */
+  applyBattleStatus(hp, mp) {
+    if (!this.state) return;
+    this.state.hp = hp;
+    this.state.mp = mp;
     const slot = this._findCurrentSlot();
     if (slot >= 0) {
       this.saveToSlot(slot);
@@ -223,7 +243,7 @@ export class SaveManager {
    * Phase 4: 尝试升级技能
    * @param {string} skillId
    * @param {object} skillDef — 技能树定义（含 levelUpCosts / levelEffects）
-   * @returns {{ success: boolean, message: string, newLevel?: number }}
+   * @returns {object}
    */
   upgradeSkill(skillId, skillDef) {
     if (!this.state) return { success: false, message: '没有存档数据。' };
@@ -300,6 +320,12 @@ export class SaveManager {
     if (!this.state.relationships) this.state.relationships = {};
     if (!this.state.advanced_skills_unlocked) this.state.advanced_skills_unlocked = [];
     if (this.state.examCooldownDays === undefined) this.state.examCooldownDays = 0;
+    // Phase 13: 新字段默认值
+    if (!this.state.inventory) this.state.inventory = {};
+    if (!this.state.unlockedIntel) this.state.unlockedIntel = {};
+    if (!this.state.equipment) this.state.equipment = { mainHand: null, offHand: null, accessory: null };
+    // Bug #3 fix: 已拥有的咒具列表
+    if (!this.state.ownedCursedTools) this.state.ownedCursedTools = [];
 
     const caps = {
       maxAp: 100, maxStamina: 100, maxResidual: 100,
@@ -375,8 +401,18 @@ export class SaveManager {
 
       // 简单顶层字段: hp, ap, stamina, residual, money, skillPoints
       if (key === 'hp') {
-        const maxHp = this.state.maxHp || 100;
-        this.state.hp = Math.min(maxHp, Math.max(0, (this.state.hp || maxHp) + value));
+        // Phase 13: 回血上限用装备加成后的 effectiveMaxHp
+        const baseCon = (this.state.attributes && this.state.attributes.constitution) || 10;
+        // 计算装备加成
+        let bonusCon = 0;
+        const equip = this.state.equipment || {};
+        for (const toolId of Object.values(equip)) {
+          if (toolId && CURSED_TOOLS[toolId] && CURSED_TOOLS[toolId].statsBonus) {
+            bonusCon += CURSED_TOOLS[toolId].statsBonus.constitution || 0;
+          }
+        }
+        const effMaxHp = this._calcMaxHp(baseCon + bonusCon);
+        this.state.hp = Math.min(effMaxHp, Math.max(0, (this.state.hp || effMaxHp) + value));
       } else if (key === 'stamina') {
         this.state.stamina = Math.max(0, Math.min(caps.maxStamina, (this.state.stamina || 100) + value));
       } else if (key === 'ap') {
@@ -388,8 +424,58 @@ export class SaveManager {
       } else if (key === 'skillPoints') {
         this.state.skillPoints = Math.max(0, (this.state.skillPoints !== undefined ? this.state.skillPoints : 5) + value);
       } else if (key === 'mp') {
-        const maxMp = this.state.maxMp || 100;
-        this.state.mp = Math.min(maxMp, Math.max(0, (this.state.mp || maxMp) + value));
+        // Phase 13: 回魔上限用装备加成后的 effectiveMaxMp
+        const baseCE = (this.state.attributes && this.state.attributes.cursedEnergy) || 10;
+        let bonusCE = 0;
+        const eq = this.state.equipment || {};
+        for (const toolId of Object.values(eq)) {
+          if (toolId && CURSED_TOOLS[toolId] && CURSED_TOOLS[toolId].statsBonus) {
+            bonusCE += CURSED_TOOLS[toolId].statsBonus.cursedEnergy || 0;
+          }
+        }
+        const effMaxMp = this._calcMaxMp(baseCE + bonusCE);
+        this.state.mp = Math.min(effMaxMp, Math.max(0, (this.state.mp || effMaxMp) + value));
+      } else if (key === 'inventory' && typeof value === 'object') {
+        // Phase 13: 道具背包更新（增量合并）
+        if (!this.state.inventory) this.state.inventory = {};
+        for (const [itemId, qty] of Object.entries(value)) {
+          const current = this.state.inventory[itemId] || 0;
+          const newQty = current + qty;
+          if (newQty <= 0) {
+            delete this.state.inventory[itemId];
+          } else {
+            this.state.inventory[itemId] = newQty;
+          }
+        }
+        continue;
+      } else if (key === 'unlockedIntel' && typeof value === 'object') {
+        // Phase 13: 情报数据更新（增量合并）
+        if (!this.state.unlockedIntel) this.state.unlockedIntel = {};
+        for (const [enemyId, levels] of Object.entries(value)) {
+          if (!this.state.unlockedIntel[enemyId]) this.state.unlockedIntel[enemyId] = [];
+          for (const lvl of levels) {
+            if (!this.state.unlockedIntel[enemyId].includes(lvl)) {
+              this.state.unlockedIntel[enemyId].push(lvl);
+            }
+          }
+        }
+        continue;
+      } else if (key === 'equipment' && typeof value === 'object') {
+        // Phase 13: 装备更新（槽位级合并）
+        if (!this.state.equipment) this.state.equipment = { mainHand: null, offHand: null, accessory: null };
+        if (value.mainHand !== undefined) this.state.equipment.mainHand = value.mainHand;
+        if (value.offHand !== undefined) this.state.equipment.offHand = value.offHand;
+        if (value.accessory !== undefined) this.state.equipment.accessory = value.accessory;
+        // Bug #5 fix: 装备变更后重算含装备加成的 maxHp/maxMp 并钳制 hp/mp
+        this._recalcCapsFromEquipment();
+        continue;
+      } else if (key === 'ownedCursedTools_add' && typeof value === 'string') {
+        // Bug #3 fix: 新获得咒具时加入拥有列表
+        if (!this.state.ownedCursedTools) this.state.ownedCursedTools = [];
+        if (!this.state.ownedCursedTools.includes(value)) {
+          this.state.ownedCursedTools.push(value);
+        }
+        continue;
       }
     }
 
@@ -398,6 +484,28 @@ export class SaveManager {
     if (slot >= 0) {
       this.saveToSlot(slot);
     }
+  }
+
+  /**
+   * Bug #5 fix: 装备变更后重算 effective maxHp/maxMp 并钳制 hp/mp
+   */
+  _recalcCapsFromEquipment() {
+    if (!this.state || !this.state.attributes) return;
+    const baseCon = this.state.attributes.constitution || 10;
+    const baseCE  = this.state.attributes.cursedEnergy || 10;
+    let bonusCon = 0;
+    let bonusCE  = 0;
+    const equip = this.state.equipment || {};
+    for (const toolId of Object.values(equip)) {
+      if (toolId && CURSED_TOOLS[toolId] && CURSED_TOOLS[toolId].statsBonus) {
+        bonusCon += CURSED_TOOLS[toolId].statsBonus.constitution || 0;
+        bonusCE  += CURSED_TOOLS[toolId].statsBonus.cursedEnergy || 0;
+      }
+    }
+    this.state.maxHp = this._calcMaxHp(baseCon + bonusCon);
+    this.state.maxMp = this._calcMaxMp(baseCE + bonusCE);
+    this.state.hp = Math.min(this.state.maxHp, this.state.hp || this.state.maxHp);
+    this.state.mp = Math.min(this.state.maxMp, this.state.mp || this.state.maxMp);
   }
 
   /**

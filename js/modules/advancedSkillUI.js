@@ -38,7 +38,9 @@ export class AdvancedSkillUI {
       { id: 'domain', label: '🏛️ 领域展开', icon: '🏛️' },
       { id: 'simple_domain', label: '🗡️ 简易领域', icon: '🗡️' },
       { id: 'falling_blossom', label: '🌸 落花之情', icon: '🌸' },
-      { id: 'hollow_wicker', label: '🏺 弥虚葛笼', icon: '🏺' }
+      { id: 'hollow_wicker', label: '🏺 弥虚葛笼', icon: '🏺' },
+      // Phase 12: RCT tab always visible (like other advanced skills)
+      { id: 'rct', label: '💚 反转术式', icon: '💚' }
     ];
 
     // 选项卡栏
@@ -73,6 +75,8 @@ export class AdvancedSkillUI {
         return this._renderAdvancedSkillTab('falling_blossom', st);
       case 'hollow_wicker':
         return this._renderAdvancedSkillTab('hollow_wicker', st);
+      case 'rct':
+        return this._renderRCTTab(st);
       default:
         return '<p>未知选项卡。</p>';
     }
@@ -250,6 +254,76 @@ export class AdvancedSkillUI {
       // 解锁按钮
       if (check.unlocked) {
         html += `<button class="btn btn-primary advanced-skill-unlock-btn" data-skill="${skillId}">🔓 解锁${def.name}</button>`;
+      }
+
+      html += '</div>';
+    }
+
+    html += '</div>';
+    return html;
+  }
+
+  /**
+   * Phase 12: 反转术式 (RCT) 选项卡
+   */
+  _renderRCTTab(st) {
+    const def = ADVANCED_SKILLS['rct'];
+    if (!def) return '<p>反转术式配置未找到。</p>';
+
+    const check = checkAdvancedSkillUnlocked('rct', st);
+    const attrs = st.attributes || {};
+    const unlockedPrereqs = st.advanced_skills_unlocked || [];
+
+    let html = '<div class="advanced-skill-header">';
+    html += `<h3>${def.name}</h3>`;
+    html += `<p class="advanced-skill-flavor">${def.flavorText || ''}</p>`;
+    html += `<p class="advanced-skill-desc">${def.description}</p>`;
+
+    // 解锁状态
+    if (unlockedPrereqs.includes('rct')) {
+      html += '<div class="skill-unlock-badge unlocked">✅ 已解锁</div>';
+      html += '<div class="skill-stats-row">';
+      // 显示当前效率
+      const cee = attrs.cursedEnergyEfficiency || 0;
+      let eff;
+      if (cee < 20) eff = 0.5;
+      else if (cee <= 40) eff = 0.5 + (cee - 20) * 0.01;
+      else if (cee <= 60) eff = 0.7 + (cee - 40) * 0.015;
+      else eff = 1.0 + (cee - 60) * 0.02;
+      html += `<span>回复效率: ${eff.toFixed(3)}</span>`;
+      html += '<span>冷却: 60 AV</span>';
+      html += '<span>消耗: 自由选择 (1 ~ MP)</span>';
+      html += '</div>';
+    } else {
+      html += '<div class="skill-unlock-badge locked">🔒 未解锁</div>';
+      if (check.reason) {
+        html += `<p class="skill-lock-reason">💡 ${check.reason}</p>`;
+      }
+      html += '<div class="skill-requirements">';
+      html += '<h4>解锁条件：</h4>';
+
+      const req = def.requirements;
+
+      // 前置请教
+      if (req.prerequisite) {
+        const hasPrereq = unlockedPrereqs.includes(req.prerequisite);
+        html += `<div class="req-row"><span>前置基础：「${req.prerequisite}」</span><span>${hasPrereq ? '✅' : '❌ (向乙骨忧太/五条悟/家入硝子请教获得)'}</span></div>`;
+      }
+
+      // 属性条件
+      if (req.cursed_energy) {
+        html += `<div class="req-row"><span>咒力总量</span><div class="req-bar"><div class="req-fill" style="width:${this._pctAttr(st, 'cursedEnergy', req.cursed_energy)}%"></div></div><span>${attrs.cursedEnergy || 0}/${req.cursed_energy}</span></div>`;
+      }
+      if (req.cursed_energy_efficiency) {
+        html += `<div class="req-row"><span>咒力效率</span><div class="req-bar"><div class="req-fill" style="width:${this._pctAttr(st, 'cursedEnergyEfficiency', req.cursed_energy_efficiency)}%"></div></div><span>${attrs.cursedEnergyEfficiency || 0}/${req.cursed_energy_efficiency}</span></div>`;
+      }
+      if (req.inspiration) {
+        html += `<div class="req-row"><span>灵感</span><div class="req-bar"><div class="req-fill" style="width:${this._pctRes(st, 'inspiration', req.inspiration)}%"></div></div><span>${st.inspiration || 0}/${req.inspiration}</span></div>`;
+      }
+
+      // 解锁按钮
+      if (check.unlocked) {
+        html += `<button class="btn btn-primary advanced-skill-unlock-btn" data-skill="rct">🔓 解锁${def.name}</button>`;
       }
 
       html += '</div>';

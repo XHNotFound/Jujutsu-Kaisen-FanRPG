@@ -4,6 +4,47 @@
 
 import { SKILL_TREES, BASE_SKILLS, getSkillLevelData, canUnlockSkill, getUnlockableSkills } from '../data/skills.js';
 
+/**
+ * Phase 18: 按 5 类技能框架生成效果描述文本
+ */
+const CATEGORY_LABELS = {
+  martial: '体术技',
+  cursed_martial: '咒术体术技',
+  cursed_attack: '咒术技',
+  cursed_buff: '咒术强化技',
+  cursed_control: '咒术控制技',
+  cursed_summon: '咒术召唤技'
+};
+
+function _skillEffectText(skill, effect) {
+  const cat = skill.category || '';
+  const parts = [];
+  parts.push(CATEGORY_LABELS[cat] || cat);
+
+  if (['martial', 'cursed_martial', 'cursed_attack'].includes(cat) && (effect.damageMultiplier || 0) > 0) {
+    parts.push(`伤害 ×${effect.damageMultiplier}`);
+  }
+  if (cat === 'cursed_buff') {
+    if (skill.buffEffect) {
+      parts.push(skill.buffEffect.type === 'damage_reduction' ? `减伤${Math.round(skill.buffEffect.value*100)}%` :
+        skill.buffEffect.type === 'speed_boost' ? `加速${Math.round(skill.buffEffect.value*100)}%` :
+        skill.buffEffect.type === 'attack_boost' ? `攻击+${Math.round(skill.buffEffect.value*100)}%` :
+        skill.buffEffect.type === 'steel_ball_stack' ? `叠层每层+${Math.round(skill.buffEffect.value*100)}%` : '');
+    }
+  }
+  if (cat === 'cursed_control') {
+    if (skill.debuffEffect) {
+      parts.push(`减速${Math.round(skill.debuffEffect.value*100)}%`);
+    }
+  }
+  parts.push(`MP ${effect.cost !== undefined ? effect.cost : skill.cost}`);
+  parts.push(`咏唱 ${effect.castTime !== undefined ? effect.castTime : skill.castTime}帧`);
+  parts.push(`补偿 ${effect.recoverySpeed !== undefined ? effect.recoverySpeed : skill.baseRecoverySpeed}`);
+  if (effect.bonus) parts.push(effect.bonus);
+
+  return ' (' + parts.join(' | ') + ')';
+}
+
 export class SkillTreeUI {
   /**
    * @param {import('./SaveManager.js').SaveManager} saveManager
@@ -84,7 +125,7 @@ export class SkillTreeUI {
         : '';
 
       const effectText = effect
-        ? ` (伤害 x${effect.damageMultiplier !== undefined ? effect.damageMultiplier : 1.0}, MP ${effect.cost !== undefined ? effect.cost : skill.cost}, 咏唱 ${effect.castTime !== undefined ? effect.castTime : skill.castTime}帧, 补偿 ${effect.recoverySpeed !== undefined ? effect.recoverySpeed : skill.baseRecoverySpeed}/tick)`
+        ? _skillEffectText(skill, effect)
         : '';
 
       const isLockedClass = (!isUnlocked && !canUnlockSkill(skill.id, skillLevels, skillPoints, attributes).can) ? 'skilltree-locked' : '';

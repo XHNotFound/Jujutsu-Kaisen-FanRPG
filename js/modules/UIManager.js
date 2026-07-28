@@ -5,11 +5,14 @@ import { BattleUI } from './BattleUI.js';
 import { SkillTreeUI } from './SkillTreeUI.js';
 import { HubSystem } from './HubSystem.js';
 import { AdvancedSkillUI } from './advancedSkillUI.js';
+import { ShopSystem } from './shopSystem.js';
 import { NPCS } from '../data/npcs.js';
 import { QUESTS } from '../data/quests.js';
 import { DOMAINS } from '../data/domains.js';
 import { getNextExam } from '../data/exams.js';
 import { checkAdvancedSkillUnlocked } from '../data/advanced_skills.js';
+import { ITEMS } from '../data/items.js';
+import { CURSED_TOOLS } from '../data/cursed_tools.js';
 
 /**
  * UIManager 职责：
@@ -49,6 +52,9 @@ export class UIManager {
     // Phase 11: AdvancedSkillUI 初始化
     /** @type {AdvancedSkillUI} */
     this._advancedSkillUI = new AdvancedSkillUI(this.saveManager, this);
+    // Phase 18: ShopSystem 初始化
+    /** @type {ShopSystem} */
+    this._shopSystem = new ShopSystem();
   }
 
   // ================================================================
@@ -561,7 +567,8 @@ export class UIManager {
 
     state.hp = (state.hp !== undefined && state.hp !== null) ? state.hp : (state.maxHp || 100);
     state.mp = (state.mp !== undefined && state.mp !== null) ? state.mp : (state.maxMp || 100);
-    state.skillPoints = (state.skillPoints !== undefined && state.skillPoints !== null) ? state.skillPoints : 5;
+    // Phase 12 fix: 不再无条件回满 HP/MP
+    // 战斗后 HP/MP 已由 applyBattleStatus 回写，直接使用 state 中的值
 
     this._updateHUD(state);
     this._bindMainMenuEvents();
@@ -574,15 +581,50 @@ export class UIManager {
     document.getElementById('hud-name').textContent = state.characterName || '--';
     document.getElementById('hud-rank').textContent = state.rank || '--';
 
-    // HP 条
-    const hpPct = Math.max(0, (state.hp / state.maxHp) * 100);
-    document.getElementById('hud-hp-bar').style.width = hpPct + '%';
-    document.getElementById('hud-hp-text').textContent = `${state.hp} / ${state.maxHp}`;
+    // Phase 14: 全局游戏天数显示
+    const gameDay = state.gameDay || 1;
+    const dayEl = document.getElementById('hud-game-day');
+    if (dayEl) dayEl.textContent = `第 ${gameDay} 天`;
 
-    // MP 条
-    const mpPct = Math.max(0, (state.mp / state.maxMp) * 100);
+    // Phase 13 fix: 计算含装备加成的最终属性，用于 HUD 显示
+    const finalStats = this._hubSystem.calculateFinalStats(state);
+
+    // baseMaxHp/Mp = 无装备时的基础上限（从基础属性重新计算）
+    const baseCon = state.attributes?.constitution || 10;
+    const baseCE  = state.attributes?.cursedEnergy || 10;
+    const baseMaxHp = this.saveManager._calcMaxHp
+      ? this.saveManager._calcMaxHp(baseCon)
+      : (state.maxHp || 100);
+    const baseMaxMp = this.saveManager._calcMaxMp
+      ? this.saveManager._calcMaxMp(baseCE)
+      : (state.maxMp || 100);
+
+    // effectiveMaxHp/Mp = 含装备加成后的上限
+    const equipmentCon = finalStats.constitution || baseCon;
+    const equipmentCE  = finalStats.cursedEnergy || baseCE;
+    const effectiveMaxHp = this.saveManager._calcMaxHp
+      ? this.saveManager._calcMaxHp(equipmentCon)
+      : baseMaxHp;
+    const effectiveMaxMp = this.saveManager._calcMaxMp
+      ? this.saveManager._calcMaxMp(equipmentCE)
+      : baseMaxMp;
+
+    const hpBonus = effectiveMaxHp - baseMaxHp;
+    const mpBonus = effectiveMaxMp - baseMaxMp;
+    const hasHpBonus = hpBonus !== 0;
+    const hasMpBonus = mpBonus !== 0;
+
+    // HP 条 — 含装备的临时上限
+    const hpPct = Math.max(0, (state.hp / effectiveMaxHp) * 100);
+    document.getElementById('hud-hp-bar').style.width = hpPct + '%';
+    document.getElementById('hud-hp-text').innerHTML =
+      `${state.hp} / ${effectiveMaxHp}` + (hasHpBonus ? ` <span style="color:#22c55e;font-size:0.75rem;">(+${hpBonus})</span>` : '');
+
+    // MP 条 — 含装备的临时上限
+    const mpPct = Math.max(0, (state.mp / effectiveMaxMp) * 100);
     document.getElementById('hud-mp-bar').style.width = mpPct + '%';
-    document.getElementById('hud-mp-text').textContent = `${state.mp} / ${state.maxMp}`;
+    document.getElementById('hud-mp-text').innerHTML =
+      `${state.mp} / ${effectiveMaxMp}` + (hasMpBonus ? ` <span style="color:#22c55e;font-size:0.75rem;">(+${mpBonus})</span>` : '');
 
     // 资源
     document.getElementById('hud-money').textContent = state.money || 0;
@@ -612,7 +654,7 @@ export class UIManager {
           return;
         }
 
-        // Phase 5: 修炼/请教/任务 → 调用 HubSystem
+        // Phase 5: 修炼/请教/任务/商店 → 调用对应方法
         if (action === 'train') {
           this._showTrainPanel();
           return;
@@ -623,6 +665,10 @@ export class UIManager {
         }
         if (action === 'quest') {
           this._showQuestPanel();
+          return;
+        }
+        if (action === 'shop') {
+          this._showShopMainPanel();
           return;
         }
 
@@ -648,15 +694,9 @@ export class UIManager {
       this._handleRest();
     };
 
-    // 存档
-    document.getElementById('btn-save').onclick = () => {
-      this._handleSave();
-    };
-
-    // 读档
-    document.getElementById('btn-load').onclick = () => {
-      const slots = this.saveManager.getAllSlots();
-      this.renderLoadScreen(slots);
+    // Phase 15: 存档管理面板（整合 存档/读档/导出/导入）
+    document.getElementById('btn-save-manager').onclick = () => {
+      this._showSaveManagerPanel();
     };
 
     // 返回标题
@@ -669,6 +709,21 @@ export class UIManager {
         onCancel: () => this.hideModal()
       });
     };
+
+    // Phase 13: 道具背包按钮
+    document.getElementById('btn-items').onclick = () => {
+      this._showInventoryPanel();
+    };
+
+    // Phase 13: 装备按钮
+    document.getElementById('btn-equipment').onclick = () => {
+      this._showEquipmentPanel();
+    };
+
+    // Phase 13: 图鉴按钮
+    document.getElementById('btn-bestiary').onclick = () => {
+      this._showBestiaryPanel();
+    };
   }
 
   /**
@@ -678,10 +733,11 @@ export class UIManager {
     if (!this._battleUI) {
       this._battleUI = new BattleUI(this.pyodideLoader, this);
     }
-    // Phase 11: 确保非考核战斗不传入 forced enemy
+    // Phase 18 fix: 确保非考核战斗不传入 forced enemy 及不残留 examQuestId
     const state = this.saveManager.getState();
-    if (state && state._forcedEnemyId) {
-      delete state._forcedEnemyId;
+    if (state) {
+      if (state._forcedEnemyId) delete state._forcedEnemyId;
+      if (state._examQuestId) delete state._examQuestId;
     }
     await this._battleUI.start();
   }
@@ -825,20 +881,20 @@ export class UIManager {
         learnBtn.onclick = () => {
           const tier = learnBtn.dataset.tier;
           const inspCost = parseInt(learnBtn.dataset.inspcost) || 0;
-          const st = this.saveManager.getState();
+          const domainState = this.saveManager.getState();
 
           // 检查灵感是否足够
-          if (inspCost > 0 && (st.inspiration || 0) < inspCost) {
-            this.showModal(`灵感不足！需要 ${inspCost} 点灵感，当前 ${st.inspiration || 0}。`, { confirmOnly: true, onConfirm: () => this.hideModal() });
+          if (inspCost > 0 && (domainState.inspiration || 0) < inspCost) {
+            this.showModal(`灵感不足！需要 ${inspCost} 点灵感，当前 ${domainState.inspiration || 0}。`, { confirmOnly: true, onConfirm: () => this.hideModal() });
             return;
           }
 
-          st.domainUnlocked = techId;
-          if (!st.domainLearnedTiers) st.domainLearnedTiers = {};
-          st.domainLearnedTiers[techId] = tier || 'incomplete';
+          domainState.domainUnlocked = techId;
+          if (!domainState.domainLearnedTiers) domainState.domainLearnedTiers = {};
+          domainState.domainLearnedTiers[techId] = tier || 'incomplete';
           // 扣除灵感
-          if (inspCost > 0) st.inspiration = Math.max(0, (st.inspiration || 0) - inspCost);
-          this.saveManager.setState(st);
+          if (inspCost > 0) domainState.inspiration = Math.max(0, (domainState.inspiration || 0) - inspCost);
+          this.saveManager.setState(domainState);
           this.saveManager.saveToSlot(this.saveManager._findCurrentSlot() || 0);
           this.showModal(
             tier === 'complete' ? '你学会了完全领域展开「' + domainDef.name + '」！' : '你学会了不完全领域展开「' + domainDef.name + '」！（HP/伤害 ×0.6）',
@@ -853,27 +909,19 @@ export class UIManager {
    * Phase 11: 显示高级技巧面板（替换旧领域的单独弹窗入口）
    */
   _showAdvancedSkills() {
-    // 使用弹窗展示选项卡式高级技巧面板
+    // Phase 12 fix: 确保 AdvancedSkillUI 使用最新的模块实例
+    // 关闭旧弹窗 → 创建新 modal → 渲染面板
+    this.hideModal();
     const containerId = 'advanced-skill-modal-' + Date.now();
-    const html = `<div id="${containerId}" class="advanced-skill-modal"></div>`;
+    const html = `<div id="${containerId}" class="advanced-skill-modal"><div id="advanced-skill-panel"></div></div>`;
     this.showModal(html, { confirmOnly: true, useHTML: true, onConfirm: () => this.hideModal() });
 
-    // AdvancedSkillUI 通过 id 渲染到弹窗中
+    // 直接调用 render（AdvancedSkillUI 会把 tabs + content 写入 #advanced-skill-panel）
     setTimeout(() => {
-      const target = document.getElementById('advanced-skill-panel');
-      if (!target) {
-        // 创建一个容器在弹窗内部
-        const modal = document.getElementById(containerId);
-        if (modal) {
-          const panel = document.createElement('div');
-          panel.id = 'advanced-skill-panel';
-          modal.appendChild(panel);
-          this._advancedSkillUI.render();
-        }
-      } else {
+      if (this._advancedSkillUI && typeof this._advancedSkillUI.render === 'function') {
         this._advancedSkillUI.render();
       }
-    }, 100);
+    }, 50);
   }
 
   /**
@@ -1247,6 +1295,200 @@ export class UIManager {
     }
   }
 
+  /**
+   * Phase 15: 存档管理面板 — 整合存档/读档/导出/导入四个功能
+   */
+  _showSaveManagerPanel() {
+    const state = this.saveManager.getState();
+    const hasState = !!state;
+
+    const html = `
+      <div class="save-manager-panel">
+        <h3>💾 存档管理</h3>
+        <p style="color:var(--color-text-dim);font-size:0.85rem;margin-bottom:1rem;">
+          管理你的游戏存档。存档保存在浏览器的本地存储（localStorage）中，导出文件可备份到本地防止丢失。
+        </p>
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <button id="btn-sm-save" class="btn btn-primary" ${hasState ? '' : 'disabled'}>
+            📥 存档 — 将当前进度保存到本地槽位
+          </button>
+          <button id="btn-sm-load" class="btn btn-primary">
+            📂 读档 — 从本地槽位加载已有存档
+          </button>
+          <button id="btn-sm-export" class="btn btn-primary" ${hasState ? '' : 'disabled'}>
+            📤 导出 — 下载存档文件到本地备份
+          </button>
+          <button id="btn-sm-import" class="btn btn-primary">
+            📥 导入 — 从本地文件恢复存档
+          </button>
+        </div>
+      </div>
+    `;
+
+    this.showModal(html, { confirmOnly: false, useHTML: true });
+
+    // 绑定子按钮事件
+    setTimeout(() => {
+      const btnSave = document.getElementById('btn-sm-save');
+      const btnLoad = document.getElementById('btn-sm-load');
+      const btnExport = document.getElementById('btn-sm-export');
+      const btnImport = document.getElementById('btn-sm-import');
+
+      if (btnSave) {
+        btnSave.onclick = () => {
+          this.hideModal();
+          this._handleSave();
+        };
+      }
+      if (btnLoad) {
+        btnLoad.onclick = () => {
+          this.hideModal();
+          const slots = this.saveManager.getAllSlots();
+          this.renderLoadScreen(slots);
+        };
+      }
+      if (btnExport) {
+        btnExport.onclick = () => {
+          this.hideModal();
+          this._handleExport();
+        };
+      }
+      if (btnImport) {
+        btnImport.onclick = () => {
+          this.hideModal();
+          this._handleImport();
+        };
+      }
+    }, 50);
+  }
+
+  /**
+   * Phase 15: 导出存档 — 将当前激活槽位的数据导出为 JSON 文件下载
+   */
+  _handleExport() {
+    const state = this.saveManager.getState();
+    if (!state) {
+      this.showModal('没有可导出的存档数据。请先存档或读档。', {
+        confirmOnly: true,
+        onConfirm: () => this.hideModal()
+      });
+      return;
+    }
+
+    const slot = this.saveManager._findCurrentSlot();
+    const slotIndex = slot >= 0 ? slot : 0;
+
+    const dataStr = JSON.stringify(state, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const exportFileName = 'Jujutsu_Save_Slot' + (slotIndex + 1) + '_' + dateStr + '.json';
+
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileName);
+    linkElement.click();
+    linkElement.remove();
+
+    this.showModal('存档已导出为文件：\n' + exportFileName, {
+      confirmOnly: true,
+      onConfirm: () => this.hideModal()
+    });
+  }
+
+  /**
+   * Phase 15: 导入存档 — 弹出文件选择器，读取 JSON 并写入 localStorage
+   * 使用 FileReader 读取本地文件（不涉及网络请求）
+   */
+  _handleImport() {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.json';
+    fileInput.style.display = 'none';
+    document.body.appendChild(fileInput);
+
+    fileInput.onchange = () => {
+      const file = fileInput.files[0];
+      fileInput.remove();
+
+      if (!file) return;
+
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        try {
+          const raw = reader.result;
+          const data = JSON.parse(raw);
+
+          // 校验数据结构
+          if (!data || typeof data !== 'object') {
+            throw new Error('文件格式无效：不是有效的 JSON 对象。');
+          }
+          if (!data.characterName || !data.attributes || !data.rank) {
+            throw new Error('存档数据不完整：缺少角色名、属性或评定。');
+          }
+
+          // 找到可用的槽位写入（优先空槽）
+          const slots = this.saveManager.getAllSlots();
+          const emptySlot = slots.find(s => s.data === null);
+          const targetSlot = emptySlot ? emptySlot.slot : 0;
+
+          // 生成新的 saveId 和时间戳
+          data.saveId = (this.saveManager.saveCounter || 0) + 1;
+          data.savedAt = new Date().toISOString();
+
+          // 写入 localStorage
+          localStorage.setItem('jjk_save_' + targetSlot, JSON.stringify(data));
+
+          // 更新 SaveManager 内部状态
+          this.saveManager.state = data;
+          this.saveManager.saveCounter = (this.saveManager.saveCounter || 0) + 1;
+          this.saveManager._saveCounter();
+
+          // 刷新游戏界面
+          this.renderMainScreen();
+          this.hideModal();
+
+          this.showModal(
+            '存档导入成功！\n角色「' + data.characterName + '」已恢复到槽位 ' + (targetSlot + 1) + '。',
+            { confirmOnly: true, onConfirm: () => this.hideModal() }
+          );
+        } catch (err) {
+          this.hideModal();
+          this.showModal(
+            '导入失败：' + (err.message || '无法解析存档文件。'),
+            { confirmOnly: true, onConfirm: () => this.hideModal() }
+          );
+        }
+      };
+
+      reader.onerror = () => {
+        fileInput.remove();
+        this.showModal(
+          '读取文件失败，请重试。',
+          { confirmOnly: true, onConfirm: () => this.hideModal() }
+        );
+      };
+
+      reader.readAsText(file);
+    };
+
+    // 取消选择时清理
+    fileInput.oncancel = () => {
+      fileInput.remove();
+    };
+
+    // 触发文件选择
+    fileInput.click();
+
+    // 兜底清理（用户取消时 oncancel 不总是触发）
+    setTimeout(() => {
+      if (fileInput.parentNode && !fileInput.files.length) {
+        fileInput.remove();
+      }
+    }, 30000);
+  }
+
   // ================================================================
   //  读档界面
   // ================================================================
@@ -1493,5 +1735,642 @@ export class UIManager {
         { confirmOnly: true, onConfirm: () => this.hideModal() }
       );
     };
+  }
+
+  // ================================================================
+  //  Phase 18: 商店主面板（每日商店 + 黑市入口）
+  // ================================================================
+
+  _showShopMainPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    // 从存档恢复商店状态
+    this._shopSystem.restoreFromSave(state);
+
+    const gameDay = state.gameDay || 1;
+    const gameWeek = Math.floor(gameDay / 7);
+    const bmResult = this._shopSystem.refreshBlackMarket(gameWeek, state);
+    const money = state.money || 0;
+
+    const html = `
+      <div class="train-panel">
+        <h3>🏪 商店</h3>
+        <p class="train-info">💰 金币: ${money} | 📅 第 ${gameDay} 天 (第 ${gameWeek} 周)</p>
+        <div class="shop-tabs">
+          <button id="btn-shop-permanent" class="btn shop-tab shop-tab-active">📦 常驻</button>
+          <button id="btn-shop-daily" class="btn shop-tab">🏪 每日</button>
+          <button id="btn-shop-black" class="btn shop-tab" ${bmResult.unlocked ? '' : 'disabled'}>🌑 黑市 ${!bmResult.unlocked ? '(未解锁)' : ''}</button>
+        </div>
+        <div id="shop-tab-content" class="shop-tab-content">
+          ${this._renderPermanentShopPanel()}
+        </div>
+        ${!bmResult.unlocked ? '<p style="color:var(--color-text-dim);margin-top:0.5rem;font-size:0.75rem;">🌑 黑市解锁条件：与秤金次的人情达到 10 + 解锁「地下渠道」</p>' : ''}
+      </div>
+    `;
+    this.showModal(html, { confirmOnly: false, useHTML: true });
+
+    setTimeout(() => {
+      document.getElementById('btn-shop-permanent')?.addEventListener('click', () => this._switchShopTab('permanent'));
+      document.getElementById('btn-shop-daily')?.addEventListener('click', () => this._switchShopTab('daily'));
+      document.getElementById('btn-shop-black')?.addEventListener('click', () => this._switchShopTab('black'));
+      // Re-bind permanent item purchase buttons
+      this._bindPermanentShopButtons();
+    }, 50);
+  }
+
+  _switchShopTab(tab) {
+    const content = document.getElementById('shop-tab-content');
+    if (!content) return;
+    const tabs = document.querySelectorAll('.shop-tab');
+    tabs.forEach(t => t.classList.remove('shop-tab-active'));
+    const activeBtn = document.getElementById('btn-shop-' + tab);
+    if (activeBtn) activeBtn.classList.add('shop-tab-active');
+
+    if (tab === 'permanent') content.innerHTML = this._renderPermanentShopPanel();
+    else if (tab === 'daily') content.innerHTML = this._renderDailyShopContent();
+    else if (tab === 'black') content.innerHTML = this._renderBlackMarketContent();
+
+    if (tab === 'permanent') this._bindPermanentShopButtons();
+    else if (tab === 'daily') this._bindDailyShopButtons();
+    else if (tab === 'black') this._bindBlackMarketButtons();
+  }
+
+  _renderPermanentShopPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return '';
+    const money = state.money || 0;
+    let rows = '';
+    for (const [id, item] of Object.entries(ITEMS)) {
+      const owned = (state.inventory || {})[id] || 0;
+      const canBuy = money >= item.price;
+      const usableText = item.usableInBattle ? '【战斗中可用】' : '';
+      rows += `
+        <div class="train-row">
+          <span class="train-name">${item.name}</span>
+          <span class="train-value">${item.description} (💰${item.price}) | 持有: ${owned} ${usableText}</span>
+          <button class="btn btn-primary btn-shop-perm-buy" data-item="${id}" ${canBuy ? '' : 'disabled'}>购买</button>
+        </div>
+      `;
+    }
+    return `
+      <h4 style="margin:0.3rem 0;">📦 常驻道具</h4>
+      <p class="train-info">💰 金币: ${money}</p>
+      <div class="train-grid">${rows}</div>
+    `;
+  }
+
+  _bindPermanentShopButtons() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+    document.querySelectorAll('.btn-shop-perm-buy').forEach(btn => {
+      btn.onclick = () => {
+        const result = this._hubSystem.buyItem(state, btn.dataset.item);
+        if (result.success && result.updatePayload) {
+          this.saveManager.applyGrowthUpdate(result.updatePayload);
+          this._updateHUD(state);
+          if (document.getElementById('shop-tab-content')) {
+            document.getElementById('shop-tab-content').innerHTML = this._renderPermanentShopPanel();
+            this._bindPermanentShopButtons();
+          }
+          this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+        } else {
+          this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+        }
+      };
+    });
+  }
+
+  _renderDailyShopContent() {
+    const state = this.saveManager.getState();
+    if (!state) return '';
+    const gameDay = state.gameDay || 1;
+    const slots = this._shopSystem.refreshDailyShop(gameDay);
+    const money = state.money || 0;
+    let rows = '';
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      const canBuy = !s.purchased && money >= s.price;
+      const dText = s.discount > 0 ? ' 🔥' + Math.round(s.discount * 100) + '%折扣' : '';
+      const purchasedText = s.purchased ? ' <span style="color:#ef4444;">【已售罄】</span>' : '';
+      const icon = s.type === 'tool' ? '⚔️' : '📦';
+      rows += `
+        <div class="train-row">
+          <span class="train-name">${icon} ${s.name}${dText}</span>
+          <span class="train-value">
+            ${s.type === 'tool' ? '[咒具] ' : '[道具] '}
+            💰${s.price} ${s.discount > 0 ? '<s style="color:var(--color-text-dim);font-size:0.7rem;">' + s.basePrice + '</s>' : ''}
+            ${purchasedText}
+          </span>
+          <button class="btn btn-primary btn-daily-buy" data-slot="${i}" ${canBuy ? '' : 'disabled'}>购买</button>
+        </div>
+      `;
+    }
+    return `
+      <h4 style="margin:0.3rem 0;">🏪 每日商店（每样限购1件 · 每日随机折扣）</h4>
+      <p class="train-info">💰 金币: ${money}</p>
+      <div class="train-grid">${rows}</div>
+    `;
+  }
+
+  _bindDailyShopButtons() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+    document.querySelectorAll('.btn-daily-buy').forEach(btn => {
+      btn.onclick = () => {
+        const result = this._shopSystem.buyDailyShopSlot(parseInt(btn.dataset.slot), state);
+        if (result.success && result.updatePayload) {
+          this.saveManager.applyGrowthUpdate(result.updatePayload);
+          this._updateHUD(state);
+          const saveData = this._shopSystem.toSaveData();
+          for (const [k, v] of Object.entries(saveData)) state[k] = v;
+          if (document.getElementById('shop-tab-content')) {
+            document.getElementById('shop-tab-content').innerHTML = this._renderDailyShopContent();
+            this._bindDailyShopButtons();
+          }
+          this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+        } else {
+          this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+        }
+      };
+    });
+  }
+
+  _renderBlackMarketContent() {
+    const state = this.saveManager.getState();
+    if (!state) return '';
+    const gameDay = state.gameDay || 1;
+    const gameWeek = Math.floor(gameDay / 7);
+    const bmResult = this._shopSystem.refreshBlackMarket(gameWeek, state);
+    if (!bmResult.unlocked) return '<p>🌑 黑市尚未解锁。需要：与秤金次的人情达到 10 + 解锁「地下渠道」。</p>';
+    const slots = bmResult.slots;
+    const money = state.money || 0;
+    let rows = '';
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      const canBuy = !s.purchased && money >= s.price;
+      const purchasedText = s.purchased ? ' <span style="color:#ef4444;">【已售罄】</span>' : '';
+      rows += `
+        <div class="train-row">
+          <span class="train-name">⚔️ ${s.name}</span>
+          <span class="train-value">[咒具] 💰${s.price} 原价${s.basePrice}${purchasedText}</span>
+          <button class="btn btn-primary btn-black-buy" data-slot="${i}" ${canBuy ? '' : 'disabled'}>购买</button>
+        </div>
+      `;
+    }
+    return `
+      <h4 style="margin:0.3rem 0;">🌑 黑市（每周刷新 · 货不退还 · 真假自负）</h4>
+      <p class="train-info">💰 金币: ${money} | 📅 第 ${gameWeek} 周</p>
+      <p style="color:#f59e0b;font-size:0.7rem;margin:0 0 0.5rem;">⚠️ 此处商品可能为假货（约15%概率）——出手不退不换！</p>
+      <div class="train-grid">${rows}</div>
+    `;
+  }
+
+  _bindBlackMarketButtons() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+    document.querySelectorAll('.btn-black-buy').forEach(btn => {
+      btn.onclick = () => {
+        const result = this._shopSystem.buyBlackMarketSlot(parseInt(btn.dataset.slot), state);
+        if (result.success && result.updatePayload) {
+          this.saveManager.applyGrowthUpdate(result.updatePayload);
+          this._updateHUD(state);
+          const saveData = this._shopSystem.toSaveData();
+          for (const [k, v] of Object.entries(saveData)) state[k] = v;
+          if (document.getElementById('shop-tab-content')) {
+            document.getElementById('shop-tab-content').innerHTML = this._renderBlackMarketContent();
+            this._bindBlackMarketButtons();
+          }
+          this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+        } else {
+          this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+        }
+      };
+    });
+  }
+
+  _showDailyShopPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    const gameDay = state.gameDay || 1;
+    const slots = this._shopSystem.refreshDailyShop(gameDay);
+    const money = state.money || 0;
+
+    let rows = '';
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      const canBuy = !s.purchased && money >= s.price;
+      const dText = s.discount > 0 ? ` 🔥${Math.round(s.discount*100)}%折扣` : '';
+      const purchasedText = s.purchased ? ' <span style="color:#ef4444;">【已售罄】</span>' : '';
+      const icon = s.type === 'tool' ? '⚔️' : '📦';
+      rows += `
+        <div class="train-row">
+          <span class="train-name">${icon} ${s.name}${dText}</span>
+          <span class="train-value">
+            ${s.type === 'tool' ? '[咒具] ' : '[道具] '}
+            💰${s.price} ${s.discount > 0 ? `<s style="color:var(--color-text-dim);font-size:0.7rem;">${s.basePrice}</s>` : ''}
+            ${purchasedText}
+          </span>
+          <button class="btn btn-primary btn-daily-buy" data-slot="${i}" ${canBuy ? '' : 'disabled'}>购买</button>
+        </div>
+      `;
+    }
+
+    const html = `
+      <div class="train-panel">
+        <h3>🏪 每日商店（每样限购1件 · 每日刷新）</h3>
+        <p class="train-info">💰 金币: ${money}</p>
+        <div class="train-grid">${rows}</div>
+        <button id="btn-back-shop" class="btn btn-system" style="margin-top:0.5rem;">← 返回商店</button>
+      </div>
+    `;
+    this.showModal(html, { confirmOnly: false, useHTML: true });
+
+    setTimeout(() => {
+      document.getElementById('btn-back-shop')?.addEventListener('click', () => this._showShopMainPanel());
+      document.querySelectorAll('.btn-daily-buy').forEach(btn => {
+        btn.onclick = () => {
+          const result = this._shopSystem.buyDailyShopSlot(parseInt(btn.dataset.slot), state);
+          if (result.success && result.updatePayload) {
+            this.saveManager.applyGrowthUpdate(result.updatePayload);
+            this._updateHUD(state);
+            const saveData = this._shopSystem.toSaveData();
+            for (const [k, v] of Object.entries(saveData)) state[k] = v;
+            this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showDailyShopPanel(); } });
+          } else {
+            this.showModal(result.log, { confirmOnly: true, onConfirm: () => this._showDailyShopPanel() });
+          }
+        };
+      });
+    }, 50);
+  }
+
+  _showBlackMarketPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    const gameDay = state.gameDay || 1;
+    const gameWeek = Math.floor(gameDay / 7);
+    const bmResult = this._shopSystem.refreshBlackMarket(gameWeek, state);
+
+    if (!bmResult.unlocked) {
+      this.showModal('🌑 黑市尚未解锁。需要：与秤金次的人情达到 10 + 解锁「地下渠道」。', { confirmOnly: true, onConfirm: () => this._showShopMainPanel() });
+      return;
+    }
+
+    const slots = bmResult.slots;
+    const money = state.money || 0;
+
+    let rows = '';
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      const canBuy = !s.purchased && money >= s.price;
+      const purchasedText = s.purchased ? ' <span style="color:#ef4444;">【已售罄】</span>' : '';
+      rows += `
+        <div class="train-row">
+          <span class="train-name">⚔️ ${s.name}</span>
+          <span class="train-value">
+            [咒具] 💰${s.price} 原价${s.basePrice}
+            ${purchasedText}
+          </span>
+          <button class="btn btn-primary btn-black-buy" data-slot="${i}" ${canBuy ? '' : 'disabled'}>购买</button>
+        </div>
+      `;
+    }
+
+    const html = `
+      <div class="train-panel">
+        <h3>🌑 黑市（每周刷新 · 货不退还 · 真假自负）</h3>
+        <p class="train-info">💰 金币: ${money} | 📅 第 ${gameWeek} 周</p>
+        <p style="color:#f59e0b;font-size:0.7rem;margin:0 0 0.5rem;">⚠️ 此处商品可能为假货（约15%概率）——出手不退不换！</p>
+        <div class="train-grid">${rows}</div>
+        <button id="btn-back-shop" class="btn btn-system" style="margin-top:0.5rem;">← 返回商店</button>
+      </div>
+    `;
+    this.showModal(html, { confirmOnly: false, useHTML: true });
+
+    setTimeout(() => {
+      document.getElementById('btn-back-shop')?.addEventListener('click', () => this._showShopMainPanel());
+      document.querySelectorAll('.btn-black-buy').forEach(btn => {
+        btn.onclick = () => {
+          const result = this._shopSystem.buyBlackMarketSlot(parseInt(btn.dataset.slot), state);
+          if (result.success && result.updatePayload) {
+            this.saveManager.applyGrowthUpdate(result.updatePayload);
+            this._updateHUD(state);
+            const saveData = this._shopSystem.toSaveData();
+            for (const [k, v] of Object.entries(saveData)) state[k] = v;
+            this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showBlackMarketPanel(); } });
+          } else {
+            this.showModal(result.log, { confirmOnly: true, onConfirm: () => this._showBlackMarketPanel() });
+          }
+        };
+      });
+    }, 50);
+  }
+
+  // ================================================================
+  //  Phase 13: 商店面板 (保留旧版本兼容)
+  // ================================================================
+
+  _showShopPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    const money = state.money || 0;
+
+    // 导入道具列表
+    import('../data/items.js').then(({ ITEMS }) => {
+      let itemRows = '';
+      for (const [id, item] of Object.entries(ITEMS)) {
+        const owned = (state.inventory || {})[id] || 0;
+        const canBuy = money >= item.price;
+        itemRows += `
+          <div class="train-row">
+            <span class="train-name">${item.name}</span>
+            <span class="train-value">${item.description} (💰${item.price}) | 持有: ${owned}</span>
+            <button class="btn btn-primary btn-buy-item" data-item="${id}" ${canBuy ? '' : 'disabled'}>购买</button>
+          </div>
+        `;
+      }
+
+      const html = `
+        <div class="train-panel">
+          <h3>🏪 商店 · 基础道具</h3>
+          <p class="train-info">💰 金币: ${money}</p>
+          <div class="train-grid">${itemRows}</div>
+        </div>
+      `;
+
+      this.showModal(html, { confirmOnly: false, useHTML: true });
+
+      // 绑定购买事件
+      setTimeout(() => {
+        document.querySelectorAll('.btn-buy-item').forEach(btn => {
+          btn.onclick = () => {
+            const result = this._hubSystem.buyItem(state, btn.dataset.item);
+            if (result.success && result.updatePayload) {
+              this.saveManager.applyGrowthUpdate(result.updatePayload);
+              // Phase 13 fix: 刷新主界面 HUD 金钱显示
+              this._updateHUD(state);
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showShopPanel(); } });
+            } else {
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+            }
+          };
+        });
+      }, 50);
+    });
+  }
+
+  // ================================================================
+  //  Phase 13: 道具背包面板
+  // ================================================================
+
+  _showInventoryPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    const inventory = state.inventory || {};
+
+    import('../data/items.js').then(({ ITEMS }) => {
+      let rows = '';
+      let hasItems = false;
+      for (const [id, item] of Object.entries(ITEMS)) {
+        const owned = inventory[id] || 0;
+        if (owned <= 0) continue;
+        hasItems = true;
+        // Phase 18: 钱袋打开按钮
+        const isCoinPouch = item.effect?.type === 'gain_money';
+        rows += `
+          <div class="train-row">
+            <span class="train-name">${item.name}</span>
+            <span class="train-value">${item.description} | 持有: ${owned}</span>
+            <button class="btn btn-primary btn-use-item" data-item="${id}">${isCoinPouch ? '打开' : '使用'}</button>
+          </div>
+        `;
+      }
+
+      if (!hasItems) rows = '<p style="text-align:center;color:var(--color-text-dim);">背包是空的……去商店购买一些道具吧。</p>';
+
+      const html = `
+        <div class="train-panel">
+          <h3>🎒 道具背包</h3>
+          <div class="train-grid">${rows}</div>
+        </div>
+      `;
+
+      this.showModal(html, { confirmOnly: false, useHTML: true });
+
+      setTimeout(() => {
+        document.querySelectorAll('.btn-use-item').forEach(btn => {
+          btn.onclick = () => {
+            const result = this._hubSystem.useItem(state, btn.dataset.item);
+            if (result.success && result.updatePayload) {
+              this.saveManager.applyGrowthUpdate(result.updatePayload);
+              this._updateHUD(state);  // Phase 13 fix: 刷新 HUD
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this.renderMainScreen(); } });
+            } else {
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+            }
+          };
+        });
+      }, 50);
+    });
+  }
+
+  // ================================================================
+  //  Phase 13: 装备面板
+  // ================================================================
+
+  _showEquipmentPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    const equipment = state.equipment || { mainHand: null, offHand: null, accessory: null };
+
+    import('../data/cursed_tools.js').then(({ CURSED_TOOLS, EQUIPMENT_SLOTS, getCursedTool }) => {
+      let html = '<div class="train-panel"><h3>⚔️ 装备</h3>';
+
+      // 显示当前装备状态和最终属性
+      const finalStats = this._hubSystem.calculateFinalStats(state);
+      const baseAttrs = state.attributes || {};
+
+      html += '<div class="equipment-final-stats" style="margin:0.5rem 0;padding:0.5rem;background:rgba(255,255,255,0.05);border-radius:4px;">';
+      html += '<h4 style="margin:0 0 0.3rem;">最终属性（含装备加成）</h4>';
+      const attrNames = { cursedEnergy: '咒力总量', cursedEnergyControl: '咒力操控', cursedEnergyEfficiency: '咒力效率', constitution: '体质', martialArts: '体术水平', talent: '天赋' };
+      for (const [key, name] of Object.entries(attrNames)) {
+        const base = baseAttrs[key] || 0;
+        const final = finalStats[key] || 0;
+        const bonus = final - base;
+        html += `<span style="display:inline-block;margin-right:0.8rem;font-size:0.85rem;">${name}: ${final}${bonus > 0 ? ' <span style=\"color:#22c55e;\">(+' + bonus + ')</span>' : ''}</span>`;
+      }
+      html += '</div>';
+
+      // 三个装备槽位
+      for (const [slotId, slot] of Object.entries(EQUIPMENT_SLOTS)) {
+        const equipped = equipment[slotId];
+        const tool = equipped ? getCursedTool(equipped) : null;
+
+        html += `<div class="equipment-slot-card" style="margin:0.4rem 0;padding:0.5rem;border:1px solid var(--color-border);border-radius:4px;">`;
+        html += `<h4 style="margin:0;">${slot.name} (${slot.description})</h4>`;
+        if (tool) {
+          html += `<p style="margin:0.2rem 0;"><strong>${tool.name}</strong> (Tier ${tool.tier}) — ${tool.flavorText}</p>`;
+          html += '<p style="margin:0.2rem 0;font-size:0.8rem;color:#22c55e;">加成: ';
+          for (const [attr, val] of Object.entries(tool.statsBonus)) {
+            html += `${attrNames[attr] || attr} ${val > 0 ? '+' + val : val} `;
+          }
+          html += '</p>';
+          // Phase 18: 展示主动/被动效果详情
+          if (tool.activeEffect) {
+            const ae = tool.activeEffect;
+            if (ae.type === 'dot') {
+              html += `<p style="margin:0.2rem 0;font-size:0.8rem;color:#f59e0b;">🦠 主动·腐败：击中后对敌施加DOT——初始${ae.initialDamage}点/每${ae.tickInterval}AV触发，每次衰减${ae.decayPerTick}点，持续${ae.duration}AV</p>`;
+            }
+          } else if (tool.activeBuff) {
+            const ab = tool.activeBuff;
+            html += `<p style="margin:0.2rem 0;font-size:0.8rem;color:#f59e0b;">✨ 主动·${ab.name}：${ab.description}</p>`;
+          }
+          if (tool.passiveEffect) {
+            const pe = tool.passiveEffect;
+            if (pe.type === 'ignore_defense') {
+              html += `<p style="margin:0.2rem 0;font-size:0.8rem;color:#a78bfa;">🔮 被动·灵魂斩击：无视目标${Math.round(pe.value * 100)}%防御</p>`;
+            } else if (pe.type === 'nullify_technique_defense') {
+              html += `<p style="margin:0.2rem 0;font-size:0.8rem;color:#a78bfa;">🔮 被动·术式解除：攻击时无视对方咒术防御与屏障</p>`;
+            }
+          }
+          html += `<button class="btn btn-system btn-unequip" data-slot="${slotId}">卸下</button>`;
+        } else {
+          html += '<p style="color:var(--color-text-dim);">空</p>';
+          // Bug #3 fix: 列出可装备的咒具 — 仅显示已拥有的
+          const ownedTools = state.ownedCursedTools || [];
+          const available = Object.values(CURSED_TOOLS).filter(t => slot.acceptedTypes.includes(t.type) && ownedTools.includes(t.id));
+          if (available.length > 0) {
+            html += '<div style="display:flex;flex-wrap:wrap;gap:0.3rem;margin-top:0.3rem;">';
+            for (const t of available) {
+              const alreadyEquipped = Object.values(equipment).includes(t.id);
+              html += `<button class="btn btn-primary btn-equip" data-slot="${slotId}" data-tool="${t.id}" style="font-size:0.75rem;" ${alreadyEquipped ? 'disabled' : ''}>${t.name}${alreadyEquipped ? '(已装备)' : ''}</button>`;
+            }
+            html += '</div>';
+          }
+        }
+        html += '</div>';
+      }
+
+      html += '</div>';
+      this.showModal(html, { confirmOnly: false, useHTML: true });
+
+      setTimeout(() => {
+        document.querySelectorAll('.btn-unequip').forEach(btn => {
+          btn.onclick = () => {
+            const result = this._hubSystem.unequipTool(state, btn.dataset.slot);
+            if (result.success && result.updatePayload) {
+              this.saveManager.applyGrowthUpdate(result.updatePayload);
+              this._updateHUD(state);  // Phase 13: 装备更换后刷新 maxHp/maxMp
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showEquipmentPanel(); } });
+            }
+          };
+        });
+        document.querySelectorAll('.btn-equip').forEach(btn => {
+          btn.onclick = () => {
+            const result = this._hubSystem.equipTool(state, btn.dataset.slot, btn.dataset.tool);
+            if (result.success && result.updatePayload) {
+              this.saveManager.applyGrowthUpdate(result.updatePayload);
+              this._updateHUD(state);  // Phase 13: 装备更换后刷新 maxHp/maxMp
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showEquipmentPanel(); } });
+            } else {
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+            }
+          };
+        });
+      }, 50);
+    });
+  }
+
+  // ================================================================
+  //  Phase 13: 图鉴面板（窗的情报）
+  // ================================================================
+
+  _showBestiaryPanel() {
+    const state = this.saveManager.getState();
+    if (!state) return;
+
+    const unlockedIntel = state.unlockedIntel || {};
+
+    import('../data/enemies.js').then(({ ENEMIES }) => {
+      const allEnemies = [...(ENEMIES.normal || []), ...(ENEMIES.elite || []), ...(ENEMIES.boss || [])];
+
+      let html = '<div class="train-panel"><h3>📖 窗的情报 · 怪物图鉴</h3>';
+      html += '<div class="train-grid">';
+
+      for (const enemy of allEnemies) {
+        const intelLevels = unlockedIntel[enemy.id] || [];
+        const hasBasic = intelLevels.includes('basic');
+        const hasSkill = intelLevels.includes('skill');
+        const hasAdvanced = intelLevels.includes('advanced');
+        const hasAny = hasBasic || hasSkill || hasAdvanced;
+
+        html += `<div class="bestiary-card" style="margin:0.3rem 0;padding:0.5rem;border:1px solid var(--color-border);border-radius:4px;${hasAny ? '' : 'opacity:0.6;'}">`;
+        html += `<strong>${enemy.name}</strong> <span style="font-size:0.8rem;color:var(--color-text-dim);">[${enemy.rank}] ${enemy.tier}</span>`;
+
+        if (hasAny) {
+          // Show unlocked info
+          if (hasBasic) {
+            html += `<div style="font-size:0.8rem;margin:0.2rem 0;">📊 HP: ${enemy.baseStats.hp} | MP: ${enemy.baseStats.mp} | 速度: ${enemy.baseStats.speed} | 体质: ${enemy.baseStats.constitution}</div>`;
+            html += `<div style="font-size:0.8rem;">体术: ${enemy.baseStats.martialArts} | 咒力: ${enemy.baseStats.cursedEnergy} | 操控: ${enemy.baseStats.cursedEnergyControl}</div>`;
+          }
+          if (hasSkill && enemy.skills) {
+            html += '<div style="font-size:0.75rem;margin:0.2rem 0;color:#eab308;">技能: ';
+            html += enemy.skills.map(s => `${s.name}(倍率${s.damageMultiplier}${s.cost > 0 ? ',MP' + s.cost : ''})`).join(', ');
+            html += '</div>';
+          }
+          if (hasAdvanced) {
+            html += `<div style="font-size:0.75rem;color:#22c55e;">📋 ${enemy.intelData?.advanced?.description || '无特殊高级技巧。'}</div>`;
+          }
+        } else {
+          html += '<p style="color:var(--color-text-dim);font-size:0.8rem;">未获取情报 — 前往商店的「窗的情报」购买</p>';
+        }
+
+        // Purchase buttons for unowned intel levels
+        if (enemy.intelData) {
+          const missing = [];
+          if (!hasBasic) missing.push('basic');
+          if (!hasSkill) missing.push('skill');
+          if (!hasAdvanced) missing.push('advanced');
+          if (missing.length > 0) {
+            html += '<div style="display:flex;gap:0.3rem;margin-top:0.3rem;flex-wrap:wrap;">';
+            for (const lvl of missing) {
+              const lvlData = enemy.intelData[lvl];
+              if (lvlData) {
+                const canBuy = (state.money || 0) >= lvlData.price;
+                html += `<button class="btn btn-system btn-buy-intel" data-enemy="${enemy.id}" data-level="${lvl}" style="font-size:0.7rem;" ${canBuy ? '' : 'disabled'}>${lvlData.name} 💰${lvlData.price}</button>`;
+              }
+            }
+            html += '</div>';
+          }
+        }
+
+        html += '</div>';
+      }
+
+      html += '</div></div>';
+      this.showModal(html, { confirmOnly: false, useHTML: true });
+
+      setTimeout(() => {
+        document.querySelectorAll('.btn-buy-intel').forEach(btn => {
+          btn.onclick = () => {
+            const enemy = allEnemies.find(e => e.id === btn.dataset.enemy);
+            const result = this._hubSystem.purchaseIntel(state, btn.dataset.enemy, btn.dataset.level, enemy);
+            if (result.success && result.updatePayload) {
+              this.saveManager.applyGrowthUpdate(result.updatePayload);
+              this._updateHUD(state);  // Phase 13 fix: 刷新 HUD 金钱
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => { this.hideModal(); this._showBestiaryPanel(); } });
+            } else {
+              this.showModal(result.log, { confirmOnly: true, onConfirm: () => this.hideModal() });
+            }
+          };
+        });
+      }, 50);
+    });
   }
 }

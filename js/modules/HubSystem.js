@@ -7,17 +7,65 @@ import { NPCS } from '../data/npcs.js';
 import { QUESTS } from '../data/quests.js';
 import { ADVANCED_SKILLS, checkAdvancedSkillUnlocked } from '../data/advanced_skills.js';
 import { EXAMS, getNextExam } from '../data/exams.js';
+import { ITEMS, getItem } from '../data/items.js';
+import { CURSED_TOOLS, EQUIPMENT_SLOTS, getCursedTool, canEquipToSlot } from '../data/cursed_tools.js';
+
+/**
+ * Phase 13 helper: 读取装备提供的属性加成
+ */
+function _equipBonus(characterState, attrName) {
+  const equipment = characterState.equipment || { mainHand: null, offHand: null, accessory: null };
+  let total = 0;
+  for (const toolId of Object.values(equipment)) {
+    if (!toolId) continue;
+    const tool = CURSED_TOOLS[toolId];
+    if (tool && tool.statsBonus) {
+      total += tool.statsBonus[attrName] || 0;
+    }
+  }
+  return total;
+}
 
 export class HubSystem {
   constructor() {
     // 无状态 — 所有操作基于传入的 characterState
   }
 
+  // Bug #4 fix: _calcMaxHp/_calcMaxMp 与 SaveManager 同公式，供 rest()/useItem()/consult() 使用
+  _calcMaxHp(con) {
+    con = con || 10;
+    let hp = 30;
+    if (con <= 20) {
+      hp = 30 + con * 5;
+    } else if (con <= 40) {
+      hp = 30 + 20 * 5 + (con - 20) * 10;
+    } else {
+      hp = 30 + 20 * 5 + 20 * 10 + (con - 40) * 15;
+    }
+    return hp;
+  }
+
+  _calcMaxMp(ce) {
+    ce = ce || 10;
+    let mp = 30;
+    const t1 = Math.min(ce, 20);
+    mp += t1 * 4;
+    if (ce <= 20) return mp;
+    const t2 = Math.min(ce - 20, 10);
+    mp += t2 * 8;
+    if (ce <= 30) return mp;
+    const t3 = Math.min(ce - 30, 15);
+    mp += t3 * 15;
+    if (ce <= 45) return mp;
+    mp += (ce - 45) * 20;
+    return mp;
+  }
+
   /**
    * 修炼指定属性
    * @param {object} characterState — SaveManager.getState() 的返回值
    * @param {string} attrKey — ATTRIBUTES 中的 key
-   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   * @returns {object}
    */
   train(characterState, attrKey) {
     const attrDef = ATTRIBUTES[attrKey];
@@ -66,7 +114,7 @@ export class HubSystem {
    * @param {object} characterState
    * @param {string} npcId
    * @param {string} actionId
-   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   * @returns {object}
    */
   consult(characterState, npcId, actionId) {
     const npc = NPCS.find(n => n.id === npcId);
@@ -98,15 +146,21 @@ export class HubSystem {
     // 处理不同效果类型
     const effect = action.effect;
     if (effect.type === 'heal') {
-      // 家入硝子的治疗 — 恢复 HP 和 MP 到最大值，清除残秽
+      // 家入硝子的治疗 — 恢复到装备加成后的有效上限
+      const baseCon = (characterState.attributes && characterState.attributes.constitution) || 10;
+      const baseCE  = (characterState.attributes && characterState.attributes.cursedEnergy) || 10;
+      const bonusCon = _equipBonus(characterState, 'constitution');
+      const bonusCE  = _equipBonus(characterState, 'cursedEnergy');
+      const effMaxHp = (typeof this._calcMaxHp === 'function')
+        ? this._calcMaxHp(baseCon + bonusCon) : (characterState.maxHp || 100);
+      const effMaxMp = (typeof this._calcMaxMp === 'function')
+        ? this._calcMaxMp(baseCE + bonusCE) : (characterState.maxMp || 100);
       const currentHp = characterState.hp || 0;
-      const maxHp = characterState.maxHp || 100;
       const currentMp = characterState.mp || 0;
-      const maxMp = characterState.maxMp || 100;
       const residual = characterState.residual || 0;
       const residualClear = Math.floor(residual * (effect.residualClearPct || 0.5));
-      const hpRestore = maxHp - currentHp;
-      const mpRestore = maxMp - currentMp;
+      const hpRestore = effMaxHp - currentHp;
+      const mpRestore = effMaxMp - currentMp;
 
       return {
         success: true,
@@ -194,7 +248,7 @@ export class HubSystem {
    * @param {object} characterState
    * @param {string} questId
    * @param {string} category — "promotions" | "npcTasks" | "mainStory"
-   * @returns {{ success: boolean, log: string, updatePayload: object|null, storyText: string|null }}
+   * @returns {object}
    */
   acceptQuest(characterState, questId, category = 'npcTasks') {
     const pool = QUESTS[category] || [];
@@ -243,18 +297,30 @@ export class HubSystem {
   /**
    * 休息
    * @param {object} characterState
-   * @returns {{ success: boolean, log: string, updatePayload: object }}
+   * @returns {object}
    */
   rest(characterState) {
-    const maxHp = characterState.maxHp || 100;
-    const currentHp = characterState.hp || maxHp;
-    const hpGain = Math.floor(maxHp * REST_CONFIG.hpRecoveryPct);
-    const actualHpGain = Math.min(hpGain, maxHp - currentHp);
+    // Phase 13: 休息恢复可以回到装备加成后的有效上限
+    const baseCon = (characterState.attributes && characterState.attributes.constitution) || 10;
+    const baseCE  = (characterState.attributes && characterState.attributes.cursedEnergy) || 10;
 
-    const maxMp = characterState.maxMp || 100;
-    const currentMp = characterState.mp || maxMp;
-    const mpGain = Math.floor(maxMp * REST_CONFIG.hpRecoveryPct);
-    const actualMpGain = Math.min(mpGain, maxMp - currentMp);
+    // 装备加成后的 effective 上限（玩家可以恢复到的最多血量）
+    const bonusCon = _equipBonus(characterState, 'constitution');
+    const bonusCE  = _equipBonus(characterState, 'cursedEnergy');
+    const effMaxHp = typeof this._calcMaxHp === 'function'
+      ? this._calcMaxHp(baseCon + bonusCon)
+      : (characterState.maxHp || 100);
+    const effMaxMp = typeof this._calcMaxMp === 'function'
+      ? this._calcMaxMp(baseCE + bonusCE)
+      : (characterState.maxMp || 100);
+
+    const currentHp = characterState.hp || effMaxHp;
+    const hpGain = Math.floor(effMaxHp * REST_CONFIG.hpRecoveryPct);
+    const actualHpGain = Math.min(hpGain, effMaxHp - currentHp);
+
+    const currentMp = characterState.mp || effMaxMp;
+    const mpGain = Math.floor(effMaxMp * REST_CONFIG.hpRecoveryPct);
+    const actualMpGain = Math.min(mpGain, effMaxMp - currentMp);
 
     const residual = characterState.residual || 0;
     const residualClear = Math.floor(residual * REST_CONFIG.residualClearPct);
@@ -286,7 +352,7 @@ export class HubSystem {
    * Phase 11: 完成考核任务（战斗胜利后调用）
    * @param {object} characterState
    * @param {string} examQuestId — 考核任务 ID
-   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   * @returns {object}
    */
   completeExam(characterState, examQuestId) {
     const exam = EXAMS.promotions.find(e => e.id === examQuestId);
@@ -316,7 +382,7 @@ export class HubSystem {
    * Phase 11: 解锁高级技巧（消耗灵感）
    * @param {object} characterState
    * @param {string} skillId — 高级技巧 ID（如 "simple_domain"）
-   * @returns {{ success: boolean, log: string, updatePayload: object|null }}
+   * @returns {object}
    */
   unlockAdvancedSkill(characterState, skillId) {
     const check = checkAdvancedSkillUnlocked(skillId, characterState);
@@ -343,6 +409,348 @@ export class HubSystem {
         advanced_skills_unlocked_add: skillId,
         inspiration: -inspCost
       }
+    };
+  }
+
+  // ================================================================
+  //  Phase 13: 商店与道具系统（纯函数，零 DOM 依赖）
+  // ================================================================
+
+  /**
+   * 购买道具
+   * @param {object} characterState
+   * @param {string} itemId
+   * @param {number} quantity — 购买数量（默认 1）
+   * @returns {object}
+   */
+  buyItem(characterState, itemId, quantity = 1) {
+    const item = getItem(itemId);
+    if (!item) {
+      return { success: false, log: '未知道具。', updatePayload: null };
+    }
+    const totalPrice = item.price * quantity;
+    const money = characterState.money || 0;
+    if (money < totalPrice) {
+      return { success: false, log: `金钱不足！需要 ${totalPrice} 金币，当前 ${money} 金币。`, updatePayload: null };
+    }
+    return {
+      success: true,
+      log: `购买了 ${quantity} 个「${item.name}」，花费 ${totalPrice} 金币。`,
+      updatePayload: {
+        money: -totalPrice,
+        inventory: { [itemId]: quantity }
+      }
+    };
+  }
+
+  /**
+   * 使用道具（非战斗状态）
+   * @param {object} characterState
+   * @param {string} itemId
+   * @returns {object}
+   */
+  useItem(characterState, itemId) {
+    const item = getItem(itemId);
+    if (!item) {
+      return { success: false, log: '未知道具。', updatePayload: null };
+    }
+
+    // 检查背包中是否有此道具
+    const inventory = characterState.inventory || {};
+    const owned = inventory[itemId] || 0;
+    if (owned <= 0) {
+      return { success: false, log: `背包中没有「${item.name}」。`, updatePayload: null };
+    }
+
+    const effect = item.effect;
+    const payload = {
+      inventory: { [itemId]: -1 }  // 消耗 1 个
+    };
+    let logParts = [`使用了「${item.name}」。`];
+
+    // 处理不同效果类型
+    switch (effect.type) {
+      case 'restore_stamina':
+        const stamina = characterState.stamina || 0;
+        const maxStamina = RESOURCE_CAPS.maxStamina || 100;
+        const staminaRestore = Math.min(effect.amount || 0, maxStamina - stamina);
+        payload.stamina = staminaRestore;
+        logParts.push(`回复了 ${staminaRestore} 点体力。`);
+        break;
+
+      case 'restore_hp':
+        const hp = characterState.hp || 0;
+        // Phase 13: 道具回复可以回到装备加成后的有效上限
+        const baseConHp = (characterState.attributes && characterState.attributes.constitution) || 10;
+        const bonusConHp = _equipBonus(characterState, 'constitution');
+        const realMaxHp = (typeof this._calcMaxHp === 'function')
+          ? this._calcMaxHp(baseConHp + bonusConHp) : (characterState.maxHp || 100);
+        const hpRestore = effect.pct
+          ? Math.floor(realMaxHp * effect.pct)
+          : (effect.amount || 0);
+        const actualHp = Math.min(hpRestore, realMaxHp - hp);
+        payload.hp = actualHp;
+        logParts.push(`回复了 ${actualHp} 点生命值。`);
+        break;
+
+      case 'restore_mp':
+        const mp = characterState.mp || 0;
+        // Phase 13: 道具回复可以回到装备加成后的有效上限
+        const baseCeMp = (characterState.attributes && characterState.attributes.cursedEnergy) || 10;
+        const bonusCeMp = _equipBonus(characterState, 'cursedEnergy');
+        const realMaxMp = (typeof this._calcMaxMp === 'function')
+          ? this._calcMaxMp(baseCeMp + bonusCeMp) : (characterState.maxMp || 100);
+        const mpRestore = effect.pct
+          ? Math.floor(realMaxMp * effect.pct)
+          : (effect.amount || 0);
+        const actualMp = Math.min(mpRestore, realMaxMp - mp);
+        payload.mp = actualMp;
+        logParts.push(`回复了 ${actualMp} 点咒力。`);
+        break;
+
+      case 'clear_residual':
+        const residual = characterState.residual || 0;
+        payload.residual = -residual;  // 清除全部残秽
+        logParts.push(`清除了 ${residual} 点咒力残秽。`);
+        // 额外效果（如御守的体力恢复）
+        if (effect.bonus && effect.bonus.stamina) {
+          const bonusStamina = Math.min(effect.bonus.stamina,
+            (RESOURCE_CAPS.maxStamina || 100) - (characterState.stamina || 0));
+          payload.stamina = (payload.stamina || 0) + bonusStamina;
+          logParts.push(`额外恢复了 ${bonusStamina} 点体力。`);
+        }
+        break;
+
+      case 'flee_guaranteed':
+        logParts.push('可在战斗中使用，必定成功脱离战斗。');
+        break;
+
+      case 'gain_money':
+        const moneyGain = effect.amount || 0;
+        payload.money = moneyGain;
+        logParts.push(`获得了 ${moneyGain} 金币。`);
+        break;
+
+      default:
+        return { success: false, log: '未知的道具效果类型。', updatePayload: null };
+    }
+
+    return {
+      success: true,
+      log: logParts.join(''),
+      updatePayload: payload
+    };
+  }
+
+  // ================================================================
+  //  Phase 13: 窗的情报系统（纯函数，零 DOM 依赖）
+  // ================================================================
+
+  /**
+   * 购买怪物情报
+   * @param {object} characterState
+   * @param {string} enemyId — 敌人 ID
+   * @param {string} level — 情报等级: "basic" | "skill" | "advanced"
+   * @param {object} enemyConfig — 敌人完整配置（从 ENEMIES 中查询）
+   * @returns {object}
+   */
+  purchaseIntel(characterState, enemyId, level, enemyConfig) {
+    if (!enemyConfig || !enemyConfig.intelData) {
+      return { success: false, log: '该敌人没有可购买的情报数据。', updatePayload: null };
+    }
+    const intelLevel = enemyConfig.intelData[level];
+    if (!intelLevel) {
+      return { success: false, log: `无效的情报等级: ${level}。`, updatePayload: null };
+    }
+
+    const money = characterState.money || 0;
+    const price = intelLevel.price;
+    if (money < price) {
+      return { success: false, log: `金钱不足！需要 ${price} 金币购买「${enemyConfig.name} - ${intelLevel.name}」，当前 ${money} 金币。`, updatePayload: null };
+    }
+
+    // 检查是否已购买过该等级的情报
+    const unlockedIntel = characterState.unlockedIntel || {};
+    const unlockedLevels = unlockedIntel[enemyId] || [];
+    if (unlockedLevels.includes(level)) {
+      return { success: false, log: `你已经购买过「${enemyConfig.name}」的「${intelLevel.name}」了。`, updatePayload: null };
+    }
+
+    return {
+      success: true,
+      log: `购买了「${enemyConfig.name}」的「${intelLevel.name}」——${intelLevel.description}，花费 ${price} 金币。`,
+      updatePayload: {
+        money: -price,
+        unlockedIntel: { [enemyId]: [level] }
+      }
+    };
+  }
+
+  // ================================================================
+  //  Phase 13: 咒具系统（纯函数，零 DOM 依赖）
+  // ================================================================
+
+  /**
+   * 装备咒具到指定槽位
+   * @param {object} characterState
+   * @param {string} slotId — "mainHand" | "offHand" | "accessory"
+   * @param {string} toolId — 咒具 ID（null 表示卸下）
+   * @returns {object}
+   */
+  equipTool(characterState, slotId, toolId) {
+    const slot = EQUIPMENT_SLOTS[slotId];
+    if (!slot) {
+      return { success: false, log: `无效的装备槽位: ${slotId}。`, updatePayload: null };
+    }
+
+    if (toolId === null) {
+      // 卸下装备
+      const equipment = characterState.equipment || { mainHand: null, offHand: null, accessory: null };
+      const current = equipment[slotId];
+      if (!current) {
+        return { success: false, log: '该槽位没有装备。', updatePayload: null };
+      }
+      const oldTool = getCursedTool(current);
+      return {
+        success: true,
+        log: `卸下了「${oldTool ? oldTool.name : current}」。`,
+        updatePayload: { equipment: { [slotId]: null } }
+      };
+    }
+
+    // 检查咒具是否存在
+    const tool = getCursedTool(toolId);
+    if (!tool) {
+      return { success: false, log: `未找到咒具: ${toolId}。`, updatePayload: null };
+    }
+
+    // 检查槽位兼容性
+    if (!canEquipToSlot(toolId, slotId)) {
+      return { success: false, log: `「${tool.name}」无法装备到${slot.name}槽位（需要类型: ${slot.acceptedTypes.join('/')}）。`, updatePayload: null };
+    }
+
+      // Bug #3 fix: 检查是否已拥有该咒具
+      const owned = characterState.ownedCursedTools || [];
+      if (!owned.includes(toolId)) {
+        return { success: false, log: `你尚未拥有「${tool.name}」。请先购买或获取此咒具。`, updatePayload: null };
+      }
+
+    // 检查是否已拥有该咒具（简单检查：如果已在其他槽位装备，先卸下）
+    const equipment = characterState.equipment || { mainHand: null, offHand: null, accessory: null };
+    const oldEquipLog = [];
+    for (const [otherSlot, otherToolId] of Object.entries(equipment)) {
+      if (otherToolId === toolId && otherSlot !== slotId) {
+        oldEquipLog.push(`（自动从${EQUIPMENT_SLOTS[otherSlot]?.name || otherSlot}卸下）`);
+        equipment[otherSlot] = null;
+      }
+    }
+
+    return {
+      success: true,
+      log: `装备了「${tool.name}」到${slot.name}。` + oldEquipLog.join(' '),
+      updatePayload: { equipment: { [slotId]: toolId } }
+    };
+  }
+
+  /**
+   * 卸下指定槽位的装备（equipTool 的语法糖）
+   * @param {object} characterState
+   * @param {string} slotId
+   * @returns {object}
+   */
+  unequipTool(characterState, slotId) {
+    return this.equipTool(characterState, slotId, null);
+  }
+
+  /**
+   * 计算最终属性（基础属性 + 装备加成）
+   * 严禁直接修改 characterState.attributes！
+   * 返回新的合并后的属性对象，供 UI 显示和战斗系统读取。
+   *
+   * @param {object} characterState — 玩家存档状态
+   * @returns {object} 最终属性值（key 为属性名，value 为数值）
+   */
+  calculateFinalStats(characterState) {
+    const base = { ...(characterState.attributes || {}) };
+
+    // 遍历装备槽位，叠加咒具属性加成
+    const equipment = characterState.equipment || { mainHand: null, offHand: null, accessory: null };
+    for (const [slotId, toolId] of Object.entries(equipment)) {
+      if (!toolId) continue;
+      const tool = getCursedTool(toolId);
+      if (!tool || !tool.statsBonus) continue;
+      for (const [attr, bonus] of Object.entries(tool.statsBonus)) {
+        base[attr] = (base[attr] || 0) + bonus;
+      }
+    }
+
+    return base;
+  }
+
+  /**
+   * 获取所有装备后的属性加成摘要
+   * @param {object} characterState
+   * @returns {Array<{toolName: string, bonuses: object}>}
+   */
+  getEquipmentBonuses(characterState) {
+    const result = [];
+    const equipment = characterState.equipment || { mainHand: null, offHand: null, accessory: null };
+    for (const [slotId, toolId] of Object.entries(equipment)) {
+      if (!toolId) continue;
+      const tool = getCursedTool(toolId);
+      if (tool) {
+        result.push({ slotId, slotName: EQUIPMENT_SLOTS[slotId]?.name || slotId, toolId, toolName: tool.name, bonuses: { ...tool.statsBonus }, tier: tool.tier });
+      }
+    }
+    return result;
+  }
+
+  // ================================================================
+  //  Phase 14: 重伤惩罚机制（纯函数，零 DOM 依赖）
+  // ================================================================
+
+  /**
+   * 应用重伤惩罚 — 当玩家 HP <= 0 战斗失败时调用
+   * @param {object} characterState
+   * @returns {object} 重伤惩罚结果
+   */
+  applyHeavyInjuryPenalty(characterState) {
+    const penalties = [];
+    const updatePayload = {};
+
+    // 随机推进 2~5 天
+    const daysPassed = 2 + Math.floor(Math.random() * 4); // 2-5
+    updatePayload.gameDay = daysPassed;
+    penalties.push(`重伤昏迷了 ${daysPassed} 天。`);
+
+    // 50% 概率触发随机惩罚
+    if (Math.random() < 0.5) {
+      // 扣除一半金钱（保底 0）
+      const money = characterState.money || 0;
+      const lostMoney = Math.floor(money * 0.5);
+      updatePayload.money = -lostMoney;
+      penalties.push(`失去了 ${lostMoney} 金币。`);
+
+      // 随机一项基础属性降低 1~2 点（保底 1）
+      const stats = ['constitution', 'martialArts', 'cursedEnergyControl', 'cursedEnergyEfficiency', 'talent'];
+      const randomStat = stats[Math.floor(Math.random() * stats.length)];
+      const dropAmount = Math.floor(Math.random() * 2) + 1; // 1-2
+      const attrNames = { constitution: '体质', martialArts: '体术水平', cursedEnergyControl: '咒力操控', cursedEnergyEfficiency: '咒力效率', talent: '天赋' };
+
+      const currentVal = (characterState.attributes && characterState.attributes[randomStat]) || 10;
+      const newVal = Math.max(1, currentVal - dropAmount); // 保底 1
+      const actualDrop = currentVal - newVal;
+
+      updatePayload[`attributes.${randomStat}`] = -actualDrop;
+      penalties.push(`${attrNames[randomStat] || randomStat} 永久降低了 ${actualDrop} 点。`);
+    } else {
+      penalties.push('万幸——没有留下永久性的损伤。');
+    }
+
+    return {
+      penalties,
+      updatePayload,
+      gameDaysPassed: daysPassed
     };
   }
 }

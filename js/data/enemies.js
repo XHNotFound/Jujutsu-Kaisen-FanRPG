@@ -20,6 +20,13 @@ export const ENEMIES = {
       tier: "normal",
       baseStats: { hp: 50, max_hp: 50, mp: 0, max_mp: 0, speed: 7, constitution: 6, martial_arts: 8, cursed_energy: 0, cursed_energy_control: 0, cursed_energy_efficiency: 0, talent: 3 },
       skills: [{ id: "enemy_bite", name: "撕咬", cost: 0, type: "martial", damageMultiplier: 1.0, castTime: 8, baseRecoverySpeed: 28, minDistance: 0, maxDistance: 0 }],
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 80,
+      intelData: {
+        basic: { name: "初级情报", price: 30, description: "显示蛸头的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 60, description: "显示蛸头的技能列表及伤害倍率。" },
+        advanced: { name: "高级情报", price: 150, description: "蛸头没有高级技巧——它太低级了。" }
+      },
       rewards: { money: { min: 10, max: 30 }, skillExp: 3, skillPoints: 1, inspirationChance: 0.05 }
     },
     {
@@ -32,6 +39,13 @@ export const ENEMIES = {
         { id: "enemy_punch", name: "重拳", cost: 0, type: "martial", damageMultiplier: 1.0, castTime: 8, baseRecoverySpeed: 28, minDistance: 0, maxDistance: 0 },
         { id: "enemy_cursed_bolt", name: "诅咒弹", cost: 6, type: "cursed", damageMultiplier: 1.3, castTime: 16, baseRecoverySpeed: 22, minDistance: 1, maxDistance: 3 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 35, description: "显示咒骸的基础属性。" },
+        skill: { name: "技能情报", price: 70, description: "显示咒骸的技能：重拳和诅咒弹。" },
+        advanced: { name: "高级情报", price: 120, description: "咒骸为四级诅咒人偶，无高级技巧。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 70,
       rewards: { money: { min: 30, max: 60 }, skillExp: 5, skillPoints: 1, inspirationChance: 0.08 }
     },
     {
@@ -44,6 +58,13 @@ export const ENEMIES = {
         { id: "enemy_swipe", name: "横扫", cost: 0, type: "martial", damageMultiplier: 1.0, castTime: 6, baseRecoverySpeed: 30, minDistance: 0, maxDistance: 1 },
         { id: "enemy_poison_spit", name: "毒液喷射", cost: 8, type: "cursed", damageMultiplier: 1.5, castTime: 18, baseRecoverySpeed: 20, minDistance: 1, maxDistance: 3 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 40, description: "显示百足咒灵的基础属性。" },
+        skill: { name: "技能情报", price: 80, description: "显示百足咒灵的技能：横扫和毒液喷射。" },
+        advanced: { name: "高级情报", price: 130, description: "百足咒灵为准三级，拥有远程毒液攻击。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 70,
       rewards: { money: { min: 40, max: 80 }, skillExp: 8, skillPoints: 2, inspirationChance: 0.10 }
     },
     {
@@ -56,6 +77,13 @@ export const ENEMIES = {
         { id: "enemy_claw", name: "影爪", cost: 0, type: "martial", damageMultiplier: 1.2, castTime: 5, baseRecoverySpeed: 30, minDistance: 0, maxDistance: 0 },
         { id: "enemy_shadow_bolt", name: "暗影弹", cost: 12, type: "cursed", damageMultiplier: 1.8, castTime: 20, baseRecoverySpeed: 18, minDistance: 0, maxDistance: 3 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 40, description: "显示影兽的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 80, description: "显示影兽的技能：影爪和暗影弹。" },
+        advanced: { name: "高级情报", price: 140, description: "影兽为三级咒灵，善用暗影系攻击。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 60,
       rewards: { money: { min: 60, max: 120 }, skillExp: 12, skillPoints: 2, inspirationChance: 0.12 }
     },
     {
@@ -68,6 +96,13 @@ export const ENEMIES = {
         { id: "enemy_blood_strike", name: "血击", cost: 0, type: "martial", damageMultiplier: 1.1, castTime: 6, baseRecoverySpeed: 28, minDistance: 0, maxDistance: 1 },
         { id: "enemy_blood_spear", name: "血矛", cost: 15, type: "cursed", damageMultiplier: 2.0, castTime: 22, baseRecoverySpeed: 16, minDistance: 0, maxDistance: 3 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 42, description: "显示血涂灵的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 85, description: "显示血涂灵的技能：血击和血矛。" },
+        advanced: { name: "高级情报", price: 140, description: "血涂灵为准二级咒灵，血系攻击伤害较高。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 60,
       rewards: { money: { min: 80, max: 150 }, skillExp: 15, skillPoints: 2, inspirationChance: 0.15 }
     },
     {
@@ -80,6 +115,13 @@ export const ENEMIES = {
         { id: "enemy_iron_fist", name: "铁拳", cost: 0, type: "martial", damageMultiplier: 1.3, castTime: 7, baseRecoverySpeed: 26, minDistance: 0, maxDistance: 0 },
         { id: "enemy_iron_cannon", name: "铁甲炮", cost: 20, type: "cursed", damageMultiplier: 2.2, castTime: 25, baseRecoverySpeed: 14, minDistance: 0, maxDistance: 3 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 45, description: "显示铁甲咒灵的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 90, description: "显示铁甲咒灵的技能：铁拳和铁甲炮。" },
+        advanced: { name: "高级情报", price: 150, description: "铁甲咒灵为二级咒灵，防御较高且伤害可观。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 50,
       rewards: { money: { min: 100, max: 200 }, skillExp: 20, skillPoints: 3, inspirationChance: 0.18 }
     },
     // ================================================================
@@ -95,6 +137,13 @@ export const ENEMIES = {
         { id: "enemy_scissor_slash", name: "剪刀斩", cost: 0, type: "martial", damageMultiplier: 1.5, castTime: 6, baseRecoverySpeed: 28, minDistance: 0, maxDistance: 0 },
         { id: "enemy_kuchisake_question", name: "裂口质问", cost: 15, type: "cursed", damageMultiplier: 2.0, castTime: 18, baseRecoverySpeed: 20, minDistance: 0, maxDistance: 2 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 45, description: "显示裂口女的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 90, description: "显示裂口女的技能：剪刀斩和裂口质问。" },
+        advanced: { name: "高级情报", price: 150, description: "裂口女为二级咒灵，伤害极高但防御偏弱。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 50,
       rewards: { money: { min: 120, max: 220 }, skillExp: 22, skillPoints: 3, inspirationChance: 0.20 }
     },
     {
@@ -107,6 +156,13 @@ export const ENEMIES = {
         { id: "enemy_toilet_curse", name: "厕所诅咒", cost: 0, type: "martial", damageMultiplier: 1.2, castTime: 8, baseRecoverySpeed: 26, minDistance: 0, maxDistance: 1 },
         { id: "enemy_water_blade", name: "水刃", cost: 18, type: "cursed", damageMultiplier: 2.2, castTime: 20, baseRecoverySpeed: 18, minDistance: 1, maxDistance: 3 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 45, description: "显示花子的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 90, description: "显示花子的技能：厕所诅咒和水刃。" },
+        advanced: { name: "高级情报", price: 150, description: "花子为二级咒灵，诅咒能量较高，善用水系攻击。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 50,
       rewards: { money: { min: 110, max: 210 }, skillExp: 20, skillPoints: 3, inspirationChance: 0.18 }
     },
     {
@@ -119,6 +175,13 @@ export const ENEMIES = {
         { id: "enemy_neck_whip", name: "长颈鞭", cost: 0, type: "martial", damageMultiplier: 1.4, castTime: 7, baseRecoverySpeed: 28, minDistance: 0, maxDistance: 2 },
         { id: "enemy_gaze_curse", name: "凝视诅咒", cost: 20, type: "cursed", damageMultiplier: 2.5, castTime: 22, baseRecoverySpeed: 16, minDistance: 1, maxDistance: 3 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 46, description: "显示辘轳首的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 92, description: "显示辘轳首的技能：长颈鞭和凝视诅咒。" },
+        advanced: { name: "高级情报", price: 150, description: "辘轳首为准一级咒灵，攻击范围大且伤害较高。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 40,
       rewards: { money: { min: 150, max: 280 }, skillExp: 28, skillPoints: 4, inspirationChance: 0.22 }
     },
     {
@@ -131,6 +194,13 @@ export const ENEMIES = {
         { id: "enemy_web_trap", name: "蛛网陷阱", cost: 0, type: "martial", damageMultiplier: 1.3, castTime: 8, baseRecoverySpeed: 26, minDistance: 0, maxDistance: 2 },
         { id: "enemy_venom_string", name: "毒丝", cost: 22, type: "cursed", damageMultiplier: 2.8, castTime: 24, baseRecoverySpeed: 14, minDistance: 0, maxDistance: 3 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 46, description: "显示络新妇的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 92, description: "显示络新妇的技能：蛛网陷阱和毒丝。" },
+        advanced: { name: "高级情报", price: 155, description: "络新妇为准一级咒灵，善用毒素和远程攻击。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 40,
       rewards: { money: { min: 160, max: 300 }, skillExp: 30, skillPoints: 4, inspirationChance: 0.24 }
     },
     {
@@ -143,6 +213,13 @@ export const ENEMIES = {
         { id: "enemy_bird_talon", name: "利爪", cost: 0, type: "martial", damageMultiplier: 1.6, castTime: 6, baseRecoverySpeed: 28, minDistance: 0, maxDistance: 1 },
         { id: "enemy_screech", name: "啼鸣诅咒", cost: 25, type: "cursed", damageMultiplier: 3.0, castTime: 26, baseRecoverySpeed: 14, minDistance: 0, maxDistance: 3 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 48, description: "显示姑获鸟的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 95, description: "显示姑获鸟的技能：利爪和啼鸣诅咒。" },
+        advanced: { name: "高级情报", price: 155, description: "姑获鸟为一级咒灵，速度和攻击力均为上乘。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 40,
       rewards: { money: { min: 200, max: 380 }, skillExp: 35, skillPoints: 5, inspirationChance: 0.26 }
     },
     {
@@ -155,6 +232,13 @@ export const ENEMIES = {
         { id: "enemy_sneak_strike", name: "潜行一击", cost: 0, type: "martial", damageMultiplier: 1.7, castTime: 7, baseRecoverySpeed: 28, minDistance: 0, maxDistance: 0 },
         { id: "enemy_dark_mist", name: "黑雾侵蚀", cost: 28, type: "cursed", damageMultiplier: 3.2, castTime: 28, baseRecoverySpeed: 12, minDistance: 0, maxDistance: 3 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 48, description: "显示滑瓢的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 95, description: "显示滑瓢的技能：潜行一击和黑雾侵蚀。" },
+        advanced: { name: "高级情报", price: 155, description: "滑瓢为一级咒灵，伤害极高，拥有暗属性攻击。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 40,
       rewards: { money: { min: 220, max: 400 }, skillExp: 38, skillPoints: 5, inspirationChance: 0.28 }
     },
     {
@@ -167,6 +251,13 @@ export const ENEMIES = {
         { id: "enemy_horn_charge", name: "牛角冲撞", cost: 0, type: "martial", damageMultiplier: 1.8, castTime: 10, baseRecoverySpeed: 24, minDistance: 0, maxDistance: 2 },
         { id: "enemy_breath_fire", name: "鬼火吐息", cost: 30, type: "cursed", damageMultiplier: 3.5, castTime: 30, baseRecoverySpeed: 10, minDistance: 0, maxDistance: 3 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 48, description: "显示牛鬼的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 95, description: "显示牛鬼的技能：牛角冲撞和鬼火吐息。" },
+        advanced: { name: "高级情报", price: 155, description: "牛鬼为一级咒灵，血厚攻高但速度偏慢。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 40,
       rewards: { money: { min: 250, max: 450 }, skillExp: 40, skillPoints: 5, inspirationChance: 0.30 }
     },
     {
@@ -179,6 +270,13 @@ export const ENEMIES = {
         { id: "enemy_bone_crush", name: "骨碎", cost: 0, type: "martial", damageMultiplier: 1.9, castTime: 12, baseRecoverySpeed: 22, minDistance: 0, maxDistance: 1 },
         { id: "enemy_grave_wind", name: "墓场阴风", cost: 35, type: "cursed", damageMultiplier: 3.8, castTime: 32, baseRecoverySpeed: 10, minDistance: 0, maxDistance: 3 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 50, description: "显示饿者骷髅的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 100, description: "显示饿者骷髅的技能：骨碎和墓场阴风。" },
+        advanced: { name: "高级情报", price: 160, description: "饿者骷髅为一级咒灵，HP极高且伤害恐怖。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 40,
       rewards: { money: { min: 280, max: 500 }, skillExp: 45, skillPoints: 6, inspirationChance: 0.32 }
     }
   ],
@@ -195,6 +293,13 @@ export const ENEMIES = {
         { id: "enemy_womb_beam", name: "咒胎光束", cost: 20, type: "cursed", damageMultiplier: 2.5, castTime: 28, baseRecoverySpeed: 14, minDistance: 0, maxDistance: 3 },
         { id: "enemy_womb_roar", name: "咒胎咆哮", cost: 15, type: "cursed", damageMultiplier: 2.0, castTime: 22, baseRecoverySpeed: 16, minDistance: 1, maxDistance: 2 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 80, description: "显示咒胎的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 150, description: "显示咒胎的技能：重压、咒胎光束和咒胎咆哮。" },
+        advanced: { name: "高级情报", price: 300, description: "咒胎为准一级精英咒灵，拥有三种技能，伤害不俗。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 30,
       rewards: { money: { min: 200, max: 400 }, skillExp: 30, skillPoints: 4, inspirationChance: 0.25 }
     },
     {
@@ -208,6 +313,13 @@ export const ENEMIES = {
         { id: "enemy_vengeful_blast", name: "怨念爆破", cost: 25, type: "cursed", damageMultiplier: 3.0, castTime: 30, baseRecoverySpeed: 12, minDistance: 0, maxDistance: 3 },
         { id: "enemy_vengeful_curse", name: "深层诅咒", cost: 18, type: "cursed", damageMultiplier: 2.2, castTime: 24, baseRecoverySpeed: 14, minDistance: 0, maxDistance: 2 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 80, description: "显示怨灵的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 150, description: "显示怨灵的技能：怨念击、怨念爆破和深层诅咒。" },
+        advanced: { name: "高级情报", price: 300, description: "怨灵为一级精英咒灵，怨念深厚，伤害极高。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 30,
       rewards: { money: { min: 300, max: 600 }, skillExp: 40, skillPoints: 5, inspirationChance: 0.30 }
     }
   ],
@@ -224,6 +336,13 @@ export const ENEMIES = {
         { id: "boss_cursed_beam", name: "咒力光束", cost: 30, type: "cursed", damageMultiplier: 3.5, castTime: 30, baseRecoverySpeed: 12, minDistance: 0, maxDistance: 3 },
         { id: "boss_catastrophe", name: "灾厄降临", cost: 50, type: "cursed", damageMultiplier: 4.5, castTime: 40, baseRecoverySpeed: 8, minDistance: 0, maxDistance: 3 }
       ],
+      intelData: {
+        basic: { name: "初级情报", price: 150, description: "显示特级咒灵的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 300, description: "显示特级咒灵的技能：领域之拳、咒力光束和灾厄降临。" },
+        advanced: { name: "高级情报", price: 500, description: "准特级BOSS，拥有领域级别的破坏力，灾厄降临伤害极高。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 15,
       rewards: { money: { min: 500, max: 1000 }, skillExp: 60, skillPoints: 8, inspirationChance: 0.50 }
     },
     // ================================================================
@@ -248,6 +367,13 @@ export const ENEMIES = {
       domainId: "jogo_coffin",
       domainName: "盖棺铁围山",
       domainHp: 800,
+      intelData: {
+        basic: { name: "初级情报", price: 150, description: "显示漏瑚的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 300, description: "显示漏瑚的技能：火山弹、火炎柱、火虫、极之番·陨、灼烧击。" },
+        advanced: { name: "高级情报", price: 500, description: "漏瑚拥有领域「盖棺铁围山」(HP 800)，掌握极之番·陨，火系咒术特化。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 10,
       rewards: { money: { min: 800, max: 1500 }, skillExp: 80, skillPoints: 10, inspirationChance: 0.60 }
     },
     {
@@ -264,6 +390,13 @@ export const ENEMIES = {
       domainId: "mahito_self_embodiment",
       domainName: "自闭圆顿裹",
       domainHp: 700,
+      intelData: {
+        basic: { name: "初级情报", price: 150, description: "显示真人的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 300, description: "显示真人的技能：无为转变、肉体变形和改造人偶。" },
+        advanced: { name: "高级情报", price: 500, description: "真人拥有领域「自闭圆顿裹」(HP 700)，可通过无为转变改变灵魂形态。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 10,
       rewards: { money: { min: 800, max: 1500 }, skillExp: 80, skillPoints: 10, inspirationChance: 0.60 }
     },
     {
@@ -280,6 +413,13 @@ export const ENEMIES = {
       domainId: "dagon_horizon",
       domainName: "荡蕴平线",
       domainHp: 600,
+      intelData: {
+        basic: { name: "初级情报", price: 150, description: "显示陀艮的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 300, description: "显示陀艮的技能：水流弹、鱼形式神和鱼群吞噬。" },
+        advanced: { name: "高级情报", price: 500, description: "陀艮拥有领域「荡蕴平线」(HP 600)，善用式神和水系攻击。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 15,
       rewards: { money: { min: 600, max: 1200 }, skillExp: 60, skillPoints: 8, inspirationChance: 0.50 }
     },
     {
@@ -297,6 +437,13 @@ export const ENEMIES = {
       domainId: "sukuna_shrine",
       domainName: "伏魔御厨子",
       domainHp: 1000,
+      intelData: {
+        basic: { name: "初级情报", price: 150, description: "显示两面宿傩（三指）的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 300, description: "显示宿傩的技能：解、捌、解·网和袈裟斩。" },
+        advanced: { name: "高级情报", price: 500, description: "宿傩拥有领域「伏魔御厨子」(HP 1000)，可同时发动解与捌进行全方位斩击。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 10,
       rewards: { money: { min: 1500, max: 3000 }, skillExp: 120, skillPoints: 15, inspirationChance: 0.80 }
     },
     {
@@ -315,6 +462,13 @@ export const ENEMIES = {
       domainId: "choso_nineblood",
       domainName: "九血之狱（未完成）",
       domainHp: 500,
+      intelData: {
+        basic: { name: "初级情报", price: 150, description: "显示胀相的基础属性（HP/MP/等阶）。" },
+        skill: { name: "技能情报", price: 300, description: "显示胀相的技能：穿血、超新星、血刃、百敛·穿血和血星弹。" },
+        advanced: { name: "高级情报", price: 500, description: "胀相拥有领域「九血之狱（未完成）」(HP 500)，赤血操术使用者，善用血系攻击。" }
+      },
+      // Phase 14: 逃跑基础概率 (0-100)
+      escapeBaseChance: 15,
       rewards: { money: { min: 600, max: 1200 }, skillExp: 60, skillPoints: 8, inspirationChance: 0.50 }
     }
   ]

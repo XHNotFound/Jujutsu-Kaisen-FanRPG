@@ -363,6 +363,13 @@ body {
   border-radius: 3px;
 }
 
+/* Phase 14: 游戏天数显示 */
+.hud-game-day {
+  color: var(--color-text-dim);
+  font-size: 0.8rem;
+  margin-left: 0.25rem;
+}
+
 .hud-center {
   display: flex;
   flex-direction: column;
@@ -723,6 +730,44 @@ body {
 .battle-skill-btn.skill-summon {
   border-left: 3px solid #9333ea;
   background: rgba(147, 51, 234, 0.08);
+}
+
+/* Phase 18: category-specific styling */
+.battle-skill-btn.skill-category-buff {
+  border-left: 3px solid #60a5fa;
+  background: rgba(96, 165, 250, 0.08);
+}
+.battle-skill-btn.skill-category-control {
+  border-left: 3px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+/* Phase 18: Shop Tabs */
+.shop-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding-bottom: 0.5rem;
+}
+.shop-tab {
+  flex: 1;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  border-radius: 4px 4px 0 0;
+  background: rgba(255,255,255,0.05);
+  color: var(--color-text-dim);
+  cursor: pointer;
+  border: none;
+}
+.shop-tab.shop-tab-active {
+  background: rgba(255,255,255,0.12);
+  color: var(--color-text);
+  border-bottom: 2px solid var(--color-gold);
+}
+.shop-tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .battle-bottom-btns {
@@ -1667,4 +1712,115 @@ body {
   padding: 0.3rem 0;
   font-size: 0.85rem;
   color: var(--color-text-dim);
+}
+
+/* ===== Phase 12: 战斗状态栏（Buff/Debuff 显式化）===== */
+
+.battle-status-bar {
+  margin: 0.3rem 0;
+  padding: 0.2rem 0;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.battle-status-badge {
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.battle-status-badge:hover {
+  filter: brightness(1.3);
+  transform: translateY(-1px);
+}
+
+.battle-status-badge.status-pinned {
+  box-shadow: 0 0 4px rgba(255,255,255,0.2);
+  filter: brightness(1.2);
+}
+
+.status-icon {
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.status-name {
+  font-size: 0.7rem;
+  color: var(--color-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 0;
+  opacity: 0;
+  transition: max-width 0.3s ease, opacity 0.3s ease;
+}
+
+.status-name.status-expanded {
+  max-width: 120px;
+  opacity: 1;
+  margin-left: 2px;
+}
+
+.status-dur {
+  font-size: 0.6rem;
+  color: var(--color-text-dim);
+  margin-left: 2px;
+}
+
+/* Phase 12: 反转术式按钮 */
+.btn-rct-heal {
+  background: rgba(34, 197, 94, 0.15);
+  border: 2px solid #22c55e;
+  color: #22c55e;
+  font-weight: bold;
+  transition: all 0.3s;
+}
+
+.btn-rct-heal:hover:not(:disabled) {
+  background: rgba(34, 197, 94, 0.3);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+}
+
+.btn-rct-heal.cost-too-high {
+  border-color: #666;
+  color: #666;
+  background: rgba(100, 100, 100, 0.1);
+}
+
+/* Phase 12: RCT 消耗滑块弹窗 */
+.rct-dialog {
+  text-align: center;
+  padding: 1rem;
+}
+
+.rct-dialog h4 {
+  color: #22c55e;
+  margin-bottom: 0.5rem;
+}
+
+.rct-dialog .rct-efficiency {
+  font-size: 0.85rem;
+  color: var(--color-text-dim);
+  margin-bottom: 0.5rem;
+}
+
+.rct-dialog input[type="range"] {
+  width: 100%;
+  margin: 0.5rem 0;
+}
+
+.rct-dialog .rct-values {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--color-text-dim);
+  margin-bottom: 0.75rem;
+}
+
+.rct-dialog .rct-preview {
+  font-size: 0.9rem;
+  color: #22c55e;
+  margin-bottom: 0.5rem;
+}
+
+.rct-dialog .btn-rct-confirm {
+  margin-top: 0.5rem;
 }

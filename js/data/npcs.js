@@ -19,6 +19,19 @@ export const NPCS = [
           hpRestore: "max",
           residualClearPct: 0.50,
         }
+      },
+      // Phase 12: 反转术式基础
+      {
+        id: "learn_rct_basics",
+        type: "consult",
+        name: "请教反转术式基础",
+        description: "家入硝子是咒术界少有的反转术式输出者，向她请教反转术式的入门知识。解锁反转术式的前置条件。",
+        cost: { ap: 30, relationship: 4 },
+        effect: {
+          type: "unlock_prerequisite",
+          unlockKey: "rct_basics",
+          description: "获得了反转术式的基础知识"
+        }
       }
     ]
   },
@@ -99,6 +112,19 @@ export const NPCS = [
           proficiencyGain: 20,
           inspirationChance: 0.30,
           requireTechnique: "limitless"
+        }
+      },
+      // Phase 12: 五条悟也能教导反转术式（但要求最高人情）
+      {
+        id: "learn_rct_basics",
+        type: "consult",
+        name: "请教反转术式基础",
+        description: "向五条悟请教反转术式的奥秘。五条老师本人也是反转术式的大师。",
+        cost: { ap: 35, relationship: 5 },
+        effect: {
+          type: "unlock_prerequisite",
+          unlockKey: "rct_basics",
+          description: "获得了反转术式的基础知识"
         }
       },
       {
@@ -320,6 +346,76 @@ export const NPCS = [
           proficiencyGain: 18,
           inspirationChance: 0.25,
           requireTechnique: "curseManipulation"
+        }
+      }
+    ]
+  },
+  // Phase 12: 乙骨忧太 — 反转术式入门导师
+  {
+    id: "yuta",
+    name: "乙骨忧太",
+    description: "特级咒术师，反转术式的天赋使用者。在战斗中受伤时能瞬间以反转术式愈合。",
+    actions: [
+      {
+        id: "learn_rct_basics",
+        type: "consult",
+        name: "请教反转术式基础",
+        description: "向乙骨忧太请教反转术式的入门知识。他是最擅长教导反转术式的咒术师之一。解锁反转术式的前置条件。",
+        cost: { ap: 25, relationship: 3 },
+        effect: {
+          type: "unlock_prerequisite",
+          unlockKey: "rct_basics",
+          description: "获得了反转术式的基础知识"
+        }
+      },
+      {
+        id: "gift",
+        type: "gift",
+        name: "赠送咒物",
+        description: "将你在祓除咒灵中获得的稀有咒物赠给乙骨。",
+        cost: { money: 150 },
+        effect: { type: "gift", relationship: 2 }
+      }
+    ]
+  },
+  // Phase 18: 秤金次 — 黑市解锁 NPC
+  {
+    id: "hakari",
+    name: "秤金次",
+    description: "东京校三年生，坐杀博徒的持有者。拥有独特的地下咒具交易渠道——黑市的看门人。",
+    actions: [
+      {
+        id: "learn_gambling_lore",
+        type: "consult",
+        name: "请教坐杀博徒奥义",
+        description: "向秤金次请教坐杀博徒的进阶技巧。仅限坐杀博徒术式持有者。",
+        cost: { ap: 25, relationship: 2 },
+        effect: {
+          type: "learn",
+          targetSkills: ["steel_ball", "gambling_door"],
+          proficiencyGain: 18,
+          inspirationChance: 0.20,
+          requireTechnique: "hakariGambling"
+        }
+      },
+      {
+        id: "gift",
+        type: "gift",
+        name: "下注（送礼）",
+        description: "陪秤金次玩一把。赌注越大，人情越深。",
+        cost: { money: 200 },
+        effect: { type: "gift", relationship: 3 }
+      },
+      {
+        id: "unlock_black_market",
+        type: "consult",
+        name: "打听地下渠道",
+        description: "和秤金次混熟了以后，他会透露一些地下咒具交易的情报……解锁黑市系统。",
+        cost: { ap: 20, relationship: 10 },
+        effect: {
+          type: "unlock_prerequisite",
+          unlockKey: "black_market",
+          description: "获得了黑市的入口"
         }
       }
     ]

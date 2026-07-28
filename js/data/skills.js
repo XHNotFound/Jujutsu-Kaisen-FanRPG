@@ -4,7 +4,7 @@
 /**
  * 技能节点数据结构 (扩展):
  * {
- *   id, name, description, type, cost, damageMultiplier,
+ *   id, name, description, type, category, cost, damageMultiplier,
  *   castTime, baseRecoverySpeed, minDistance, maxDistance,
  *   isBaseSkill: boolean,      // 是否为术式基础技能（选择术式后自动获得 Lv.1）
  *   requires: string,          // 前置技能 ID（如"aoi"）
@@ -14,6 +14,14 @@
  *   levelUpCosts: [{ level, skillPoints, proficiency }],
  *   levelEffects: [{ level, damageMultiplier, cost, castTime, recoverySpeed, specialEffects }]
  * }
+ *
+ * category 分类:
+ * - martial（体术类）: 平A、黑闪等纯体术
+ * - cursed_martial（咒力/体术类）: 咒力强化拳、血刃等含咒力的体术
+ * - cursed_attack（咒力攻击类）: 苍、赫等远程咒术
+ * - cursed_summon（咒力召唤类）: 十种影法术等召唤式神
+ * - cursed_buff（咒力强化类）: 赤鳞跃动等自身buff（Phase 16 预留）
+ * - cursed_control（咒力控制类）: 拍手换位等空间/操控类（Phase 16 预留）
  *
  * 领域骨架数据结构:
  * {
@@ -53,16 +61,18 @@ export const SKILL_TREES = {
     nodes: [
       {
         id: "aoi", name: "苍", description: "术式顺转「苍」。产生强大的吸引力，将一切卷入空之涡。",
-        type: "cursed", isBaseSkill: true, maxLevel: 10,
+        type: "cursed", category: "cursed_attack", isBaseSkill: true, maxLevel: 10,
         requires: null, requiresLevel: 0, branches: ["aoi_strike", "aoi_max"],
         cost: 15, damageMultiplier: 2.2, castTime: 20, baseRecoverySpeed: 25,
         minDistance: 0, maxDistance: 3,
+        // Phase 17: 完整咒词 — 吟唱更长但伤害更高
+        fullChant: { chant: "位相·黄昏·智慧之瞳", castTime: 40, recoverySpeed: 15, damageMultiplier: 4.4, cursedEnergyCostMultiplier: 1.5 },
         levelUpCosts: [C(2,2,30), C(3,3,80), C(4,4,150), C(5,5,250), C(6,6,400), C(7,8,600), C(8,10,900), C(9,12,1300), C(10,15,2000)],
         levelEffects: [L(1,2.2,15,20,25,"基础苍"), L(2,2.4,14,19,26,""), L(3,2.6,13,18,27,""), L(4,2.9,12,17,28,""), L(5,3.2,11,16,29,""), L(6,3.5,10,15,30,""), L(7,3.9,9,14,31,""), L(8,4.3,8,13,32,""), L(9,4.8,7,12,33,""), L(10,5.3,6,10,35,"极致苍")]
       },
       {
         id: "aoi_strike", name: "苍·打击", description: "将「苍」凝缩至拳上，近身释放。威力集中但消耗更大。",
-        type: "cursed", isBaseSkill: false, maxLevel: 5,
+        type: "cursed", category: "cursed_attack", isBaseSkill: false, maxLevel: 5,
         requires: "aoi", requiresLevel: 3, branches: [],
         cost: 22, damageMultiplier: 3.0, castTime: 25, baseRecoverySpeed: 20,
         minDistance: 0, maxDistance: 0,
@@ -71,7 +81,7 @@ export const SKILL_TREES = {
       },
       {
         id: "aoi_max", name: "苍·最大出力", description: "将苍的威力推向极致，咏唱时间长但破坏力惊人。",
-        type: "cursed", isBaseSkill: false, maxLevel: 4,
+        type: "cursed", category: "cursed_attack", isBaseSkill: false, maxLevel: 4,
         requires: "aoi", requiresLevel: 5, branches: [],
         cost: 30, damageMultiplier: 4.0, castTime: 35, baseRecoverySpeed: 15,
         minDistance: 0, maxDistance: 3,
@@ -80,16 +90,20 @@ export const SKILL_TREES = {
       },
       {
         id: "aka", name: "赫", description: "术式反转「赫」。排斥一切的术式，远程大范围攻击。",
-        type: "cursed", isBaseSkill: true, maxLevel: 8,
+        type: "cursed", category: "cursed_attack", isBaseSkill: true, maxLevel: 8,
         requires: null, requiresLevel: 0, branches: ["aka_max"],
+        // Phase 17: 反转术式前置
+        unlockRequires: { advancedSkill: "rct" },
         cost: 25, damageMultiplier: 3.0, castTime: 30, baseRecoverySpeed: 18,
         minDistance: 1, maxDistance: 3,
+        // Phase 17: 完整咒词
+        fullChant: { chant: "位相·波罗蜜·光之柱", castTime: 55, recoverySpeed: 10, damageMultiplier: 6.0, cursedEnergyCostMultiplier: 1.5 },
         levelUpCosts: [C(2,3,50), C(3,4,120), C(4,5,200), C(5,6,300), C(6,8,500), C(7,10,800), C(8,13,1200)],
         levelEffects: [L(1,3.0,25,30,18,""), L(2,3.3,23,29,19,""), L(3,3.7,21,28,20,""), L(4,4.2,19,26,21,""), L(5,4.8,17,24,22,""), L(6,5.5,15,22,23,""), L(7,6.3,13,20,24,""), L(8,7.3,11,18,25,"")]
       },
       {
         id: "aka_max", name: "赫·最大出力", description: "将赫的排斥力推向极致，范围与威力令人绝望。",
-        type: "cursed", isBaseSkill: false, maxLevel: 4,
+        type: "cursed", category: "cursed_attack", isBaseSkill: false, maxLevel: 4,
         requires: "aka", requiresLevel: 4, branches: [],
         cost: 40, damageMultiplier: 4.5, castTime: 40, baseRecoverySpeed: 12,
         minDistance: 1, maxDistance: 3,
@@ -98,10 +112,15 @@ export const SKILL_TREES = {
       },
       {
         id: "murasaki", name: "虚式·茈", description: "苍与赫的融合——虚式「茈」。将空间本身撕裂的终极一击。",
-        type: "cursed", isBaseSkill: false, maxLevel: 5,
+        type: "cursed", category: "cursed_attack", isBaseSkill: false, maxLevel: 5,
         requires: "aka", requiresLevel: 5, branches: [],
         cost: 50, damageMultiplier: 6.0, castTime: 45, baseRecoverySpeed: 10,
         minDistance: 0, maxDistance: 3,
+        // Phase 17: 完整咒词
+        fullChant: { chant: "九纲·偏光·乌与声明·表里之间", castTime: 80, recoverySpeed: 5, damageMultiplier: 12.0, cursedEnergyCostMultiplier: 1.8 },
+        // Phase 17: Lv5 解锁无限制虚式茈
+        ultimateAtLevel: 5,
+        ultimateEffect: { name: "无限制虚式·茈", costRatio: 0.8, damageMultiplier: 18.0, selfHpCostRatio: 0.2 },
         levelUpCosts: [C(2,8,150), C(3,10,300), C(4,15,500), C(5,20,800)],
         levelEffects: [L(1,6.0,50,45,10,""), L(2,7.0,47,42,11,""), L(3,8.2,44,39,12,""), L(4,9.6,40,36,13,""), L(5,11.5,35,32,14,"")]
       }
@@ -117,7 +136,7 @@ export const SKILL_TREES = {
     nodes: [
       {
         id: "weakness", name: "十划咒法·基础弱点", description: "以7:3的比例强制制造弱点。攻击弱点时伤害提升。",
-        type: "cursed", isBaseSkill: true, maxLevel: 6,
+        type: "cursed", category: "cursed_martial", isBaseSkill: true, maxLevel: 6,
         requires: null, requiresLevel: 0, branches: ["ratio_strike", "collapse"],
         cost: 8, damageMultiplier: 1.3, castTime: 10, baseRecoverySpeed: 30,
         minDistance: 0, maxDistance: 1,
@@ -126,7 +145,7 @@ export const SKILL_TREES = {
       },
       {
         id: "ratio_strike", name: "咒力钝器·七三", description: "以咒力包裹钝器，精准打击对手弱点部位。",
-        type: "cursed", isBaseSkill: false, maxLevel: 5,
+        type: "cursed", category: "cursed_martial", isBaseSkill: false, maxLevel: 5,
         requires: "weakness", requiresLevel: 2, branches: [],
         cost: 14, damageMultiplier: 2.0, castTime: 15, baseRecoverySpeed: 25,
         minDistance: 0, maxDistance: 0,
@@ -135,7 +154,7 @@ export const SKILL_TREES = {
       },
       {
         id: "collapse", name: "咒力钝器·瓦解", description: "对弱点部位进行强力打击，大幅削弱对手防御。",
-        type: "cursed", isBaseSkill: false, maxLevel: 4,
+        type: "cursed", category: "cursed_martial", isBaseSkill: false, maxLevel: 4,
         requires: "weakness", requiresLevel: 3, branches: [],
         cost: 18, damageMultiplier: 2.5, castTime: 20, baseRecoverySpeed: 20,
         minDistance: 0, maxDistance: 0,
@@ -144,12 +163,14 @@ export const SKILL_TREES = {
       },
       {
         id: "overtime", name: "极之番·Overtime", description: "开启加班模式！攻击力与速度大幅提升，但持续消耗大量咒力。",
-        type: "cursed", isBaseSkill: false, maxLevel: 4,
+        type: "cursed", category: "cursed_buff", isBaseSkill: false, maxLevel: 4,
         requires: "weakness", requiresLevel: 5, branches: [],
-        cost: 25, damageMultiplier: 3.5, castTime: 25, baseRecoverySpeed: 18,
-        minDistance: 0, maxDistance: 1,
+        cost: 25, damageMultiplier: 0, castTime: 25, baseRecoverySpeed: 18,
+        minDistance: 0, maxDistance: 0,
+        // Phase 18: self buff — 持续 80 AV, 攻击提升 30%~60%
+        buffEffect: { type: "attack_boost", value: 0.30, duration: 80 },
         levelUpCosts: [C(2,6,120), C(3,8,250), C(4,12,450)],
-        levelEffects: [L(1,3.5,25,25,18,""), L(2,4.1,22,23,19,""), L(3,4.8,19,21,20,""), L(4,5.7,16,19,22,"")]
+        levelEffects: [L(1,0,25,25,18,"攻击+30%"), L(2,0,22,23,19,"攻击+40%"), L(3,0,19,21,20,"攻击+50%"), L(4,0,16,19,22,"攻击+60%")]
       }
     ]
   },
@@ -172,13 +193,14 @@ export const SKILL_TREES = {
     nodes: [
       {
         id: "gyokuken", name: "玉犬", description: "召唤黑白玉犬协助战斗。玉犬会自动撕咬敌人，是最忠诚的式神伙伴。",
-        type: "summon", isBaseSkill: true, maxLevel: 6,
+        type: "summon", category: "cursed_summon", isBaseSkill: true, maxLevel: 6,
         requires: null, requiresLevel: 0, branches: ["nue", "orochi"],
         cost: 30, damageMultiplier: 0, castTime: 25, baseRecoverySpeed: 20,
         minDistance: 0, maxDistance: 3,
         summonConfig: {
           unitType: "shikigami",
           name: "玉犬",
+          max_count: 2, domain_boost_extra: 1,
           baseStats: { hp: 80, max_hp: 80, mp: 20, max_mp: 20, speed: 15, constitution: 12, martialArts: 25, cursedEnergy: 5, cursedEnergyControl: 5, cursedEnergyEfficiency: 5, talent: 8 },
           skills: [
             { id: "shikigami_bite", name: "撕咬", type: "martial", damageMultiplier: 1.5, cost: 0, castTime: 10, baseRecoverySpeed: 25, minDistance: 0, maxDistance: 0, description: "用利齿撕咬目标" }
@@ -190,13 +212,14 @@ export const SKILL_TREES = {
       },
       {
         id: "nue", name: "鵺", description: "召唤鵺从空中俯冲攻击。鵺是具备飞行能力的式神，可全距离攻击并附带雷电。",
-        type: "summon", isBaseSkill: false, maxLevel: 5,
+        type: "summon", category: "cursed_summon", isBaseSkill: false, maxLevel: 5,
         requires: "gyokuken", requiresLevel: 1, branches: ["max_elephant"],
         cost: 35, damageMultiplier: 0, castTime: 30, baseRecoverySpeed: 18,
         minDistance: 0, maxDistance: 3,
         summonConfig: {
           unitType: "shikigami",
           name: "鵺",
+          max_count: 1, domain_boost_extra: 1,
           baseStats: { hp: 60, max_hp: 60, mp: 30, max_mp: 30, speed: 20, constitution: 8, martialArts: 20, cursedEnergy: 15, cursedEnergyControl: 12, cursedEnergyEfficiency: 10, talent: 12 },
           skills: [
             { id: "shikigami_dive", name: "俯冲", type: "martial", damageMultiplier: 2.0, cost: 0, castTime: 12, baseRecoverySpeed: 22, minDistance: 0, maxDistance: 3, description: "从空中俯冲攻击" },
@@ -209,7 +232,7 @@ export const SKILL_TREES = {
       },
       {
         id: "orochi", name: "大蛇", description: "召唤巨蛇缠住对手，每回合造成持续伤害并限制目标移动。",
-        type: "summon", isBaseSkill: false, maxLevel: 4,
+        type: "summon", category: "cursed_summon", isBaseSkill: false, maxLevel: 4,
         requires: "gyokuken", requiresLevel: 2, branches: [],
         cost: 30, damageMultiplier: 0, castTime: 25, baseRecoverySpeed: 20,
         minDistance: 0, maxDistance: 2,
@@ -227,7 +250,7 @@ export const SKILL_TREES = {
       },
       {
         id: "max_elephant", name: "满象", description: "召唤满象以巨大的体重碾压对手，是十种影法术中体型最大的式神之一。",
-        type: "summon", isBaseSkill: false, maxLevel: 4,
+        type: "summon", category: "cursed_summon", isBaseSkill: false, maxLevel: 4,
         requires: "nue", requiresLevel: 2, branches: ["tora_no_fun"],
         cost: 40, damageMultiplier: 0, castTime: 35, baseRecoverySpeed: 15,
         minDistance: 0, maxDistance: 2,
@@ -245,7 +268,7 @@ export const SKILL_TREES = {
       },
       {
         id: "tora_no_fun", name: "虎葬", description: "召唤虎形式神，以闪电般的速度突袭对手。虎葬是十种影法术中速度最快的式神。",
-        type: "summon", isBaseSkill: false, maxLevel: 3,
+        type: "summon", category: "cursed_summon", isBaseSkill: false, maxLevel: 3,
         requires: "max_elephant", requiresLevel: 2, branches: [],
         cost: 35, damageMultiplier: 0, castTime: 25, baseRecoverySpeed: 18,
         minDistance: 0, maxDistance: 3,
@@ -263,7 +286,7 @@ export const SKILL_TREES = {
       },
       {
         id: "makora", name: "魔虚罗（未降伏）", description: "十种影法术的终极式神。调伏失败——每次使用可能反噬自身。",
-        type: "cursed", isBaseSkill: false, maxLevel: 3,
+        type: "cursed", category: "cursed_summon", isBaseSkill: false, maxLevel: 3,
         requires: "gyokuken", requiresLevel: 6, branches: [],
         cost: 60, damageMultiplier: 8.0, castTime: 60, baseRecoverySpeed: 5,
         minDistance: 0, maxDistance: 3,
@@ -282,7 +305,7 @@ export const SKILL_TREES = {
     nodes: [
       {
         id: "blood_blade", name: "血刃", description: "以自身血液凝结为利刃进行攻击。消耗微量HP。",
-        type: "cursed", isBaseSkill: true, maxLevel: 6,
+        type: "cursed", category: "cursed_martial", isBaseSkill: true, maxLevel: 6,
         requires: null, requiresLevel: 0, branches: ["slicing_exorcism", "piercing_blood"],
         cost: 8, damageMultiplier: 1.4, castTime: 12, baseRecoverySpeed: 28,
         minDistance: 0, maxDistance: 1,
@@ -291,7 +314,7 @@ export const SKILL_TREES = {
       },
       {
         id: "slicing_exorcism", name: "血涂", description: "将血液化作无数细线，切割接触的一切。",
-        type: "cursed", isBaseSkill: false, maxLevel: 4,
+        type: "cursed", category: "cursed_attack", isBaseSkill: false, maxLevel: 4,
         requires: "blood_blade", requiresLevel: 2, branches: [],
         cost: 14, damageMultiplier: 1.8, castTime: 16, baseRecoverySpeed: 24,
         minDistance: 0, maxDistance: 2,
@@ -299,17 +322,39 @@ export const SKILL_TREES = {
         levelEffects: [L(1,1.8,14,16,24,"消耗5HP"), L(2,2.1,12,15,25,"消耗4HP"), L(3,2.5,10,14,26,"消耗4HP"), L(4,3.0,8,12,27,"消耗3HP")]
       },
       {
-        id: "piercing_blood", name: "穿血", description: "以高压血箭贯穿目标。全距离适用，穿刺伤害。",
-        type: "cursed", isBaseSkill: false, maxLevel: 6,
-        requires: "blood_blade", requiresLevel: 3, branches: ["supernova", "crimson_binding"],
-        cost: 14, damageMultiplier: 2.0, castTime: 16, baseRecoverySpeed: 24,
+        id: "piercing_blood", name: "穿血", description: "以高压血箭贯穿目标。全距离适用，穿刺伤害。极短咏唱。",
+        type: "cursed", category: "cursed_attack", isBaseSkill: false, maxLevel: 6,
+        requires: "blood_blade", requiresLevel: 3, branches: ["supernova", "crimson_binding", "blood_armor"],
+        cost: 14, damageMultiplier: 2.0, castTime: 5, baseRecoverySpeed: 10,
         minDistance: 0, maxDistance: 3,
         levelUpCosts: [C(2,3,60), C(3,4,140), C(4,6,250), C(5,8,400), C(6,10,600)],
-        levelEffects: [L(1,2.0,14,16,24,""), L(2,2.3,13,15,25,""), L(3,2.7,12,14,26,""), L(4,3.2,11,13,27,""), L(5,3.8,10,12,28,""), L(6,4.5,9,10,30,"")]
+        levelEffects: [L(1,2.0,14,5,10,""), L(2,2.3,13,5,10,""), L(3,2.7,12,5,10,""), L(4,3.2,11,5,10,""), L(5,3.8,10,5,10,""), L(6,4.5,9,5,10,"")]
+      },
+      {
+        id: "blood_armor", name: "血铠", description: "以凝固血液形成铠甲，大幅降低受到的伤害。",
+        type: "cursed", category: "cursed_buff", isBaseSkill: false, maxLevel: 3,
+        requires: "piercing_blood", requiresLevel: 3, branches: [],
+        cost: 40, damageMultiplier: 0, castTime: 15, baseRecoverySpeed: 20,
+        minDistance: 0, maxDistance: 0,
+        // Phase 17: self buff — 持续 40 AV, 伤害减免 25%~40%
+        buffEffect: { type: "damage_reduction", value: 0.25, duration: 40 },
+        levelUpCosts: [C(2,5,100), C(3,8,200)],
+        levelEffects: [L(1,0,40,15,20,"减伤25%"), L(2,0,37,14,21,"减伤33%"), L(3,0,34,13,23,"减伤40%")]
+      },
+      {
+        id: "blood_bind", name: "血缚", description: "以血液束缚敌人的行动，降低对方 ATB 填充速度。",
+        type: "cursed", category: "cursed_control", isBaseSkill: false, maxLevel: 3,
+        requires: "blood_blade", requiresLevel: 2, branches: [],
+        cost: 30, damageMultiplier: 0, castTime: 18, baseRecoverySpeed: 18,
+        minDistance: 0, maxDistance: 2,
+        // Phase 17: 对敌 debuff — 持续 60 AV, 减速 20%~40%
+        debuffEffect: { type: "speed_debuff", value: 0.20, duration: 60 },
+        levelUpCosts: [C(2,4,80), C(3,6,160)],
+        levelEffects: [L(1,0,30,18,18,"减速20%"), L(2,0,27,16,19,"减速30%"), L(3,0,24,14,20,"减速40%")]
       },
       {
         id: "supernova", name: "超新星", description: "将凝固的血液以超高速度射出，造成毁灭性打击。",
-        type: "cursed", isBaseSkill: false, maxLevel: 4,
+        type: "cursed", category: "cursed_attack", isBaseSkill: false, maxLevel: 4,
         requires: "piercing_blood", requiresLevel: 3, branches: [],
         cost: 22, damageMultiplier: 3.0, castTime: 22, baseRecoverySpeed: 18,
         minDistance: 0, maxDistance: 3,
@@ -317,17 +362,19 @@ export const SKILL_TREES = {
         levelEffects: [L(1,3.0,22,22,18,"消耗10HP"), L(2,3.6,20,20,19,"消耗8HP"), L(3,4.3,18,18,20,"消耗8HP"), L(4,5.2,16,16,22,"消耗6HP")]
       },
       {
-        id: "crimson_binding", name: "赤鳞跃动", description: "全面强化身体机能，提升伤害输出与速度。",
-        type: "cursed", isBaseSkill: false, maxLevel: 3,
+        id: "crimson_binding", name: "赤鳞跃动", description: "全面强化身体机能，提升ATB填充速度与伤害输出。",
+        type: "cursed", category: "cursed_buff", isBaseSkill: false, maxLevel: 3,
         requires: "piercing_blood", requiresLevel: 2, branches: [],
-        cost: 20, damageMultiplier: 2.2, castTime: 18, baseRecoverySpeed: 22,
+        cost: 20, damageMultiplier: 0, castTime: 18, baseRecoverySpeed: 22,
         minDistance: 0, maxDistance: 0,
+        // Phase 17: speed_boost buff — 持续 100 AV, 加速 30%~50%
+        buffEffect: { type: "speed_boost", value: 0.30, duration: 100 },
         levelUpCosts: [C(2,4,80), C(3,6,180)],
-        levelEffects: [L(1,2.2,20,18,22,"速度+2"), L(2,2.6,18,16,23,"速度+3"), L(3,3.1,16,14,25,"速度+4")]
+        levelEffects: [L(1,0,20,18,22,"加速30%"), L(2,0,18,16,23,"加速40%"), L(3,0,16,14,25,"加速50%")]
       },
       {
-        id: "canal", name: "运河", description: "在战场上布下血液的轨迹，限制敌人移动并造成持续伤害。",
-        type: "cursed", isBaseSkill: false, maxLevel: 4,
+        id: "canal", name: "运河", description: "在战场上布下血液的轨迹，造成大范围持续伤害并限制敌人移动。",
+        type: "cursed", category: "cursed_attack", isBaseSkill: false, maxLevel: 4,
         requires: "blood_blade", requiresLevel: 4, branches: [],
         cost: 16, damageMultiplier: 2.0, castTime: 20, baseRecoverySpeed: 20,
         minDistance: 0, maxDistance: 3,
@@ -355,16 +402,16 @@ export const SKILL_TREES = {
     nodes: [
       {
         id: "clap_swap", name: "拍手换位", description: "拍手即可交换自己与目标的位置。战术灵活性极高。",
-        type: "cursed", isBaseSkill: true, maxLevel: 6,
+        type: "cursed", category: "cursed_control", isBaseSkill: true, maxLevel: 6,
         requires: null, requiresLevel: 0, branches: ["tactical_combo"],
-        cost: 6, damageMultiplier: 1.2, castTime: 8, baseRecoverySpeed: 32,
+        cost: 6, damageMultiplier: 0, castTime: 8, baseRecoverySpeed: 32,
         minDistance: 0, maxDistance: 3,
         levelUpCosts: [C(2,2,20), C(3,3,60), C(4,4,120), C(5,6,200), C(6,8,350)],
-        levelEffects: [L(1,1.2,6,8,32,""), L(2,1.4,5,7,33,""), L(3,1.7,5,7,34,""), L(4,2.0,4,6,35,""), L(5,2.4,3,6,36,""), L(6,2.8,3,5,38,"")]
+        levelEffects: [L(1,0,6,8,32,""), L(2,0,5,7,33,""), L(3,0,5,7,34,""), L(4,0,4,6,35,""), L(5,0,3,6,36,""), L(6,0,3,5,38,"")]
       },
       {
         id: "tactical_combo", name: "战术连携", description: "利用位置交换后的有利位置进行连续攻击。",
-        type: "cursed", isBaseSkill: false, maxLevel: 5,
+        type: "cursed", category: "cursed_martial", isBaseSkill: false, maxLevel: 5,
         requires: "clap_swap", requiresLevel: 2, branches: [],
         cost: 12, damageMultiplier: 2.0, castTime: 12, baseRecoverySpeed: 28,
         minDistance: 0, maxDistance: 0,
@@ -392,7 +439,7 @@ export const SKILL_TREES = {
     nodes: [
       {
         id: "curse_absorb", name: "基础吞噬", description: "吞噬低级咒灵，将其转化为自身可用的咒力。",
-        type: "cursed", isBaseSkill: true, maxLevel: 6,
+        type: "cursed", category: "cursed_martial", isBaseSkill: true, maxLevel: 6,
         requires: null, requiresLevel: 0, branches: ["curse_sphere", "uzumaki_pseudo"],
         cost: 10, damageMultiplier: 1.2, castTime: 12, baseRecoverySpeed: 28,
         minDistance: 0, maxDistance: 2,
@@ -401,7 +448,7 @@ export const SKILL_TREES = {
       },
       {
         id: "curse_sphere", name: "咒灵玉储存", description: "将咒灵压缩为咒灵玉储存，战斗中一次性释放大量咒力。",
-        type: "cursed", isBaseSkill: false, maxLevel: 4,
+        type: "cursed", category: "cursed_attack", isBaseSkill: false, maxLevel: 4,
         requires: "curse_absorb", requiresLevel: 2, branches: [],
         cost: 20, damageMultiplier: 2.5, castTime: 22, baseRecoverySpeed: 20,
         minDistance: 0, maxDistance: 3,
@@ -410,7 +457,7 @@ export const SKILL_TREES = {
       },
       {
         id: "uzumaki_pseudo", name: "极之番·伪", description: "将吸收的咒灵全部释放为一次强力攻击。",
-        type: "cursed", isBaseSkill: false, maxLevel: 4,
+        type: "cursed", category: "cursed_attack", isBaseSkill: false, maxLevel: 4,
         requires: "curse_absorb", requiresLevel: 3, branches: [],
         cost: 35, damageMultiplier: 4.0, castTime: 30, baseRecoverySpeed: 14,
         minDistance: 0, maxDistance: 3,
@@ -429,7 +476,7 @@ export const SKILL_TREES = {
     nodes: [
       {
         id: "doll_basic", name: "基础操术", description: "以咒力操控人偶进行中距离攻击。",
-        type: "cursed", isBaseSkill: true, maxLevel: 6,
+        type: "cursed", category: "cursed_attack", isBaseSkill: true, maxLevel: 6,
         requires: null, requiresLevel: 0, branches: ["doll_scout", "doll_resonance"],
         cost: 10, damageMultiplier: 1.5, castTime: 14, baseRecoverySpeed: 26,
         minDistance: 0, maxDistance: 2,
@@ -438,16 +485,18 @@ export const SKILL_TREES = {
       },
       {
         id: "doll_scout", name: "远程侦查", description: "操控人偶进行远程侦查，获取敌人信息并干扰其行动。",
-        type: "cursed", isBaseSkill: false, maxLevel: 4,
+        type: "cursed", category: "cursed_control", isBaseSkill: false, maxLevel: 4,
         requires: "doll_basic", requiresLevel: 2, branches: [],
-        cost: 12, damageMultiplier: 1.6, castTime: 16, baseRecoverySpeed: 24,
+        cost: 12, damageMultiplier: 0, castTime: 16, baseRecoverySpeed: 24,
         minDistance: 1, maxDistance: 3,
+        // Phase 18: 对敌 debuff — 干扰目标 ATB 速度
+        debuffEffect: { type: "speed_debuff", value: 0.10, duration: 60 },
         levelUpCosts: [C(2,3,50), C(3,4,120), C(4,6,220)],
-        levelEffects: [L(1,1.6,12,16,24,""), L(2,1.9,10,15,25,""), L(3,2.3,8,14,26,""), L(4,2.7,6,12,28,"")]
+        levelEffects: [L(1,0,12,16,24,"减速10%"), L(2,0,10,15,25,"减速15%"), L(3,0,8,14,26,"减速20%"), L(4,0,6,12,28,"减速25%")]
       },
       {
         id: "doll_resonance", name: "共鸣", description: "以傀儡共鸣释放远程咒力冲击，全距离适用。",
-        type: "cursed", isBaseSkill: false, maxLevel: 5,
+        type: "cursed", category: "cursed_attack", isBaseSkill: false, maxLevel: 5,
         requires: "doll_basic", requiresLevel: 2, branches: ["doll_overload"],
         cost: 13, damageMultiplier: 1.9, castTime: 18, baseRecoverySpeed: 22,
         minDistance: 0, maxDistance: 3,
@@ -456,7 +505,7 @@ export const SKILL_TREES = {
       },
       {
         id: "doll_overload", name: "傀儡自爆", description: "引爆傀儡，对敌人造成巨量伤害，但傀儡损坏后需要重新制作。",
-        type: "cursed", isBaseSkill: false, maxLevel: 3,
+        type: "cursed", category: "cursed_attack", isBaseSkill: false, maxLevel: 3,
         requires: "doll_resonance", requiresLevel: 3, branches: [],
         cost: 30, damageMultiplier: 5.0, castTime: 30, baseRecoverySpeed: 10,
         minDistance: 1, maxDistance: 2,
@@ -484,7 +533,7 @@ export const SKILL_TREES = {
     nodes: [
       {
         id: "martial_combo", name: "体术连击", description: "高速近身连击，不消耗咒力。体术流的根基。",
-        type: "martial", isBaseSkill: true, maxLevel: 8,
+        type: "martial", category: "martial", isBaseSkill: true, maxLevel: 8,
         requires: null, requiresLevel: 0, branches: ["black_flash_boost", "rush_strike"],
         cost: 0, damageMultiplier: 1.2, castTime: 8, baseRecoverySpeed: 30,
         minDistance: 0, maxDistance: 0,
@@ -493,7 +542,7 @@ export const SKILL_TREES = {
       },
       {
         id: "black_flash_boost", name: "黑闪强化", description: "通过特训提升黑闪触发概率。被动效果，战斗中自动生效。",
-        type: "martial", isBaseSkill: false, maxLevel: 5,
+        type: "martial", category: "martial", isBaseSkill: false, maxLevel: 5,
         requires: "martial_combo", requiresLevel: 2, branches: [],
         cost: 0, damageMultiplier: 1.5, castTime: 6, baseRecoverySpeed: 32,
         minDistance: 0, maxDistance: 0,
@@ -502,7 +551,7 @@ export const SKILL_TREES = {
       },
       {
         id: "rush_strike", name: "疾风突袭", description: "以压倒性的速度进行突袭，无视部分防御。",
-        type: "martial", isBaseSkill: false, maxLevel: 5,
+        type: "martial", category: "martial", isBaseSkill: false, maxLevel: 5,
         requires: "martial_combo", requiresLevel: 3, branches: [],
         cost: 0, damageMultiplier: 2.0, castTime: 10, baseRecoverySpeed: 26,
         minDistance: 0, maxDistance: 1,
@@ -521,12 +570,61 @@ export const SKILL_TREES = {
     nodes: [
       {
         id: "cursed_boost", name: "咒力强化拳", description: "以咒力强化拳击，朴实但有效。",
-        type: "cursed", isBaseSkill: true, maxLevel: 6,
+        type: "cursed", category: "cursed_martial", isBaseSkill: true, maxLevel: 6,
         requires: null, requiresLevel: 0, branches: [],
         cost: 10, damageMultiplier: 1.8, castTime: 12, baseRecoverySpeed: 28,
         minDistance: 0, maxDistance: 0,
         levelUpCosts: [C(2,1,20), C(3,2,60), C(4,3,120), C(5,5,200), C(6,7,350)],
         levelEffects: [L(1,1.8,10,12,28,""), L(2,2.1,9,11,29,""), L(3,2.4,8,11,30,""), L(4,2.7,7,10,31,""), L(5,3.1,6,9,32,""), L(6,3.6,5,8,33,"")]
+      }
+    ]
+  },
+
+  // ====================================================================
+  //  Phase 17: 坐杀博徒 (Hakari's Gambling) — 全新赌狗术式
+  // ====================================================================
+  hakariGambling: {
+    baseSkills: ["steel_ball", "gambling_door"],
+    domain: {
+      id: "hakari_domain",
+      name: "坐杀博徒",
+      flavorText: "将一切赌在概率之上——中大奖则逆转战局，未中则继续押注。",
+      // Phase 17: 不完全领域门槛降低 30%
+      incompleteRequirements: {
+        techniqueLevel: 3,
+        barrierLevel: 3,
+        inspiration: 1,
+        cursedEnergyControl: 25
+      },
+      completeRequirements: {
+        techniqueLevel: 5,
+        barrierLevel: 5,
+        inspiration: 2,
+        cursedEnergyControl: 40
+      },
+      // 领域攻击力为 0 — 特殊效果替代伤害
+      baseStats: { hpPerBarrier: 40, hpPerCEC: 3, intervalBase: 15, damagePerTech: 0, mpCostPerTick: 3 }
+    },
+    nodes: [
+      {
+        id: "steel_ball", name: "小钢珠", description: "投掷咒力凝缩的钢珠，可叠加提升后续体术伤害。",
+        type: "cursed", category: "cursed_buff", isBaseSkill: true, maxLevel: 3,
+        requires: null, requiresLevel: 0, branches: ["gambling_door"],
+        cost: 10, damageMultiplier: 0, castTime: 8, baseRecoverySpeed: 30,
+        minDistance: 1, maxDistance: 3,
+        // Phase 17: 叠层 buff — 每层 +10% 体术伤害 (满级 +20%)
+        buffEffect: { type: "steel_ball_stack", value: 0.10, maxStacks: 5 },
+        levelUpCosts: [C(2,2,40), C(3,3,100)],
+        levelEffects: [L(1,0,10,8,30,"每层+10%体术"), L(2,0,10,8,30,"每层+15%体术"), L(3,0,10,8,30,"每层+20%体术")]
+      },
+      {
+        id: "gambling_door", name: "门", description: "以咒力击穿空间的近战一击。朴实但骰子已握在手中。",
+        type: "cursed", category: "cursed_martial", isBaseSkill: false, maxLevel: 5,
+        requires: "steel_ball", requiresLevel: 1, branches: [],
+        cost: 15, damageMultiplier: 1.2, castTime: 10, baseRecoverySpeed: 28,
+        minDistance: 0, maxDistance: 1,
+        levelUpCosts: [C(2,2,30), C(3,3,80), C(4,4,150), C(5,6,250)],
+        levelEffects: [L(1,1.2,15,10,28,""), L(2,1.5,14,9,29,""), L(3,1.8,13,8,30,""), L(4,2.2,12,7,31,""), L(5,2.6,11,6,32,"")]
       }
     ]
   }
@@ -538,7 +636,7 @@ export const SKILL_TREES = {
 export const BASE_SKILLS = {
   attack: {
     id: "attack", name: "体术平A", description: "基础体术攻击，不消耗咒力。",
-    type: "martial", cost: 0, damageMultiplier: 1.0,
+    type: "martial", category: "martial", cost: 0, damageMultiplier: 1.0,
     castTime: 5, baseRecoverySpeed: 30, minDistance: 0, maxDistance: 0,
     isDefault: true, requires: null,
     levelUpCosts: [C(2,1,30), C(3,2,80), C(4,3,150)],
@@ -546,14 +644,14 @@ export const BASE_SKILLS = {
   },
   advance: {
     id: "advance", name: "逼近", description: "向敌人逼近 1 档距离。",
-    type: "movement", cost: 0, damageMultiplier: 0,
+    type: "movement", category: null, cost: 0, damageMultiplier: 0,
     castTime: 3, baseRecoverySpeed: 35, minDistance: 0, maxDistance: 3,
     isDefault: true, requires: null, levelUpCosts: [],
     levelEffects: [L(1,0,0,3,35,"")]
   },
   retreat: {
     id: "retreat", name: "后退", description: "向后退开 1 档距离。",
-    type: "movement", cost: 0, damageMultiplier: 0,
+    type: "movement", category: null, cost: 0, damageMultiplier: 0,
     castTime: 3, baseRecoverySpeed: 35, minDistance: 0, maxDistance: 3,
     isDefault: true, requires: null, levelUpCosts: [],
     levelEffects: [L(1,0,0,3,35,"")]
@@ -606,6 +704,7 @@ export function getSkillConfig(skillId, skillLevels = {}) {
   return {
     id: def.id, name: def.name, description: def.description,
     type: def.type,
+    category: def.category || null,
     cost: effect.cost !== undefined ? effect.cost : def.cost,
     damageMultiplier: effect.damageMultiplier !== undefined ? effect.damageMultiplier : def.damageMultiplier,
     castTime: effect.castTime !== undefined ? effect.castTime : def.castTime,
@@ -683,3 +782,4 @@ export function getUnlockableSkills(techniqueId, skillLevels = {}) {
     return (skillLevels[skill.requires] || 0) >= (skill.requiresLevel || 1);
   });
 }
+

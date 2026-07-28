@@ -77,7 +77,7 @@ export class CharCreator {
   /**
    * 根据 6 项属性平均值计算实力评定
    * @param {object} attributes - 属性对象（可能包含 base/其他字段，只取 ATTRIBUTES 中定义的 key）
-   * @returns {{ name: string, avg: number }} 评定名称 + 平均值
+   * @returns {object} 评定名称 + 平均值
    */
   calculateRank(attributes) {
     const attrKeys = Object.keys(ATTRIBUTES);
@@ -131,7 +131,7 @@ export class CharCreator {
    * 检查术式的前置要求是否满足
    * @param {object} technique - 术式对象
    * @param {object} attributes - 当前属性
-   * @returns {{ satisfied: boolean, details: Array<{attr: string, name: string, required: number, current: number}> }}
+   * @returns {object}
    */
   checkTechniqueRequirements(technique, attributes) {
     const reqs = technique.requirements || {};
@@ -239,7 +239,7 @@ export class CharCreator {
   /**
    * Phase 11: 给当前属性添加自由点数
    * @param {string} attrKey — 属性 key
-   * @returns {{ success: boolean, used: number, remaining: number }}
+   * @returns {object}
    */
   addBonusPoint(attrKey) {
     if (this.bonusPoints <= 0) return { success: false, used: 0, remaining: this.bonusPoints };
@@ -253,7 +253,7 @@ export class CharCreator {
   /**
    * Phase 11: 撤消最后一个自由加点
    * @param {string} attrKey
-   * @returns {{ success: boolean, remaining: number }}
+   * @returns {object}
    */
   removeBonusPoint(attrKey) {
     if (!this._bonusBaseAttributes) return { success: false, remaining: this.bonusPoints };

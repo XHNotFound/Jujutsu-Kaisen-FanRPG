@@ -41,7 +41,8 @@ class Skill:
     id: str
     name: str
     cost: int
-    type: str              # "martial" | "cursed" | "movement" | "domain_expand"
+    type: str              # "martial" | "cursed" | "movement" | "domain_expand" | "summon"
+    category: str = ""     # Phase 16: "martial"|"cursed_martial"|"cursed_attack"|"cursed_summon"|"cursed_buff"|"cursed_control"
     damage_multiplier: float = 1.0
     description: str = ""
     min_distance: int = DISTANCE_CLOSE
@@ -49,16 +50,20 @@ class Skill:
     cast_time: int = 5
     base_recovery_speed: int = 30
     summon_config: Optional[dict] = None  # Phase 9: summon skill config
+    full_chant: Optional[dict] = None     # Phase 17: complete chant config
 
     def to_dict(self):
         d = {
             "id": self.id, "name": self.name, "cost": self.cost, "type": self.type,
+            "category": self.category,
             "damage_multiplier": self.damage_multiplier,
             "min_distance": self.min_distance, "max_distance": self.max_distance,
             "cast_time": self.cast_time, "base_recovery_speed": self.base_recovery_speed
         }
         if self.summon_config:
             d["summon_config"] = self.summon_config
+        if self.full_chant:
+            d["fullChant"] = self.full_chant
         return d
 
 
@@ -99,6 +104,8 @@ class Unit:
     # Phase 10: 敌人领域展开 AI 暂存字段（非 dataclass 字段，运行时动态设置）
     domain_name: Optional[str] = None
     domain_hp: int = 500
+    # Phase 17: 式神类型追踪（非 dataclass 字段，运行时动态设置）
+    shikigami_type: Optional[str] = None
 
     def to_dict(self):
         d = {
@@ -122,6 +129,7 @@ class Unit:
             "domain_counter_buffs": list(self.domain_counter_buffs),
             "domain_name": self.domain_name,
             "domain_hp": self.domain_hp,
+            "shikigami_type": self.shikigami_type,
             "skills": [s.to_dict() for s in self.skills]
         }
         return d

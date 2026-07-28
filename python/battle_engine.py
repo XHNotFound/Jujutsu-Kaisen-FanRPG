@@ -16,7 +16,11 @@ def _log(state: BattleState, msg: str):
     state.log.append(f"[{state.global_action_time} AV] {msg}")
 
 def _capped(v, lo, hi): return max(lo, min(hi, v))
-def _check_black_flash(actor): return random.random() < (BLACK_FLASH_BASE_RATE + actor.talent * BLACK_FLASH_TALENT_RATE)
+def _check_black_flash(actor, skill=None):
+    """Phase 16: 黑闪仅 martial/cursed_martial 类别可触发"""
+    if skill is not None and skill.category and skill.category not in ("martial", "cursed_martial"):
+        return False
+    return random.random() < (BLACK_FLASH_BASE_RATE + actor.talent * BLACK_FLASH_TALENT_RATE)
 
 # ===== Phase 9: 仇恨机制 =====
 def update_aggro(attacker, target, damage, action_type="damage"):
@@ -85,6 +89,221 @@ def has_domain_counter(unit):
     """检查 Unit 是否有任何激活的领域对抗 Buff"""
     return len(unit.domain_counter_buffs) > 0
 
+# Phase 16: 领域防御检测
+DOMAIN_DEFENSE_STATUS_IDS = ("simple_domain_active", "falling_blossom_active", "hollow_wicker_active")
+
+def check_domain_defense(target, state):
+    """检查目标单位是否有有效领域防御。
+    有效防御包括:
+    1. 拥有 type === 'domain' 的 Unit 且 HP > 0
+    2. status_effects 中包含 simple_domain_active
+    3. status_effects 中包含 falling_blossom_active
+    4. status_effects 中包含 hollow_wicker_active
+    返回 True 表示有防御。
+    """
+    # 1. 检查是否拥有活跃的领域 Unit
+    has_own_domain = any(
+        u.unit_type == UNIT_DOMAIN and u.owner == target.id and u.hp > 0
+        for u in state.units
+    )
+    if has_own_domain:
+        return True
+
+    # 2-4. 检查 status_effects 中的领域对抗 Buff
+    if target.status_effects:
+        for se in target.status_effects:
+            if se.get("id") in DOMAIN_DEFENSE_STATUS_IDS:
+                return True
+
+    return False
+
+# Phase 16: 领域特殊效果配置
+DOMAIN_SPECIAL_EFFECTS = {
+    "info_overflow": {
+        "debuff_id": "info_overload_stun",
+        "debuff_name": "信息过载·行动推迟",
+        "debuff_duration": 80,  # 下次行动前等待 80 AV
+        "brain_damage_id": "domain_burnout_brain",
+        "brain_damage_name": "脑损伤（领域禁止）",
+        "brain_damage_duration": 160,  # 160 AV 内禁止展开领域
+        "description": "将目标拉入无限的虚空，所有感知信息被无限放大"
+    },
+    "shadow_territory": {
+        "debuff_id": "shadow_bound",
+        "debuff_name": "影缚",
+        "debuff_duration": 60,
+        "brain_damage_id": None,  # 十种影法术领域无脑损伤
+        "brain_damage_name": None,
+        "brain_damage_duration": 0,
+        "description": "影子覆盖一切，领域内的式神能力大幅提升"
+    }
+}
+
+def apply_domain_special_effect(domain, target, state):
+    """Phase 16: 领域特殊效果施加 — 仅完全领域生效，且需检查目标防御。
+    领域对拼中不施加特殊效果。
+    """
+    # 领域对拼时不施加特殊效果
+    if getattr(state, 'domain_clash_active', False):
+        return
+
+    # 获取领域对应的特殊效果键 — 从 domain 的 owner 来推断
+    owner = state.find_unit(domain.owner) if domain.owner else None
+    if not owner:
+        return
+
+    # 通过领域名推断特殊效果 key（与 JS domains.js 中的 specialEffect 对应）
+    # 暂时只实装 info_overflow (无量空处)
+    special_key = None
+    if "无量空处" in (domain.name or ""):
+        special_key = "info_overflow"
+    elif "嵌合暗翳庭" in (domain.name or ""):
+        special_key = "shadow_territory"
+
+    if not special_key:
+        return
+
+    effect_cfg = DOMAIN_SPECIAL_EFFECTS.get(special_key)
+    if not effect_cfg:
+        return
+
+    # 检查目标是否有防御
+    if check_domain_defense(target, state):
+        _log(state, f"「{domain.name}」的特殊效果被 {target.name} 的领域防御抵消了。")
+        return
+
+    # 施加行动推迟 Debuff
+    debuff_id = effect_cfg.get("debuff_id")
+    debuff_name = effect_cfg.get("debuff_name")
+    debuff_dur = effect_cfg.get("debuff_duration", 80)
+    if debuff_id and not has_status(target, debuff_id):
+        add_status_effect(target, debuff_id, debuff_dur)
+        # 额外: 直接增加目标下一次行动的等待
+        target.atb = max(0, target.atb - 80)
+        _log(state, f"{target.name} 被「{domain.name}」的特殊效果击中——{debuff_name}！(持续 {debuff_dur} AV)")
+
+    # 施加脑损伤 Debuff（禁止领域展开）
+    brain_id = effect_cfg.get("brain_damage_id")
+    brain_name = effect_cfg.get("brain_damage_name")
+    brain_dur = effect_cfg.get("brain_damage_duration", 160)
+    if brain_id and not has_status(target, brain_id):
+        add_status_effect(target, brain_id, brain_dur)
+        _log(state, f"{target.name} 遭受脑损伤——{brain_name}！（{brain_dur} AV 内禁止展开领域）")
+
+# ===== Phase 12: Status Effects 系统 =====
+
+def _tick_status_effects(state):
+    """每帧推进所有单位 status_effects 的持续时间，移除已过期的"""
+    for u in state.units:
+        if not u.is_alive or not u.status_effects:
+            continue
+        surviving = []
+        for se in u.status_effects:
+            dur = se.get("duration", 0)
+            if dur > 0:
+                se["duration"] = max(0, dur - FRAME_STEP)
+                if se["duration"] <= 0:
+                    _log(state, f"{u.name} 的「{se.get('name','状态')}」效果消失了。")
+                    # Phase 12: 当领域熔断 Debuff 过期时，恢复补偿速度
+                    if se.get("id") == "domain_burnout":
+                        u.recovery_speed = max(1, int(u.recovery_speed / (1.0 - DOMAIN_BURNOUT_SPEED_PENALTY)))
+                    continue
+            surviving.append(se)
+        u.status_effects = surviving
+
+def add_status_effect(unit, status_id, duration_override=None):
+    """向 Unit 添加标准状态效果。若同 id 已存在则刷新持续时间（取更长者）"""
+    STATUS_DEFS = {
+        "domain_burnout": {
+            "id": "domain_burnout", "name": "领域熔断", "type": "debuff",
+            "duration": 60, "description": "禁用所有咒术技能，体术补偿速度 -30%。",
+            "icon": "🔥",
+            "effects": {"forbid_cursed_skills": True, "recovery_speed_penalty": 0.30}
+        },
+        "simple_domain_active": {
+            "id": "simple_domain_active", "name": "简易领域", "type": "buff",
+            "duration": 0, "description": "护盾中和敌方领域必中效果。每 10 AV 消耗咒力。",
+            "icon": "🗡️",
+            "effects": {"negate_domain_special": True, "shield_hp": 200, "mp_drain_per_10av": 2}
+        },
+        "falling_blossom_active": {
+            "id": "falling_blossom_active", "name": "落花之情", "type": "buff",
+            "duration": 0, "description": "以咒力将敌方领域必中效果打散，100% 免伤。每 10 AV 高消耗。",
+            "icon": "🌸",
+            "effects": {"negate_domain_special": True, "domain_damage_reduction": 1.0, "mp_drain_per_10av": 5}
+        },
+        "hollow_wicker_active": {
+            "id": "hollow_wicker_active", "name": "弥虚葛笼", "type": "buff",
+            "duration": 0, "description": "编织结界术防御空间，80% 减伤。每 10 AV 高消耗。",
+            "icon": "🏺",
+            "effects": {"negate_domain_special": True, "domain_damage_reduction": 0.8, "mp_drain_per_10av": 8}
+        },
+        # Phase 12: RCT related
+        "info_overload_stun": {
+            "id": "info_overload_stun", "name": "信息过载·行动推迟", "type": "debuff",
+            "duration": 80, "description": "下一次行动前强制增加 80 AV 等待时间。",
+            "icon": "🧠",
+            "effects": {"atb_delay": 80}
+        },
+        "domain_burnout_brain": {
+            "id": "domain_burnout_brain", "name": "脑损伤（领域禁止）", "type": "debuff",
+            "duration": 160, "description": "大脑受损，在持续时间内禁止展开领域。",
+            "icon": "🧨",
+            "effects": {"forbid_domain_expand": True}
+        },
+        "rct_active": {
+            "id": "rct_active", "name": "反转术式", "type": "buff",
+            "duration": 0, "description": "反转术式已解锁，可在战斗中消耗咒力回复血量。",
+            "icon": "💚",
+            "effects": {"rct_unlocked": True}
+        }
+    }
+    sd = STATUS_DEFS.get(status_id)
+    if not sd:
+        return False
+    existing = [s for s in unit.status_effects if s.get("id") == status_id]
+    if existing:
+        dur = duration_override if duration_override is not None else sd.get("duration", 0)
+        existing[0]["duration"] = max(existing[0].get("duration", 0), dur)
+        return True
+    se = dict(sd)  # shallow copy
+    if duration_override is not None:
+        se["duration"] = duration_override
+    unit.status_effects.append(se)
+    return True
+
+def remove_status_effect(unit, status_id):
+    """移除单位指定状态效果"""
+    if not unit.status_effects:
+        return False
+    before = len(unit.status_effects)
+    unit.status_effects = [s for s in unit.status_effects if s.get("id") != status_id]
+    return len(unit.status_effects) < before
+
+def has_status(unit, status_id):
+    """检查单位是否拥有指定状态效果（且持续时间 > 0 或为永久）"""
+    for s in (unit.status_effects or []):
+        if s.get("id") == status_id and s.get("duration", 0) >= 0:
+            return s
+    return None
+
+def _sync_domain_counter_to_status(unit):
+    """Phase 12: 将 unit.domain_counter_buffs 映射为标准化 status_effects"""
+    map_buff = {
+        "simple_domain": "simple_domain_active",
+        "falling_blossom": "falling_blossom_active",
+        "hollow_wicker": "hollow_wicker_active",
+    }
+    active_ids = {b.get("id") for b in unit.domain_counter_buffs}
+    for buff_id, status_id in map_buff.items():
+        has_se = has_status(unit, status_id)
+        if buff_id in active_ids:
+            if not has_se:
+                add_status_effect(unit, status_id)
+        else:
+            if has_se:
+                remove_status_effect(unit, status_id)
+
 def _tick_domain_counter_buffs(state):
     """每帧推进领域对抗 Buff 的咒力消耗（每 10 AV 扣一次）"""
     for u in state.units:
@@ -105,6 +324,9 @@ def _tick_domain_counter_buffs(state):
         for buf in expired:
             u.domain_counter_buffs.remove(buf)
             _log(state, f"{u.name} 的「{buf['name']}」效果消失了。")
+        # Phase 12: 同步 domain_counter_buffs 变更到 status_effects
+        if expired:
+            _sync_domain_counter_to_status(u)
 
 def apply_domain_counter_to_damage(unit, raw_dmg):
     """对原始领域伤害应用领域对抗 Buff 的减免。
@@ -183,6 +405,12 @@ def _advance_time(state: BattleState, frames: int):
         _apply_shikigami_taunt_aggro(state)
         # Phase 10: 领域对抗 Buff 咒力消耗
         _tick_domain_counter_buffs(state)
+        # Phase 12: 推进所有单位的 status_effects 持续时间
+        _tick_status_effects(state)
+        # Phase 18: 推进大奖 Buff 的 timer（auto_rct / auto_ce）
+        _tick_gambling_buffs(state)
+        # Phase 18: 推进 DOT 伤害 timer（每帧）
+        _tick_dot_timers(state)
         # 1. 推进所有单位的 ATB
         for u in state.units:
             if u.is_alive:
@@ -211,17 +439,20 @@ def _check_battle_end(state: BattleState):
     if e and e.hp <= 0 and e.is_alive:
         e.is_alive = False; state.turn = "player_win"
         _log(state, f"{e.name} 被击败了！")
+        e.status_effects = []  # Phase 12: 清除死亡单位的状态效果
         for u in list(state.units):
             if u.unit_type == UNIT_DOMAIN: _handle_cancel_domain({"domain_id": u.id}, state)
     if p and p.hp <= 0 and p.is_alive:
         p.is_alive = False; state.turn = "enemy_win"
         _log(state, f"{p.name} 倒下了…")
+        p.status_effects = []  # Phase 12: 清除死亡单位的状态效果
         for u in list(state.units):
             if u.unit_type == UNIT_DOMAIN: _handle_cancel_domain({"domain_id": u.id}, state)
     # Phase 11: 检查式神死亡
     for u in list(state.units):
         if u.unit_type == UNIT_SHIKIGAMI and u.hp <= 0 and u.is_alive:
             u.is_alive = False
+            u.status_effects = []  # Phase 12: 清除
             _log(state, f"{u.name} 被击败了，消失在影子中。")
             state.units = [x for x in state.units if x.id != u.id]
 
@@ -282,11 +513,51 @@ def _resolve_enemy_turn(state: BattleState):
 def create_player_from_save(save_data):
     name = save_data.get("characterName", "无名咒术师"); attrs = save_data.get("attributes", {})
     con, ce = attrs.get("constitution",10), attrs.get("cursedEnergy",10)
+
+    # Phase 14: 装备 activeBuff 注入
+    EQUIPMENT_TOOLS = {
+        "normalCursedBlade": {"statsBonus": {"martialArts": 5, "cursedEnergyControl": 2}},
+        "ironBracers": {"statsBonus": {"constitution": 5}},
+        "cursedRing": {"statsBonus": {"cursedEnergyEfficiency": 4, "cursedEnergy": 3}},
+        "woodenTalisman": {"statsBonus": {"cursedEnergyControl": 3, "talent": 2}},
+        "reinforcedBlade": {"statsBonus": {"martialArts": 10, "cursedEnergyControl": 4}},
+        "dragonScaleBracer": {"statsBonus": {"constitution": 10, "cursedEnergy": 3}},
+        "jadePendant": {"statsBonus": {"cursedEnergy": 6, "cursedEnergyControl": 5, "cursedEnergyEfficiency": 4}},
+        "combatGloves": {"statsBonus": {"martialArts": 8, "talent": 4}},
+        "spiritCharm": {"statsBonus": {"cursedEnergy": 8, "cursedEnergyEfficiency": 3}},
+        # Phase 14: Tier 3 特效咒具
+        "playfulCloud": {"statsBonus": {"martialArts": 15},
+            "activeBuff": {"id": "playful_cloud_buff", "name": "游云·重击", "type": "buff",
+                "duration": 1, "description": "下一次体术攻击倍率 +2.0，扣除 10% 当前 HP。",
+                "icon": "☁️", "effects": {"nextMartialMultiplier": 2.0, "hpCostRatio": 0.1}}},
+        "blackRope": {"statsBonus": {"constitution": 20, "cursedEnergyEfficiency": -10},
+            "activeBuff": {"id": "black_rope_buff", "name": "黑绳·缚咒", "type": "buff",
+                "duration": 0, "description": "体质 +20，咒力效率 -10%。",
+                "icon": "🪢", "effects": {"constitutionBonus": 20, "cursedEnergyEfficiencyPenalty": -10}}},
+    }
+
+    # 读取装备加成用于 maxHp/maxMp
+    equipment = save_data.get("equipment", {})
+    equipment_bonus_con = 0
+    equipment_bonus_ce = 0
+    if equipment:
+        for slot_id, tool_id in equipment.items():
+            if tool_id and tool_id in EQUIPMENT_TOOLS:
+                bonus = EQUIPMENT_TOOLS[tool_id].get("statsBonus", {})
+                equipment_bonus_con += bonus.get("constitution", 0)
+                equipment_bonus_ce += bonus.get("cursedEnergy", 0)
+
+    effective_con = con + equipment_bonus_con
+    effective_ce  = ce  + equipment_bonus_ce
+
     hp = save_data.get("hp",100) or 100; mhp = save_data.get("maxHp",100) or 100
     mp = save_data.get("mp",50) or 50; mmp = save_data.get("maxMp",50) or 50
-    if mhp <= 0: mhp = 80 + con * 2
+    # Bug #2 fix: 直接使用 JS 端已按阶梯公式计算好的 maxHp/maxMp，不再用线形公式重算
+    # JS SaveManager._calcMaxHp/_calcMaxMp 的阶梯公式（体质≤20: +5/点, 20~40: +10/点, >40: +15/点）是正确的
+    # 仅做钳制防溢出
+    if hp > mhp: hp = mhp
     if hp <= 0: hp = mhp
-    if mmp <= 0: mmp = 30 + ce * 3
+    if mp > mmp: mp = mmp
     if mp <= 0: mp = mmp
     tid = save_data.get("techniqueId","cursedEnergyBoost"); spd = 8 + attrs.get("talent",10) // 3
     return Unit(id="player",name=name,unit_type=UNIT_PLAYER,hp=hp,max_hp=mhp,mp=mp,max_mp=mmp,
@@ -294,32 +565,55 @@ def create_player_from_save(save_data):
                 cursed_energy=ce,cursed_energy_control=attrs.get("cursedEnergyControl",10),
                 cursed_energy_efficiency=attrs.get("cursedEnergyEfficiency",10),talent=attrs.get("talent",10),
                 skills=_build_player_skills(tid, save_data.get("skillLevels", {})),
-                is_alive=True,distance=DISTANCE_MID,active_vow=None,recovery_speed=spd)
+                is_alive=True,distance=DISTANCE_MID,active_vow=None,recovery_speed=spd,
+                status_effects=_build_equipment_buffs(save_data))
+
+def _build_equipment_buffs(save_data):
+    """Phase 14: 从装备中提取 activeBuff 并构建 status_effects"""
+    buffs = []
+    equipment = save_data.get("equipment", {})
+    TOOLS = {
+        "playfulCloud": {
+            "id": "playful_cloud_buff", "name": "游云·重击", "type": "buff",
+            "duration": 1, "description": "下一次体术攻击倍率 +2.0，扣除 10% 当前 HP。",
+            "icon": "☁️", "effects": {"nextMartialMultiplier": 2.0, "hpCostRatio": 0.1}
+        },
+        "blackRope": {
+            "id": "black_rope_buff", "name": "黑绳·缚咒", "type": "buff",
+            "duration": 0, "description": "体质 +20，咒力效率 -10%。",
+            "icon": "🪢", "effects": {"constitutionBonus": 20, "cursedEnergyEfficiencyPenalty": -10}
+        }
+    }
+    for tool_id in equipment.values():
+        if tool_id and tool_id in TOOLS:
+            buffs.append(dict(TOOLS[tool_id]))
+    return buffs
 
 def _build_player_skills(tid, skill_levels=None):
     """Build skills based on unlocked skills in skillLevels. Only base + unlocked branch skills are included."""
     if skill_levels is None: skill_levels = {}
-    B=[("attack","体术平A",0,"martial",1.0,5,30,0,0,"基础体术"),("advance","逼近",0,"movement",0.0,3,35,0,3,"逼近1档"),("retreat","后退",0,"movement",0.0,3,35,0,3,"后退1档")]
-    sk=[Skill(id=i,name=n,cost=c,type=t,damage_multiplier=m,cast_time=ct,base_recovery_speed=r,min_distance=mn,max_distance=mx,description=d) for (i,n,c,t,m,ct,r,mn,mx,d) in B]
-    TS={"cursedEnergyBoost":[("cursed_boost","咒力强化拳",10,"cursed",1.8,12,28,0,0,"以咒力强化拳击")],
-        "limitless":[("aoi","苍",15,"cursed",2.2,20,25,0,3,"空之涡"),("aka","赫",25,"cursed",3.0,30,18,1,3,"排斥一切"),("aoi_strike","苍·打击",22,"cursed",3.0,25,20,0,0,"近身苍"),("aoi_max","苍·最大出力",30,"cursed",4.0,35,15,0,3,"极致苍"),("aka_max","赫·最大出力",40,"cursed",4.5,40,12,1,3,"极致赫"),("murasaki","虚式·茈",50,"cursed",6.0,45,10,0,3,"撕裂空间")],
-        "tenShadows":[("gyokuken","玉犬",30,"summon",0,25,20,0,3,"召唤黑白玉犬",
+    B=[("attack","体术平A",0,"martial","martial",1.0,5,30,0,0,"基础体术"),("advance","逼近",0,"movement","",0.0,3,35,0,3,"逼近1档"),("retreat","后退",0,"movement","",0.0,3,35,0,3,"后退1档")]
+    sk=[Skill(id=i,name=n,cost=c,type=t,category=cat,damage_multiplier=m,cast_time=ct,base_recovery_speed=r,min_distance=mn,max_distance=mx,description=d) for (i,n,c,t,cat,m,ct,r,mn,mx,d) in B]
+    TS={"cursedEnergyBoost":[("cursed_boost","咒力强化拳",10,"cursed","cursed_martial",1.8,12,28,0,0,"以咒力强化拳击")],
+        "limitless":[("aoi","苍",15,"cursed","cursed_attack",2.2,20,25,0,3,"空之涡"),("aka","赫",25,"cursed","cursed_attack",3.0,30,18,1,3,"排斥一切"),("aoi_strike","苍·打击",22,"cursed","cursed_attack",3.0,25,20,0,0,"近身苍"),("aoi_max","苍·最大出力",30,"cursed","cursed_attack",4.0,35,15,0,3,"极致苍"),("aka_max","赫·最大出力",40,"cursed","cursed_attack",4.5,40,12,1,3,"极致赫"),("murasaki","虚式·茈",50,"cursed","cursed_attack",6.0,45,10,0,3,"撕裂空间")],
+        "tenShadows":[("gyokuken","玉犬",30,"summon","cursed_summon",0,25,20,0,3,"召唤黑白玉犬",
                     {"unitType":"shikigami","name":"玉犬","baseStats":{"hp":80,"max_hp":80,"mp":20,"max_mp":20,"speed":15,"constitution":12,"martialArts":25,"cursedEnergy":5,"cursedEnergyControl":5,"cursedEnergyEfficiency":5,"talent":8},"skills":[{"id":"shikigami_bite","name":"撕咬","type":"martial","damageMultiplier":1.5,"cost":0,"castTime":10,"baseRecoverySpeed":25,"minDistance":0,"maxDistance":0,"description":"用利齿撕咬目标"}],"duration":300}),
-                   ("nue","鵺",35,"summon",0,30,18,0,3,"召唤鵺",
+                   ("nue","鵺",35,"summon","cursed_summon",0,30,18,0,3,"召唤鵺",
                     {"unitType":"shikigami","name":"鵺","baseStats":{"hp":60,"max_hp":60,"mp":30,"max_mp":30,"speed":20,"constitution":8,"martialArts":20,"cursedEnergy":15,"cursedEnergyControl":12,"cursedEnergyEfficiency":10,"talent":12},"skills":[{"id":"shikigami_dive","name":"俯冲","type":"martial","damageMultiplier":2.0,"cost":0,"castTime":12,"baseRecoverySpeed":22,"minDistance":0,"maxDistance":3,"description":"从空中俯冲攻击"},{"id":"shikigami_shock","name":"电击","type":"cursed","damageMultiplier":1.8,"cost":10,"castTime":16,"baseRecoverySpeed":18,"minDistance":1,"maxDistance":3,"description":"释放雷电攻击远处目标"}],"duration":300}),
-                   ("orochi","大蛇",30,"summon",0,25,20,0,2,"召唤巨蛇",
+                   ("orochi","大蛇",30,"summon","cursed_summon",0,25,20,0,2,"召唤巨蛇",
                     {"unitType":"shikigami","name":"大蛇","baseStats":{"hp":100,"max_hp":100,"mp":15,"max_mp":15,"speed":10,"constitution":16,"martialArts":22,"cursedEnergy":8,"cursedEnergyControl":8,"cursedEnergyEfficiency":5,"talent":8},"skills":[{"id":"shikigami_constrict","name":"缠绕","type":"martial","damageMultiplier":1.5,"cost":0,"castTime":14,"baseRecoverySpeed":22,"minDistance":0,"maxDistance":1,"description":"缠绕目标造成持续伤害","dotDamage":8,"dotTurns":2}],"duration":350}),
-                   ("max_elephant","满象",40,"summon",0,35,15,0,2,"召唤满象",
+                   ("max_elephant","满象",40,"summon","cursed_summon",0,35,15,0,2,"召唤满象",
                     {"unitType":"shikigami","name":"满象","baseStats":{"hp":150,"max_hp":150,"mp":10,"max_mp":10,"speed":8,"constitution":22,"martialArts":30,"cursedEnergy":5,"cursedEnergyControl":5,"cursedEnergyEfficiency":3,"talent":6},"skills":[{"id":"shikigami_crush","name":"碾压","type":"martial","damageMultiplier":2.5,"cost":0,"castTime":18,"baseRecoverySpeed":16,"minDistance":0,"maxDistance":2,"description":"以巨大身躯碾压目标，无视30%防御"}],"duration":300}),
-                   ("tora_no_fun","虎葬",35,"summon",0,25,18,0,3,"召唤虎形神",
+                   ("tora_no_fun","虎葬",35,"summon","cursed_summon",0,25,18,0,3,"召唤虎形神",
                     {"unitType":"shikigami","name":"虎葬","baseStats":{"hp":70,"max_hp":70,"mp":20,"max_mp":20,"speed":25,"constitution":10,"martialArts":28,"cursedEnergy":10,"cursedEnergyControl":10,"cursedEnergyEfficiency":8,"talent":14},"skills":[{"id":"shikigami_rush","name":"突袭","type":"martial","damageMultiplier":2.2,"cost":0,"castTime":8,"baseRecoverySpeed":26,"minDistance":0,"maxDistance":3,"description":"闪电突袭目标，先制攻击"}],"duration":250}),
-                   ("makora","魔虚罗",60,"cursed",8.0,60,5,0,3,"终极式神")],
-        "bloodManipulation":[("blood_blade","血刃",8,"cursed",1.4,12,28,0,1,"血液利刃"),("slicing_exorcism","血涂",14,"cursed",1.8,16,24,0,1,"切割线"),("piercing_blood","穿血",14,"cursed",2.0,16,24,0,3,"高压血箭"),("supernova","超新星",22,"cursed",3.0,22,18,0,3,"凝固血液"),("crimson_binding","赤鳞跃动",20,"cursed",2.2,18,22,0,0,"强化身体"),("canal","运河",16,"cursed",2.0,20,20,0,3,"血液轨迹")],
-        "boogieWoogie":[("clap_swap","拍手换位",6,"cursed",1.2,8,32,0,3,"交换位置"),("tactical_combo","战术连携",12,"cursed",2.0,12,28,0,0,"连续攻击")],
-        "overtime":[("weakness","基础弱点",8,"cursed",1.3,10,30,0,1,"7:3弱点"),("ratio_strike","咒力钝器·七三",14,"cursed",2.0,15,25,0,0,"精准打击"),("collapse","瓦解",18,"cursed",2.5,20,20,0,0,"削弱防御"),("overtime","极之番·加班",25,"cursed",3.5,25,18,0,1,"加班模式")],
-        "curseManipulation":[("curse_absorb","基础吞噬",10,"cursed",1.2,12,28,0,1,"吞噬咒灵"),("curse_sphere","咒灵玉储存",20,"cursed",2.5,22,20,0,3,"释放咒力"),("uzumaki_pseudo","极之番·伪",35,"cursed",4.0,30,14,0,3,"全部释放")],
-        "strawDoll":[("doll_basic","基础操控",10,"cursed",1.5,14,26,0,1,"人偶攻击"),("doll_scout","远程侦查",12,"cursed",1.6,16,24,1,3,"远程侦查"),("doll_resonance","共鸣",13,"cursed",1.9,18,22,0,3,"远程冲击"),("doll_overload","傀儡自爆",30,"cursed",5.0,30,10,1,1,"引爆傀儡")],
-        "pureMartial":[("martial_combo","体术连击",0,"martial",1.2,8,30,0,0,"高速连击"),("black_flash_boost","黑闪强化",0,"martial",1.5,6,32,0,0,"提升黑闪"),("rush_strike","疾风突袭",0,"martial",2.0,10,26,0,1,"速度突袭")]}
+                   ("makora","魔虚罗",60,"cursed","cursed_summon",8.0,60,5,0,3,"终极式神")],
+        "bloodManipulation":[("blood_blade","血刃",8,"cursed","cursed_martial",1.4,12,28,0,1,"血液利刃"),("slicing_exorcism","血涂",14,"cursed","cursed_attack",1.8,16,24,0,1,"切割线"),("piercing_blood","穿血",14,"cursed","cursed_attack",2.0,16,24,0,3,"高压血箭"),("supernova","超新星",22,"cursed","cursed_attack",3.0,22,18,0,3,"凝固血液"),("crimson_binding","赤鳞跃动",20,"cursed","cursed_buff",0,18,22,0,0,"强化身体"),("canal","运河",16,"cursed","cursed_attack",2.0,20,20,0,3,"血液轨迹"),("blood_armor","血铠",40,"cursed","cursed_buff",0,15,20,0,0,"血液铠甲"),("blood_bind","血缚",30,"cursed","cursed_control",0,18,18,0,2,"束缚敌人")],  # Phase 18: crimson_binding/blood_armor/blood_bind dmg 0
+        "boogieWoogie":[("clap_swap","拍手换位",6,"cursed","cursed_control",0,8,32,0,3,"交换位置"),("tactical_combo","战术连携",12,"cursed","cursed_martial",2.0,12,28,0,0,"连续攻击")],  # Phase 18: clap_swap dmg 0 (control only)
+        "overtime":[("weakness","基础弱点",8,"cursed","cursed_martial",1.3,10,30,0,1,"7:3弱点"),("ratio_strike","咒力钝器·七三",14,"cursed","cursed_martial",2.0,15,25,0,0,"精准打击"),("collapse","瓦解",18,"cursed","cursed_martial",2.5,20,20,0,0,"削弱防御"),("overtime","极之番·加班",25,"cursed","cursed_buff",0,25,18,0,0,"加班模式")],  # Phase 18: overtime dmg 0 (buff only)
+        "curseManipulation":[("curse_absorb","基础吞噬",10,"cursed","cursed_martial",1.2,12,28,0,1,"吞噬咒灵"),("curse_sphere","咒灵玉储存",20,"cursed","cursed_attack",2.5,22,20,0,3,"释放咒力"),("uzumaki_pseudo","极之番·伪",35,"cursed","cursed_attack",4.0,30,14,0,3,"全部释放")],
+        "strawDoll":[("doll_basic","基础操控",10,"cursed","cursed_attack",1.5,14,26,0,1,"人偶攻击"),("doll_scout","远程侦查",12,"cursed","cursed_control",0,16,24,1,3,"远程侦查"),("doll_resonance","共鸣",13,"cursed","cursed_attack",1.9,18,22,0,3,"远程冲击"),("doll_overload","傀儡自爆",30,"cursed","cursed_attack",5.0,30,10,1,1,"引爆傀儡")],  # Phase 18: doll_scout dmg 0 (control only)
+        "pureMartial":[("martial_combo","体术连击",0,"martial","martial",1.2,8,30,0,0,"高速连击"),("black_flash_boost","黑闪强化",0,"martial","martial",1.5,6,32,0,0,"提升黑闪"),("rush_strike","疾风突袭",0,"martial","martial",2.0,10,26,0,1,"速度突袭")],
+        "hakariGambling":[("steel_ball","小钢珠",10,"cursed","cursed_buff",0,8,30,1,3,"投掷钢珠叠层"),("gambling_door","门",15,"cursed","cursed_martial",1.2,10,28,0,1,"近身一击")]}  # Phase 18: steel_ball dmg 0 (buff only)
     for e in TS.get(tid, TS.get("cursedEnergyBoost",[])):
         skill_id = e[0]
         branch_skills = {"aoi_strike","aoi_max","aka_max","murasaki","nue","orochi","max_elephant","tora_no_fun","makora",
@@ -329,9 +623,20 @@ def _build_player_skills(tid, skill_levels=None):
                          "black_flash_boost","rush_strike"}
         if skill_id in branch_skills and skill_levels.get(skill_id, 0) < 1:
             continue
-        # Phase 9: handle optional summon_config (11th element)
-        sc = e[10] if len(e) > 10 else None
-        sk.append(Skill(id=e[0],name=e[1],cost=e[2],type=e[3],damage_multiplier=e[4],cast_time=e[5],base_recovery_speed=e[6],min_distance=e[7],max_distance=e[8],description=e[9],summon_config=sc))
+        # Phase 9: handle optional summon_config (after category, shifted +1)
+        sc = e[11] if len(e) > 11 else None
+        sk.append(Skill(id=e[0],name=e[1],cost=e[2],type=e[3],category=e[4],damage_multiplier=e[5],cast_time=e[6],base_recovery_speed=e[7],min_distance=e[8],max_distance=e[9],description=e[10],summon_config=sc))
+    # Phase 17: inject max_count + domain_boost_extra from JS skills.js hardcoded data for tenShadows
+    # (the Python _build_player_skills tuples don't carry max_count/domain_boost_extra — they're in skills.js)
+    KNOWN_SUMMON_EXTRAS = {
+        "gyokuken": {"max_count": 2, "domain_boost_extra": 1},
+        "nue": {"max_count": 1, "domain_boost_extra": 1},
+    }
+    for s in sk:
+        if s.type == "summon" and s.id in KNOWN_SUMMON_EXTRAS and s.summon_config:
+            extras = KNOWN_SUMMON_EXTRAS[s.id]
+            s.summon_config["max_count"] = extras["max_count"]
+            s.summon_config["domain_boost_extra"] = extras["domain_boost_extra"]
     return sk
 
 def create_default_enemy(tier="normal"):
@@ -441,7 +746,19 @@ def calculate_damage(actor, skill, target, is_bf=False):
     ed = target.constitution * 0.5
     if is_bf: ed *= 0.5
     dmg = max(1, int(ba + sb - ed))
+    # 黑闪 + 咒具 buff
     if is_bf: dmg = max(1, int(dmg * 2.5))
+    # Phase 16: 游云 active buff — 体术/咒术伤害加成
+    for se in (actor.status_effects or []):
+        if se.get("id") == "playful_cloud_active":
+            martial_bonus = se.get("effects", {}).get("martial_damage_bonus", 0)
+            cursed_bonus = se.get("effects", {}).get("cursed_damage_bonus", 0)
+            # 根据 skill category 决定加成
+            if skill.category in ("martial", "cursed_martial"):
+                dmg += martial_bonus
+            elif skill.category in ("cursed_attack", "cursed_control"):
+                dmg += cursed_bonus
+            break
     cb = 1.0 + min(0.5, actor.cursed_energy_control * 0.01)
     return max(1, int(dmg * cb))
 
@@ -484,6 +801,45 @@ def calculate_mp_cost(actor, skill):
     if skill.cost <= 0: return 0
     return max(0, int(skill.cost * max(0.3, 1.0 - actor.cursed_energy_efficiency * 0.005)))
 
+# ===== Phase 12: 反转术式 (Reverse Cursed Technique) =====
+
+def calculate_rct_efficiency(cursed_energy_efficiency):
+    """计算反转术式回复效率（分段线性函数，严格连续无跳变）
+    - cee < 20:  固定 0.5
+    - 20 <= cee <= 40: 0.5 + (cee - 20) * 0.01   (线性上升至 0.7)
+    - 40 < cee <= 60:  0.7 + (cee - 40) * 0.015  (线性上升至 1.0)
+    - cee > 60:  1.0 + (cee - 60) * 0.02
+    边界验证:
+      cee=19 -> 0.5; cee=20 -> 0.5 (第二段代入: 0.5+(20-20)*0.01=0.5) ✓连续
+      cee=40 -> 0.7 (第二段: 0.5+(40-20)*0.01=0.7; 第三段: 0.7+(40-40)*0.015=0.7) ✓连续
+      cee=60 -> 1.0 (第三段: 0.7+(60-40)*0.015=1.0; 第四段: 1.0+(60-60)*0.02=1.0) ✓连续
+    """
+    if cursed_energy_efficiency < 20:
+        return 0.5
+    if cursed_energy_efficiency <= 40:
+        return 0.5 + (cursed_energy_efficiency - 20) * 0.01
+    if cursed_energy_efficiency <= 60:
+        return 0.7 + (cursed_energy_efficiency - 40) * 0.015
+    return 1.0 + (cursed_energy_efficiency - 60) * 0.02
+
+def execute_rct(unit, consume_amount):
+    """执行反转术式回复。
+    参数:
+      unit: 施术者 Unit
+      consume_amount: 消耗的咒力量（1 ~ unit.mp）
+    返回:
+      (heal_amount, consume_amount, log_text) 三元组
+    """
+    if consume_amount <= 0 or consume_amount > unit.mp:
+        return (0, 0, "无效的咒力消耗量。")
+    efficiency = calculate_rct_efficiency(unit.cursed_energy_efficiency)
+    heal_amount = int(consume_amount * efficiency)
+    unit.mp -= consume_amount
+    actual_heal = min(heal_amount, unit.max_hp - unit.hp)
+    unit.hp += actual_heal
+    return (actual_heal, consume_amount,
+            f"{unit.name} 使用了反转术式，消耗 {consume_amount} 咒力，回复了 {actual_heal} HP（效率 {efficiency:.3f}）。")
+
 # ===== 行动执行 =====
 def execute_action(action_json, state_json):
     action = json.loads(action_json); state_dict = json.loads(state_json)
@@ -507,7 +863,22 @@ def execute_action(action_json, state_json):
     elif at == "activate_domain_counter": _handle_activate_domain_counter(action, state)
     # Phase 10.5: repair domain barrier
     elif at == "repair_domain": _handle_repair_domain(action, state)
+    # Phase 12: reverse cursed technique heal
+    elif at == "rct_heal": _handle_rct_heal(action, state)
+    # Phase 16: 战斗道具
+    elif at == "use_item": _handle_use_item(action, state)
+    # Phase 16: 咒具主动技能
+    elif at == "tool_active": _handle_tool_active(action, state)
+    # Phase 18: DOT 伤害 tick — 拾取所有单位的 dot 类型 status_effects
+    elif at == "dot_tick": _tick_dot_effects(state)
+    # Phase 17: use buff / debuff skill (赤鳞跃动 etc.)
+    elif at == "use_buff_skill": _handle_buff_skill(action, state)
+    # Phase 17: 坐杀博徒 — 展开领域 + 抽奖
+    elif at == "gambling_domain_roll": _handle_gambling_roll(action, state)
     result = state.to_dict(); result["_tracker"] = tracker.to_dict()
+    # Phase 16 fix: 传递道具使用标记给 JS 端
+    if hasattr(state, '_item_used'):
+        result["_item_used"] = state._item_used
     return json.dumps(result, ensure_ascii=False)
 
 def _handle_use_skill(action, state, tracker=None):
@@ -516,15 +887,64 @@ def _handle_use_skill(action, state, tracker=None):
     actor = state.get_actor(aid); target = state.get_target(tid)
     if not actor or not target: _log(state, "[ERROR] 无效的行动者或目标。"); return
     if actor.atb < ATB_MAX and state.turn == "player":
-        _advance_time(state, 1)
-        _log(state, f"{actor.name} 的 ATB 恢复中（{actor.atb}/{ATB_MAX}）…"); return
+        # Phase 18 fix: 连续推进直到 ATB 满或敌人回合触发，避免玩家每帧都要点击
+        while actor.atb < ATB_MAX and state.turn == "player":
+            _advance_time(state, 1)
+        if actor.atb >= ATB_MAX and state.turn == "player":
+            _log(state, f"{actor.name} 的 ATB 已满（{actor.atb}/{ATB_MAX}）")
+        return
     skill = None
     for s in actor.skills:
         if s.id == sid: skill = s; break
     if not skill: _log(state, f"[ERROR] 未找到技能: {sid}"); return
+    # Phase 17: 完整咒词 — 从 action 中读取标记，动态替换技能数值
+    full_chant = action.get("use_full_chant", False)
+    if full_chant:
+        # Phase 17 fix: JS 端已计算好完整咒词数值并传入 action，
+        # 直接使用 action 中的 full_chant_* 字段覆盖 Skill 对象
+        fc_cost = action.get("full_chant_cost", 0)
+        fc_ct = action.get("full_chant_cast_time", 0)
+        fc_rec = action.get("full_chant_recovery_speed", 0)
+        fc_dmg = action.get("full_chant_damage_multiplier", 0)
+        # 若 JS 端未传入数值，从技能定义的 fullChant 配置中回退读取
+        # （兜底：Python 侧硬编码已知 fullChant 配置）
+        if fc_cost <= 0 and fc_ct <= 0 and fc_rec <= 0 and fc_dmg <= 0:
+            # Fallback for known skills: read fullChant from skills.js configuration
+            KNOWN_FULL_CHANTS = {
+                "aoi": {"chant": "位相·黄昏·智慧之瞳", "castTime": 40, "recoverySpeed": 15, "damageMultiplier": 4.4, "cursedEnergyCostMultiplier": 1.5},
+                "aka": {"chant": "位相·波罗蜜·光之柱", "castTime": 55, "recoverySpeed": 10, "damageMultiplier": 6.0, "cursedEnergyCostMultiplier": 1.5},
+                "murasaki": {"chant": "九纲·偏光·乌与声明·表里之间", "castTime": 80, "recoverySpeed": 5, "damageMultiplier": 12.0, "cursedEnergyCostMultiplier": 1.8},
+            }
+            fc = KNOWN_FULL_CHANTS.get(sid)
+            if fc:
+                fc_ct = fc["castTime"]
+                fc_rec = fc["recoverySpeed"]
+                fc_dmg = fc["damageMultiplier"]
+                fc_cost = int(skill.cost * fc["cursedEnergyCostMultiplier"])
+                # 兜底时也传入咒词文本
+                fc_chant = fc.get("chant", "")
+        if fc_cost > 0: skill.cost = fc_cost
+        if fc_ct > 0: skill.cast_time = fc_ct
+        if fc_rec > 0: skill.base_recovery_speed = fc_rec
+        if fc_dmg > 0: skill.damage_multiplier = fc_dmg
+        # Phase 17: 完整咒词念白 — 在战斗日志中展示原著咒词
+        # 优先用 JS 传入的，兜底用 Python 硬编码的
+        fc_chant_text = action.get("full_chant_text", "") or fc_chant
+        if fc_chant_text:
+            # 临时挂到 skill 上供 _execute_attack_framed 使用
+            skill._chant_text = fc_chant_text
+    # Phase 17: 无限制虚式茈
+    if sid == "murasaki" and action.get("use_ultimate", False):
+        _execute_ultimate_murasaki(actor, skill, target, state)
+        if tracker: tracker.record_skill_use(sid)
+        return
     if actor.mp < skill.cost and skill.type in ("cursed","summon"):
         _log(state, f"咒力不足！需要 {skill.cost} MP，当前 {actor.mp} MP。"); return
     if tracker: tracker.record_skill_use(sid)
+    # Phase 17: buff 类技能 — cursed_buff / cursed_control → 走 _handle_buff_skill
+    if skill.category in ("cursed_buff", "cursed_control"):
+        _handle_buff_skill({"actor": aid, "skill_id": sid, "target": tid, "level": 1}, state)
+        return
     # Phase 9: summon skill
     if skill.type == "summon":
         _execute_summon(actor, skill, state)
@@ -543,17 +963,28 @@ def _execute_attack_framed(actor, skill, target, state):
         _advance_time(state, move_cost)
     # Step 2: 咏唱阶段（逐帧推进，允许中断）
     ct = skill.cast_time
+    chant_text = getattr(skill, '_chant_text', '')
+    if chant_text:
+        _log(state, f"<span style='color:#c084fc;font-style:italic'>「{chant_text}」</span>")
     _log(state, f"{actor.name} 开始咏唱 {skill.name}（{ct} 帧）…")
     _advance_time(state, ct)
     # Step 3: 伤害结算
     is_bf = False
-    if skill.type == "martial" and _check_black_flash(actor): is_bf = True
+    if skill.category in ("martial", "cursed_martial"):
+        is_bf = _check_black_flash(actor, skill)
     dmg = calculate_damage(actor, skill, target, is_bf)
     dmg = apply_damage_variance(dmg, is_bf)  # Phase 8: 伤害偏移
     cost = calculate_mp_cost(actor, skill)
+    # Phase 17: 赤血操术全系扣血 — 扣除 max_hp * 5%，保底 1
+    if skill.category and skill.category.startswith("cursed_") and "blood" in actor.name.lower():
+        pass  # 由 _apply_blood_cost 统一处理
+    if actor.unit_type == UNIT_PLAYER:
+        _apply_blood_technique_cost(actor, skill, state)
     actor.mp = max(0, actor.mp - cost); target.hp = max(0, target.hp - dmg)
     # Phase 9: aggro — enemy resents attacker
     update_aggro(actor, target, dmg, "damage")
+    # Phase 17: 赤血操术全系扣血 — 扣除 max_hp * 5%，保底 1
+    _apply_blood_technique_cost(actor, skill, state)
     actor.atb = 0
     bf_text = "【黑闪！】" if is_bf else ""
     cost_text = f"（消耗 {cost} MP）" if cost > 0 else ""
@@ -596,9 +1027,24 @@ def _execute_summon(summoner, skill, state):
     if not sc: _log(state, f"[ERROR] 技能 {skill.id} 缺少 summonConfig。"); return
     sname = sc.get("name", "召唤物")
     utype = sc.get("unitType", UNIT_SHIKIGAMI)
-    # 检查同名式神是否已存在
-    existing = [u for u in state.units if u.unit_type == UNIT_SHIKIGAMI and u.owner == summoner.id and u.is_alive]
-    if existing:
+
+    # Phase 17: 式神数量限制 — 检查是否已满
+    max_count = sc.get("max_count", 1)  # 默认每种式神最多 1 只
+    # 检查是否在嵌合暗翳庭领域中（领域效果额外 +1）
+    domain_boost = sc.get("domain_boost_extra", 0)  # 领域提供的额外数量
+    active_shikigami_boost = getattr(state, 'shikigami_boost_active', False)
+    effective_max = max_count + (domain_boost if active_shikigami_boost else 0)
+
+    existing_same = [u for u in state.units
+                     if u.unit_type == UNIT_SHIKIGAMI and u.owner == summoner.id
+                     and u.is_alive and getattr(u, 'shikigami_type', '') == skill.id]
+    if len(existing_same) >= effective_max:
+        _log(state, f"{sname} 已达上限（{effective_max}），无法继续召唤。")
+        return
+
+    # Phase 17: old name-based check — only block if max_count == 1 (unique shikigami)
+    existing = [u for u in state.units if u.unit_type == UNIT_SHIKIGAMI and u.owner == summoner.id and u.is_alive and u.name == sname]
+    if existing and max_count == 1:
         _log(state, f"{summoner.name} 的式神 {existing[0].name} 仍在场，无法重复召唤。")
         return
     duration = sc.get("duration", 300)
@@ -632,6 +1078,8 @@ def _execute_summon(summoner, skill, state):
         is_alive=True, distance=summoner.distance, owner=summoner.id,
         recovery_speed=st.get("speed", 15), summon_duration=duration
     )
+    # Phase 17: 标记式神类型用于数量追踪
+    summon_unit.shikigami_type = skill.id
     state.units.append(summon_unit)
     _log(state, f"{summoner.name} 召唤了 {sname}！（HP: {summon_unit.hp}, ATK: {summon_unit.martial_arts}, 持续: {duration} AV）")
 
@@ -645,7 +1093,11 @@ def _tick_summon_duration(state):
                 u.is_alive = False
                 expired.append(u)
     for u in expired:
-        _log(state, f"{u.name} 的持续时间已到，消失在影子中。")
+        # Phase 17: 嵌合暗翳庭效果 — 式神死亡不扣除数量
+        if not getattr(state, 'shikigami_boost_active', False):
+            _log(state, f"{u.name} 的持续时间已到，消失在影子中。")
+        else:
+            _log(state, f"{u.name} 的持续时间已到，但在嵌合暗翳庭的保护下，影子将其回收。")
         state.units = [x for x in state.units if x.id != u.id]
 
 def _resolve_shikigami_turns(state):
@@ -667,7 +1119,7 @@ def _resolve_shikigami_action(shiki, state):
         # 清除手动标记（仅当次行动）
         shiki._manual_skill = None
         _resolve_distance(shiki, skill, target, state)
-        is_bf = _check_black_flash(shiki)
+        is_bf = _check_black_flash(shiki, sk)
         dmg = calculate_damage(shiki, skill, target, is_bf)
         dmg = apply_damage_variance(dmg, is_bf)
         cost = calculate_mp_cost(shiki, skill)
@@ -695,7 +1147,7 @@ def _resolve_shikigami_action(shiki, state):
     skill = avail[0]
     distance_cost = _resolve_distance(shiki, skill, target, state)
     if distance_cost < 0: return  # ATB 不足
-    is_bf = _check_black_flash(shiki)
+    is_bf = _check_black_flash(shiki, skill)
     dmg = calculate_damage(shiki, skill, target, is_bf)
     dmg = apply_damage_variance(dmg, is_bf)
     cost = calculate_mp_cost(shiki, skill)
@@ -722,6 +1174,33 @@ def _handle_shikigami_skill(action, state, tracker=None):
     # 设定手动技能标记，等 ATB 满时自动执行
     actor._manual_skill = skill
     _log(state, f"[手动] {actor.name} 的下一次行动已设定为：{skill.name}（需 {skill.cost} MP）")
+
+# ===== Phase 12: 反转术式 Handler =====
+
+def _handle_rct_heal(action, state):
+    """处理玩家使用反转术式回复"""
+    actor_id = action.get("actor", "player")
+    consume_amount = action.get("consume_amount", 0)
+    actor = state.find_unit(actor_id)
+    if not actor:
+        _log(state, "[ERROR] 无效的行动者。")
+        return
+    # Phase 12: 检查 rct_cooldown debuff
+    if has_status(actor, "rct_cooldown"):
+        _log(state, f"{actor.name} 的反转术式仍在冷却中，无法使用。")
+        return
+    # Phase 12: 检查领域熔断（禁止咒术技能）
+    if has_status(actor, "domain_burnout"):
+        _log(state, f"{actor.name} 处于领域熔断状态，无法使用反转术式！")
+        return
+    heal, consumed, log_text = execute_rct(actor, consume_amount)
+    if heal <= 0:
+        _log(state, f"[ERROR] {log_text}")
+        return
+    _log(state, log_text)
+    # 添加 RCT 冷却 Debuff（先 tick 再创建，避免立即被倒计时）
+    _advance_time(state, 10)  # 回复动作占用 10 行动值
+    add_status_effect(actor, "rct_cooldown", 60)
 
 # ===== Phase 9: add_ally handler =====
 
@@ -750,6 +1229,8 @@ def _handle_activate_domain_counter(action, state):
             _log(state, f"护盾 HP: {buff['shield_hp']}")
         if buff.get("mp_drain_per_10av", 0) > 0:
             _log(state, f"每 10 AV 消耗 {buff['mp_drain_per_10av']} 咒力")
+        # Phase 12: 同步 domain_counter_buffs → status_effects
+        _sync_domain_counter_to_status(actor)
     else:
         _log(state, f"[ERROR] 无法激活 Buff: {buff_id}（不存在或已有同类 Buff）")
 
@@ -803,7 +1284,7 @@ def _resolve_ally_action(ally, state):
     avail.sort(key=lambda s: -s.damage_multiplier)
     skill = avail[0]
     _resolve_distance(ally, skill, target, state)
-    is_bf = _check_black_flash(ally)
+    is_bf = _check_black_flash(ally, skill)
     dmg = calculate_damage(ally, skill, target, is_bf)
     dmg = apply_damage_variance(dmg, is_bf)
     cost = calculate_mp_cost(ally, skill)
@@ -878,8 +1359,8 @@ def _deserialize_state(d):
     pd=d.get("player",{}); ed=d.get("enemy",{})
     extra=[u for u in d.get("units",[]) if u.get("id") not in (pd.get("id"), ed.get("id"))]
     def _u(cd):
-        sks=[Skill(id=s.get("id",""),name=s.get("name",""),cost=s.get("cost",0),type=s.get("type","martial"),damage_multiplier=s.get("damage_multiplier",1.0),min_distance=s.get("min_distance",0),max_distance=s.get("max_distance",3),cast_time=s.get("cast_time",5),base_recovery_speed=s.get("base_recovery_speed",30),summon_config=s.get("summon_config")) for s in cd.get("skills",[])]
-        return Unit(id=cd.get("id",""),name=cd.get("name",""),unit_type=cd.get("unit_type","player"),hp=cd.get("hp",0),max_hp=cd.get("max_hp",0),mp=cd.get("mp",0),max_mp=cd.get("max_mp",0),atb=cd.get("atb",0),speed=cd.get("speed",10),is_alive=cd.get("is_alive",True),skills=sks,constitution=cd.get("constitution",10),martial_arts=cd.get("martial_arts",10),cursed_energy=cd.get("cursed_energy",10),cursed_energy_control=cd.get("cursed_energy_control",10),cursed_energy_efficiency=cd.get("cursed_energy_efficiency",10),talent=cd.get("talent",10),distance=cd.get("distance",2),active_vow=cd.get("active_vow"),recovery_speed=cd.get("recovery_speed",cd.get("speed",10)),owner=cd.get("owner"),attack_interval=cd.get("attack_interval",0),attack_damage=cd.get("attack_damage",0),status_effects=cd.get("status_effects",[]),domain_maintenance_cost=cd.get("domain_maintenance_cost",0),summon_duration=cd.get("summon_duration",0),aggro=cd.get("aggro",0),domain_counter_buffs=cd.get("domain_counter_buffs",[]),domain_name=cd.get("domain_name"),domain_hp=cd.get("domain_hp",500))
+        sks=[Skill(id=s.get("id",""),name=s.get("name",""),cost=s.get("cost",0),type=s.get("type","martial"),category=s.get("category",""),damage_multiplier=s.get("damage_multiplier",1.0),min_distance=s.get("min_distance",0),max_distance=s.get("max_distance",3),cast_time=s.get("cast_time",5),base_recovery_speed=s.get("base_recovery_speed",30),summon_config=s.get("summon_config")) for s in cd.get("skills",[])]
+        return Unit(id=cd.get("id",""),name=cd.get("name",""),unit_type=cd.get("unit_type","player"),hp=cd.get("hp",0),max_hp=cd.get("max_hp",0),mp=cd.get("mp",0),max_mp=cd.get("max_mp",0),atb=cd.get("atb",0),speed=cd.get("speed",10),is_alive=cd.get("is_alive",True),skills=sks,constitution=cd.get("constitution",10),martial_arts=cd.get("martial_arts",10),cursed_energy=cd.get("cursed_energy",10),cursed_energy_control=cd.get("cursed_energy_control",10),cursed_energy_efficiency=cd.get("cursed_energy_efficiency",10),talent=cd.get("talent",10),distance=cd.get("distance",2),active_vow=cd.get("active_vow"),recovery_speed=cd.get("recovery_speed",cd.get("speed",10)),owner=cd.get("owner"),attack_interval=cd.get("attack_interval",0),attack_damage=cd.get("attack_damage",0),status_effects=cd.get("status_effects",[]),domain_maintenance_cost=cd.get("domain_maintenance_cost",0),summon_duration=cd.get("summon_duration",0),aggro=cd.get("aggro",0),domain_counter_buffs=cd.get("domain_counter_buffs",[]),domain_name=cd.get("domain_name"),domain_hp=cd.get("domain_hp",500),shikigami_type=cd.get("shikigami_type"))
     return BattleState(units=[_u(pd),_u(ed)]+[_u(x) for x in extra],turn=d.get("turn","player"),log=d.get("log",[]),round_number=d.get("round_number",1),phase=d.get("phase",PHASE_WAITING),last_hit_was_black_flash=d.get("last_hit_was_black_flash",False),global_action_time=d.get("global_action_time",0))
 
 def generate_battle_rewards(tracker, enemy_config=None, player_rank="四级", enemy_rank="四级", is_low_hp=False):
@@ -915,6 +1396,11 @@ def _handle_expand_domain(action, state):
     ic=action.get("is_complete",True); dh=action.get("domain_hp",500)
     ai=action.get("attack_interval",15); ad=action.get("attack_damage",50); mc=action.get("mp_cost",5)
     du=Unit(id=f"{aid}_domain_{did}",name=dn,unit_type=UNIT_DOMAIN,hp=dh,max_hp=dh,mp=0,max_mp=0,atb=0,speed=0,owner=aid,attack_interval=ai,attack_damage=ad,domain_maintenance_cost=mc)
+    # Phase 16: 记录领域是否完全展开（用于特殊效果判定）
+    if ic:
+        du.domain_name = dn  # 完全领域记录名称，不完全领域为 None
+    else:
+        du.domain_name = None
     lt="完全领域" if ic else "不完全领域"
     _log(state, f"{owner.name} 展开了{lt}\"{dn}\"！领域 HP: {dh}, 攻击间隔: {ai} 帧, 伤害: {ad}")
     state.units.append(du); _advance_time(state, 10)
@@ -929,6 +1415,8 @@ def _handle_cancel_domain(action, state):
     if owner:
         owner.atb=max(0,owner.atb-DOMAIN_BURNOUT_ATB_COST)
         owner.recovery_speed=max(1,int(owner.recovery_speed*(1.0-DOMAIN_BURNOUT_SPEED_PENALTY)))
+        # Phase 12: 领域熔断作为标准化 Debuff 加入 status_effects
+        add_status_effect(owner, "domain_burnout", 60)
         _log(state,f"领域解除！{owner.name} 遭受熔断——扣除 {DOMAIN_BURNOUT_ATB_COST} ATB，补偿速度 -30%。")
     else: _log(state,"领域被解除。")
     # Phase 10: 对拼结束后重新检查
@@ -961,6 +1449,33 @@ def _is_enemy_domain(domain, state):
     return owner_unit is not None and owner_unit.unit_type == UNIT_ENEMY
 
 def _check_domain_clash(state):
+    """检查是否存在领域对拼（双方都展开了领域）"""
+    p_domain = _get_player_domain(state, "player")
+    e_domain = _get_player_domain(state, "enemy")
+
+    clash_active = p_domain is not None and e_domain is not None
+
+    if clash_active and not getattr(state, 'domain_clash_active', False):
+        state.domain_clash_active = True
+        _log(state, "⚠️ 领域对拼！" + p_domain.name + "VS" + e_domain.name + "——双方特殊效果失效，领域互相攻击！")
+    elif not clash_active and getattr(state, 'domain_clash_active', False):
+        state.domain_clash_active = False
+        _log(state, "领域对拼结束。")
+
+# Phase 17: 嵌合暗翳庭效果 — 式神全属性 +40%
+def _apply_shikigami_boost(state):
+    """嵌合暗翳庭：所有 shikigami 全属性 × 1.4"""
+    if getattr(state, 'shikigami_boost_active', False):
+        return
+    state.shikigami_boost_active = True
+    for u in state.units:
+        if u.unit_type == UNIT_SHIKIGAMI and u.is_alive:
+            u.max_hp = int(u.max_hp * 1.4)
+            u.hp = int(u.hp * 1.4)
+            u.martial_arts = int(u.martial_arts * 1.4)
+            u.speed = max(1, int(u.speed * 1.4))
+            u.recovery_speed = max(1, int(u.recovery_speed * 1.4))
+    _log(state, "嵌合暗翳庭：所有式神全属性提升 40%！")
     """检查是否存在领域对拼（双方都展开了领域）
     若对拼：两个领域的攻击目标互相切换为对方领域 Unit，且特殊效果失效
     若不对拼：恢复各自对敌方本体的攻击
@@ -1025,6 +1540,17 @@ def _resolve_domain_auto_attack(domain, state):
                 _log(state, f"{target.name} 因落花之情额外消耗 {extra_mp} 咒力。")
         else:
             _log(state, f"{domain.name} 自动攻击 {target.name}，造成 {eff_dmg} 点伤害。")
+        # Phase 16: 完全领域施加特殊效果
+        # 通过 domain Unit 的 domain_name 字段判断是否为完全领域
+        # 完全领域展开时 domain_name 被设为领域名；不完全领域为 None
+        if getattr(domain, 'domain_name', None):
+            apply_domain_special_effect(domain, target, state)
+        # Phase 17: 嵌合暗翳庭 — 式神全属性 +40%
+        if getattr(domain, 'domain_name', None) and "嵌合暗翳庭" in (domain.name or ""):
+            _apply_shikigami_boost(state)
+        # Phase 17: 坐杀博徒 — 领域自动攻击后触发抽奖
+        if getattr(domain, 'domain_name', None) and "坐杀博徒" in (domain.name or ""):
+            _handle_gambling_roll({"actor": domain.owner}, state)
 
     _check_battle_end(state)
     if state.turn in ("player_win","enemy_win"): return
@@ -1129,3 +1655,326 @@ def _create_enemy_by_id(enemy_id):
             )
     # Fallback
     return create_enemy_from_save({"rank": "四级"})
+
+# Phase 16: 战斗道具
+def _handle_use_item(action, state):
+    """战斗中使用的道具"""
+    item_id = action.get("item_id", "")
+    actor_id = action.get("actor", "player")
+    actor = state.find_unit(actor_id)
+    if not actor: return
+
+    # 烟雾弹：确保逃跑必定成功
+    if item_id == "smokeBomb":
+        _log(state, f"{actor.name} 使用了烟雾弹！浓烟弥漫，趁机脱离战斗。")
+        # Phase 18 fix: 使用 "player_fled" 而不是 "player_win"，避免触发胜利结算
+        state.turn = "player_fled"
+        state._item_used = item_id  # Phase 16 fix: 标记道具已使用，供 JS 端扣减
+        _log(state, f"{actor.name} 成功逃离了战斗。")
+        return
+
+    # 肾上腺素注射剂：回复 60 HP
+    if item_id == "adrenalineShot":
+        heal = min(60, actor.max_hp - actor.hp)
+        actor.hp += heal
+        state._item_used = item_id  # Phase 16 fix: 标记道具已使用
+        _log(state, f"{actor.name} 使用肾上腺素注射剂，回复了 {heal} HP。")
+        return
+
+    _log(state, f"未知的道具: {item_id}")
+
+# Phase 17: 无限制虚式茈 — 消耗 80% 当前咒力，造成 3.0 倍伤害，自身扣 20% 最大 HP
+def _execute_ultimate_murasaki(actor, skill, target, state):
+    mp_cost = int(actor.mp * 0.8)
+    self_hp_cost = int(actor.max_hp * 0.2)
+    actor.mp = max(0, actor.mp - mp_cost)
+    actor.atb = 0
+    # 3.0 倍基础伤害
+    dmg = calculate_damage(actor, skill, target, False)
+    dmg = max(1, int(dmg * 3.0))
+    target.hp = max(0, target.hp - dmg)
+    actor.hp = max(1, actor.hp - self_hp_cost)
+    update_aggro(actor, target, dmg, "damage")
+    _log(state, f"{actor.name} 施展了无限制虚式·茈！消耗 {mp_cost} MP、扣除 {self_hp_cost} HP，造成 {dmg} 点毁灭性伤害。")
+    _log(state, f"{actor.name} 自身遭受茈的反噬，HP 下降了 {self_hp_cost}。")
+    state.last_hit_was_black_flash = False
+    _check_battle_end(state)
+    if state.turn in ("player_win","enemy_win"): return
+    # 补偿恢复
+    actor.recovery_speed = max(1, 5)
+    recovery_frames = math.ceil(300 / actor.recovery_speed) + math.ceil(300 / actor.speed)
+    _log(state, f"反噬过后 {actor.name} 进入漫长的恢复（{recovery_frames} 帧）。")
+    _advance_time(state, recovery_frames)
+    _check_battle_end(state)
+
+# Phase 17: 赤血操术全系扣血（HP 保底 1）
+def _apply_blood_technique_cost(actor, skill, state):
+    """赤血操术系列技能释放后扣除 max_hp * 5%"""
+    blood_skills = {"blood_blade", "slicing_exorcism", "piercing_blood",
+                    "supernova", "crimson_binding", "blood_armor", "blood_bind", "canal"}
+    if skill.id in blood_skills:
+        hp_cost = max(1, int(actor.max_hp * 0.05))
+        actor.hp = max(1, actor.hp - hp_cost)
+
+def get_effective_speed(unit):
+    """Phase 17: 计算 ATB 填充速度 — 应用 speed_boost/speed_debuff，保底 10%"""
+    multiplier = 1.0
+    for se in (unit.status_effects or []):
+        if se.get("id") == "speed_boost":
+            multiplier += se.get("value", 0)
+        if se.get("id") == "speed_debuff":
+            multiplier -= se.get("value", 0)
+    return max(unit.speed * 0.1, unit.speed * multiplier)
+
+# Phase 16: 咒具主动技能
+def _handle_tool_active(action, state):
+    """使用咒具的主动 Buff 技能"""
+    actor = state.find_unit(action.get("actor", "player"))
+    if not actor: return
+
+    # 检查是否已用过
+    if getattr(state, 'used_tool_active_skill', False):
+        _log(state, f"{actor.name} 本场战斗已经使用过咒具主动技能了。")
+        return
+
+    tool_id = action.get("tool_id", "")
+
+    # 游云主动效果
+    if tool_id == "playfulCloud":
+        # 设置 Buff：体术伤害加成 = 体术 * 0.5 + 咒力操控 * 0.5
+        ma_bonus = int(actor.martial_arts * 0.5)
+        ce_bonus = int(actor.cursed_energy_control * 0.5)
+        total_bonus = ma_bonus + ce_bonus
+        actor.status_effects.append({
+            "id": "playful_cloud_active", "name": "游云·重击", "type": "buff",
+            "duration": 80,
+            "description": f"体术伤害 +{ma_bonus}，咒术伤害 +{ce_bonus}",
+            "icon": "☁️",
+            "effects": {"martial_damage_bonus": ma_bonus, "cursed_damage_bonus": ce_bonus}
+        })
+        # ATB 归零
+        actor.atb = 0
+        state.used_tool_active_skill = True
+        _log(state, f"{actor.name} 激发了游云的力量！体术伤害 +{ma_bonus}，咒术伤害 +{ce_bonus}，持续 80 AV。ATB 归零。")
+        return
+
+    # Phase 18: 爛生刀主动效果 — 给目标挂腐败 DOT debuff
+    elif tool_id == "rottenLifeBlade":
+        target = state.find_enemy()
+        if not target: return
+        existing = [s for s in target.status_effects if s.get("id") == "rotten_life_dot"]
+        if existing:
+            # 刷新持续时间，伤害重置
+            existing[0]["duration"] = 200
+            existing[0]["damage"] = 35
+            existing[0]["decay"] = 5
+        else:
+            target.status_effects.append({
+                "id": "rotten_life_dot", "name": "腐败", "type": "dot",
+                "duration": 200, "damage": 35, "decay": 5,
+                "interval": 20, "timer": 0,
+                "description": f"每20AV造成35点DOT伤害，每次触发后伤害-5",
+                "icon": "🦠",
+                "effects": {}
+            })
+        actor.atb = 0
+        state.used_tool_active_skill = True
+        _log(state, f"{actor.name} 挥舞爛生刀！腐败诅咒侵蚀了 {target.name}——每 20AV 造成 35 点 DOT 伤害（逐次衰减 5 点），持续 200 AV。")
+
+    _log(state, f"未实装的咒具主动技能: {tool_id}")
+
+# Phase 17: Buff/Debuff 技能处理（赤鳞跃动、血铠、血缚）
+def _handle_buff_skill(action, state):
+    actor = state.find_unit(action.get("actor", "player"))
+    if not actor: return
+    sid = action.get("skill_id", "")
+    target_id = action.get("target", "")
+    target = state.find_unit(target_id) if target_id else None
+
+    if sid == "steel_ball":
+        # 坐杀博徒·小钢珠：给自己叠加 steel_ball_stack 层数
+        lv = action.get("level", 1)
+        existing = [s for s in actor.status_effects if s.get("id") == "steel_ball_stack"]
+        if existing:
+            existing[0]["value"] = existing[0].get("value", 0) + 1
+            existing[0]["duration"] = 999  # reset duration
+        else:
+            actor.status_effects.append({"id":"steel_ball_stack","name":"小钢珠","type":"buff","duration":999,"value":1,"description":f"每层+3%坐杀博徒大奖概率"})
+        actor.atb = 0
+        steel_count = next((s["value"] for s in actor.status_effects if s.get("id") == "steel_ball_stack"), 0)
+        _log(state, f"{actor.name} 投掷了小钢珠！钢珠层数 +1（当前 {steel_count} 层），每层 +3% 大奖概率。")
+
+    elif sid == "crimson_binding":
+        # 赤鳞跃动：自我加速 100 AV
+        lv = action.get("level", 1)
+        val = 0.30 + (lv - 1) * 0.10
+        existing = [s for s in actor.status_effects if s.get("id") == "speed_boost"]
+        if existing:
+            existing[0]["duration"] = max(existing[0].get("duration", 0), 100)
+            existing[0]["value"] = max(existing[0].get("value", 0), val)
+        else:
+            actor.status_effects.append({"id":"speed_boost","name":"赤鳞跃动","type":"buff","duration":100,"value":val,"description":f"ATB速度+{int(val*100)}%"})
+        actor.atb = 0
+        _log(state, f"{actor.name} 激发了赤鳞跃动！ATB 填充速度 +{int(val*100)}%，持续 100 AV。")
+
+    elif sid == "blood_armor":
+        lv = action.get("level", 1)
+        val = 0.25 + (lv - 1) * 0.07
+        existing = [s for s in actor.status_effects if s.get("id") == "damage_reduction"]
+        if existing:
+            existing[0]["duration"] = max(existing[0].get("duration", 0), 40)
+            existing[0]["value"] = max(existing[0].get("value", 0), val)
+        else:
+            actor.status_effects.append({"id":"damage_reduction","name":"血铠","type":"buff","duration":40,"value":val,"description":f"受到伤害-{int(val*100)}%"})
+        actor.atb = 0
+        _log(state, f"{actor.name} 展开血铠！受到伤害 -{int(val*100)}%，持续 40 AV。")
+
+    elif sid == "blood_bind":
+        if not target: return
+        lv = action.get("level", 1)
+        val = 0.20 + (lv - 1) * 0.10
+        existing = [s for s in target.status_effects if s.get("id") == "speed_debuff"]
+        if existing:
+            existing[0]["duration"] = max(existing[0].get("duration", 0), 60)
+            existing[0]["value"] = max(existing[0].get("value", 0), val)
+        else:
+            target.status_effects.append({"id":"speed_debuff","name":"血缚","type":"debuff","duration":60,"value":val,"description":f"ATB速度-{int(val*100)}%"})
+        actor.atb = 0
+        _log(state, f"{actor.name} 以血缚限制 {target.name}！{target.name} ATB 填充速度 -{int(val*100)}%，持续 60 AV。")
+
+    elif sid == "overtime":
+        # 极之番·Overtime：攻击力大幅提升 80 AV
+        lv = action.get("level", 1)
+        val = 0.30 + (lv - 1) * 0.10
+        existing = [s for s in actor.status_effects if s.get("id") == "attack_boost"]
+        if existing:
+            existing[0]["duration"] = max(existing[0].get("duration", 0), 80)
+            existing[0]["value"] = max(existing[0].get("value", 0), val)
+        else:
+            actor.status_effects.append({"id":"attack_boost","name":"加班模式","type":"buff","duration":80,"value":val,"description":f"攻击伤害+{int(val*100)}%"})
+        actor.atb = 0
+        _log(state, f"{actor.name} 进入加班模式！攻击伤害 +{int(val*100)}%，持续 80 AV。")
+
+    elif sid == "clap_swap":
+        # 不义游戏·拍手换位：与目标交换位置（无伤害，纯控制）
+        if not target: return
+        actor_dist = actor.distance
+        target_dist = target.distance
+        actor.distance = target_dist
+        target.distance = actor_dist
+        actor.atb = 0
+        _log(state, f"{actor.name} 拍手换位！与 {target.name} 交换了位置。（{['贴身','近','中','远'][actor_dist]} ↔ {['贴身','近','中','远'][target_dist]}）")
+
+    elif sid == "doll_scout":
+        # 傀儡操术·远程侦查：给敌方一个减速 debuff
+        if not target: return
+        lv = action.get("level", 1)
+        val = 0.10 + (lv - 1) * 0.05
+        existing = [s for s in target.status_effects if s.get("id") == "speed_debuff"]
+        if existing:
+            existing[0]["duration"] = max(existing[0].get("duration", 0), 60)
+            existing[0]["value"] = max(existing[0].get("value", 0), val)
+        else:
+            target.status_effects.append({"id":"speed_debuff","name":"侦查干扰","type":"debuff","duration":60,"value":val,"description":f"ATB速度-{int(val*100)}%"})
+        actor.atb = 0
+        _log(state, f"{actor.name} 使用远程侦查干扰 {target.name}！{target.name} ATB 填充速度 -{int(val*100)}%，持续 60 AV。")
+
+# Phase 17: 坐杀博徒领域抽奖逻辑
+def _handle_gambling_roll(action, state):
+    """坐杀博徒领域自动抽奖：每次领域攻击后触发，检查中奖概率"""
+    actor = state.find_unit(action.get("actor", "player"))
+    if not actor: return
+
+    # 统计小钢珠叠层数
+    steel_count = 0
+    for se in (actor.status_effects or []):
+        if se.get("id") == "steel_ball_stack":
+            steel_count += se.get("value", 1)  # Phase 18 fix: 读取 value 而非 count=1
+    # 基础概率 5%，不中奖叠加 +1 倍，小钢珠每层 +3%
+    luck = getattr(state, 'gambling_luck_boost', 0)
+    chance = min(0.95, 0.05 * (1 + luck) + steel_count * 0.03)  # Phase 18 fix: 加法叠加，每层+3%
+
+    roll = random.random()
+    if roll < chance:
+        # 中大奖：关闭领域，施加 auto_rct + auto_ce
+        _log(state, f"🎰 大奖！概率 {chance*100:.1f}%，roll={roll*100:.0f}%")
+        domain = None
+        for u in state.units:
+            if u.unit_type == UNIT_DOMAIN and u.owner == actor.id:
+                domain = u; break
+        if domain:
+            _handle_cancel_domain({"domain_id": domain.id}, state)
+        # 施加自动回复 Buff
+        dur = 200
+        for u in state.units:
+            if u.id == actor.id:
+                existing_rct = [s for s in u.status_effects if s.get("id") == "auto_rct"]
+                existing_ce = [s for s in u.status_effects if s.get("id") == "auto_ce"]
+                if existing_rct:
+                    existing_rct[0]["duration"] = dur
+                else:
+                    u.status_effects.append({"id":"auto_rct","name":"自动反转术式","type":"buff","duration":dur,"description":"每20AV回复200HP"})
+                if existing_ce:
+                    existing_ce[0]["duration"] = dur
+                else:
+                    u.status_effects.append({"id":"auto_ce","name":"自动咒力回复","type":"buff","duration":dur,"description":"每20AV回复50MP"})
+        _log(state, f"{actor.name} 中了坐杀博徒大奖！获得自动反转术式 + 自动咒力回复（{dur} AV）！")
+        # 时短叠加
+        state.gambling_time_short = getattr(state, 'gambling_time_short', 0) + 1
+        state.gambling_luck_boost = 0  # 重置运气
+    else:
+        # 未中：叠加运气
+        _log(state, f"🎲 未中… (概率 {chance*100:.1f}%，roll={roll*100:.0f}%) — 下次概率翻倍！")
+        state.gambling_luck_boost = getattr(state, 'gambling_luck_boost', 0) + 1
+
+# Phase 18: DOT 伤害系统 — 每帧推进 timer，到达 interval 时触发伤害
+def _tick_dot_timers(state):
+    """每帧为所有单位身上的 DOT 效果推进 timer；到达间隔时触发一次伤害"""
+    for u in state.units:
+        if not u.is_alive or not u.status_effects:
+            continue
+        for se in u.status_effects:
+            if se.get("type") != "dot":
+                continue
+            se["timer"] = se.get("timer", 0) + FRAME_STEP
+            interval = se.get("interval", 20)
+            if se["timer"] >= interval:
+                damage = max(1, se.get("damage", 10))
+                u.hp = max(0, u.hp - damage)
+                se["timer"] = 0
+                # 衰减：每次触发伤害 - decay
+                decay = se.get("decay", 0)
+                se["damage"] = max(1, damage - decay)
+                se["description"] = f"每{interval}AV造成{se['damage']}点DOT伤害（逐次衰减{decay}点）"
+                _log(state, f"🦠 {u.name} 受到腐败侵蚀，{damage} 点 DOT 伤害！（下次 {se['damage']} 点）")
+                if u.hp <= 0:
+                    u.is_alive = False
+                    _log(state, f"{u.name} 被腐败吞噬了！")
+                    _check_battle_end(state)
+                    return
+
+# Phase 18: 坐杀博徒大奖 Buff 处理 — 每 20AV 自动回血回魔
+def _tick_gambling_buffs(state):
+    """每帧推进 auto_rct / auto_ce 的 timer，到期触发回血回魔"""
+    for u in state.units:
+        if not u.is_alive or not u.status_effects:
+            continue
+        for se in u.status_effects:
+            sid = se.get("id", "")
+            if sid not in ("auto_rct", "auto_ce"):
+                continue
+            se["_timer"] = se.get("_timer", 0) + FRAME_STEP
+            if se["_timer"] >= 20:
+                se["_timer"] = 0
+                if sid == "auto_rct":
+                    heal = 200
+                    u.hp = min(u.max_hp, u.hp + heal)
+                    _log(state, f"💚 {u.name} 自动反转术式触发，回复 {heal} HP。（HP {u.hp}/{u.max_hp}）")
+                elif sid == "auto_ce":
+                    restore = 50
+                    u.mp = min(u.max_mp, u.mp + restore)
+                    _log(state, f"🔵 {u.name} 自动咒力回复触发，回复 {restore} MP。（MP {u.mp}/{u.max_mp}）")
+
+def _tick_dot_effects(state):
+    """手动触发 DOT tick — 用于 JS 端轮询（保留接口兼容）"""
+    _tick_dot_timers(state)

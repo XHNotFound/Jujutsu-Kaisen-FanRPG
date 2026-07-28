@@ -5,6 +5,28 @@
 // Phase 9: 召唤物 UI + 仇恨热力图
 
 import { getActiveSummons, getAggroRanking } from './summonSystem.js';
+import { getStatusSummary, calculateRCTEfficiency } from './statusSystem.js';
+import { isBattleUsable } from '../data/items.js';
+import { CURSED_TOOLS } from '../data/cursed_tools.js';
+import { SKILL_TREES } from '../data/skills.js';
+
+// Phase 12: simple HTML escape (no DOM needed — just for safe attribute interpolation)
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/**
+ * Phase 17: lookup skill definition from JS-side SKILL_TREES.
+ * Python Skill.to_dict() does not include fullChant — we read it from skills.js directly.
+ */
+function _lookupSkillDef(skillId) {
+  for (const tree of Object.values(SKILL_TREES)) {
+    const node = (tree.nodes || []).find(n => n.id === skillId);
+    if (node) return node;
+  }
+  return null;
+}
 
 export class BattleUI {
   constructor(pyodideLoader, uiManager) {
@@ -14,12 +36,17 @@ export class BattleUI {
     this._processing = false;
     this._delegationBound = false;
     this._controlledShikigami = null;  // Phase 9: 当前手动控制的式神 ID
+    this._escapeLocked = false;        // Phase 14: 逃跑是否已失败锁定
   }
 
   async start() {
     this.uiManager.showScreen('screen-battle');
     this._showLoading(true);
     this.currentState = null;
+    // Bug #1 fix: 每次新战斗重置逃跑状态
+    this._escapeLocked = false;
+    const fleeBtn = document.getElementById('btn-battle-flee');
+    if (fleeBtn) { fleeBtn.disabled = false; fleeBtn.textContent = '逃跑'; }
     const logContainer = document.getElementById('battle-log');
     if (logContainer) logContainer.innerHTML = '';
 
@@ -116,22 +143,37 @@ init_battle(json.dumps(save_data))
         }
         return;
       }
+      // Phase 17: 完整咒词 skill 数据传给 Python 时保留 fullChant 标记
+      // 当完整咒词激活时，use_skill action 传入 use_full_chant: true
       const skillBtn = e.target.closest('.battle-skill-btn');
+      if (skillBtn && !skillBtn.disabled && skillBtn.dataset.skillId && this._fullChantActive) {
+        // Phase 17: 完整咒词激活 — 读取 playerData.skills 中缓存的 fullChant 配置
+        const skillId = skillBtn.dataset.skillId;
+        const s = this.currentState;
+        const playerData = s.player || (s.units || []).find(u => u.unit_type === 'player');
+        const skillDef = (playerData?.skills || []).find(sk => sk.id === skillId);
+        if (skillDef && skillDef.fullChant) {
+          this._executeAction({
+            type: 'use_skill', actor: 'player', skill_id: skillId,
+            target: s.enemy?.id || 'enemy_1',
+            use_full_chant: true,
+            full_chant_text: skillDef.fullChant.chant || '',
+            full_chant_cost: Math.ceil(skillDef.cost * (skillDef.fullChant.cursedEnergyCostMultiplier || 1.0)),
+            full_chant_cast_time: skillDef.fullChant.castTime,
+            full_chant_recovery_speed: skillDef.fullChant.recoverySpeed,
+            full_chant_damage_multiplier: skillDef.fullChant.damageMultiplier
+          });
+        } else {
+          this._executeAction({ type: 'use_skill', actor: 'player', skill_id: skillId, target: s.enemy?.id || 'enemy_1', use_full_chant: true });
+        }
+        return;
+      }
       if (skillBtn && !skillBtn.disabled) {
         this._executeAction({ type: 'use_skill', actor: 'player', skill_id: skillBtn.dataset.skillId, target: this.currentState?.enemy?.id || 'enemy_1' });
         return;
       }
       if (e.target.closest('#btn-battle-flee')) {
-        if (this.currentState && this.uiManager.saveManager) {
-          const p = this.currentState.player;
-          const sm = this.uiManager.saveManager;
-          const st = sm.getState();
-          if (st) { st.hp = p.hp; st.mp = p.mp; sm.setState(st); }
-        }
-        this.uiManager.showModal('确定要撤离战斗吗？', {
-          onConfirm: () => { this.uiManager.hideModal(); this.uiManager.renderMainScreen(); },
-          onCancel: () => this.uiManager.hideModal()
-        });
+        this._handleEscapeAttempt();
         return;
       }
       const vowBtn = e.target.closest('.battle-vow-btn');
@@ -140,6 +182,13 @@ init_battle(json.dumps(save_data))
         return;
       }
       const domainBtn = e.target.closest('.battle-domain-btn');
+      // Phase 12: status badge click/hover interaction
+      const statusBadge = e.target.closest('.battle-status-badge');
+      if (statusBadge) {
+        this._toggleStatusBadge(statusBadge);
+        return;
+      }
+
       // cancel-domain 用 data-action 区分，必须在 domain expand 之前检查
       if (e.target.closest('[data-action="cancel-domain"]')) {
         const d = this.currentState?.units?.find(u => u.unit_type === 'domain' && u.owner === 'player');
@@ -188,6 +237,42 @@ init_battle(json.dumps(save_data))
         this._executeAction({ type: 'repair_domain', actor: 'player' });
         return;
       }
+      // Phase 12: RCT dialog — open slider popup
+      const rctBtn = e.target.closest('[data-action="rct-dialog"]');
+      if (rctBtn && !rctBtn.disabled) {
+        this._showRCTDialog();
+        return;
+      }
+      // Phase 16: use item
+      const itemBtn = e.target.closest('[data-action="use-item"]');
+      if (itemBtn && !itemBtn.disabled) {
+        this._executeAction({ type: 'use_item', actor: 'player', item_id: itemBtn.dataset.itemId });
+        return;
+      }
+      // Phase 16: use tool active skill
+      const toolBtn = e.target.closest('[data-action="use-tool-active"]');
+      if (toolBtn && !toolBtn.disabled) {
+        this._executeAction({ type: 'tool_active', actor: 'player', tool_id: toolBtn.dataset.toolId });
+        return;
+      }
+    });
+
+    // Phase 12: mouseover/mouseout delegation for status badge hover expansion
+    container.addEventListener('mouseover', (e) => {
+      const badge = e.target.closest('.battle-status-badge');
+      if (badge) {
+        const nameSpan = badge.querySelector('.status-name');
+        if (nameSpan) nameSpan.classList.add('status-expanded');
+      }
+    });
+    container.addEventListener('mouseout', (e) => {
+      const badge = e.target.closest('.battle-status-badge');
+      if (badge) {
+        const nameSpan = badge.querySelector('.status-name');
+        if (nameSpan && !badge.classList.contains('status-pinned')) {
+          nameSpan.classList.remove('status-expanded');
+        }
+      }
     });
   }
 
@@ -203,9 +288,22 @@ init_battle(json.dumps(save_data))
     this._renderCollapsibleSection('battle-attack-section', 'battle-attack-body', '⚔️ 攻击', () => this._renderSkillButtons(s.player));
     this._renderCollapsibleSection('battle-vow-section', 'battle-vow-body', '🔗 束缚', () => this._renderVowButtons(s.player));
     this._renderCollapsibleSection('battle-domain-section', 'battle-domain-body', '🏛️ 领域', () => this._renderDomainPanel(s));
+    // Phase 17: 完整咒词切换开关
+    this._renderFullChantToggle(s);
+    // Phase 16: 道具与咒具面板
+    this._renderCollapsibleSection('battle-items-section', 'battle-items-body', '🎒 道具', () => this._renderItemPanel(s));
+    this._renderCollapsibleSection('battle-tools-section', 'battle-tools-body', '⚔️ 咒具', () => this._renderToolPanel(s));
+    // Phase 12: 反转术式按钮
+    this._renderRCTButton(s);
     if (s.last_hit_was_black_flash) this._flashBlackFlashEffect();
     if (s.turn === 'player_win') { this._appendLog('━━ 胜利！诅咒被祓除了。 ━━'); this._disableAllSkills(); this._showVictoryScreen(s); }
-    else if (s.turn === 'enemy_win') { this._appendLog('━━ 败北…你失去了意识。 ━━'); this._disableAllSkills(); }
+    else if (s.turn === 'player_fled') { this._appendLog('━━ 成功逃离了战斗。 ━━'); this._disableAllSkills(); this._handleFledEscape(s); }
+    else if (s.turn === 'enemy_win') {
+      this._appendLog('━━ 败北…你失去了意识。 ━━');
+      this._disableAllSkills();
+      // Phase 14: 重伤惩罚
+      this._showDefeatScreen(s);
+    }
   }
 
   _renderCollapsibleSection(containerId, bodyId, label, renderFn) {
@@ -233,23 +331,52 @@ init_battle(json.dumps(save_data))
     const hpBar = document.getElementById(prefix + '-hp-bar');
     const hpText = document.getElementById(prefix + '-hp-text');
     if (hpBar) hpBar.style.width = hpPct + '%';
-    if (hpText) hpText.textContent = data.hp + ' / ' + data.max_hp;
+
+    // Phase 13: 战斗中的 HP/MP 显示加成后的上限 (绿色)
     if (prefix === 'player') {
-      const mpPct = data.max_mp > 0 ? (data.mp / data.max_mp) * 100 : 0;
-      const mpBar = document.getElementById('player-mp-bar');
-      const mpText = document.getElementById('player-mp-text');
-      if (mpBar) mpBar.style.width = mpPct + '%';
-      if (mpText) mpText.textContent = data.mp + ' / ' + data.max_mp;
-    }
-    // Phase 8: 敌人 MP 条
-    if (prefix === 'enemy' && data.max_mp > 0) {
-      this._renderEnemyMp(data);
+      const saveSt = this.uiManager.saveManager?.getState();
+      const baseCon = (saveSt?.attributes?.constitution) || (data.constitution || 10);
+      const baseCE  = (saveSt?.attributes?.cursedEnergy) || (data.cursed_energy || 10);
+      // Calculate base max values from attributes (using SaveManager formula if available)
+      const sm = this.uiManager.saveManager;
+      const baseMaxHp = sm && sm._calcMaxHp ? sm._calcMaxHp(baseCon) : data.max_hp;
+      const baseMaxMp = sm && sm._calcMaxMp ? sm._calcMaxMp(baseCE) : data.max_mp;
+      const hpBonus = data.max_hp - baseMaxHp;
+      const mpBonus = data.max_mp - baseMaxMp;
+
+      if (hpBonus !== 0) {
+        if (hpText) hpText.innerHTML = `${data.hp} / ${data.max_hp} <span style="color:#22c55e;font-size:0.7rem;">(+${hpBonus})</span>`;
+      } else {
+        if (hpText) hpText.textContent = data.hp + ' / ' + data.max_hp;
+      }
+
+      if (prefix === 'player') {
+        const mpPct = data.max_mp > 0 ? (data.mp / data.max_mp) * 100 : 0;
+        const mpBar = document.getElementById('player-mp-bar');
+        const mpText = document.getElementById('player-mp-text');
+        if (mpBar) mpBar.style.width = mpPct + '%';
+        if (mpBonus !== 0) {
+          if (mpText) mpText.innerHTML = `${data.mp} / ${data.max_mp} <span style="color:#22c55e;font-size:0.7rem;">(+${mpBonus})</span>`;
+        } else {
+          if (mpText) mpText.textContent = data.mp + ' / ' + data.max_mp;
+        }
+      }
+    } else {
+      if (hpText) hpText.textContent = data.hp + ' / ' + data.max_hp;
+      if (prefix === 'enemy' && data.max_mp > 0) {
+        this._renderEnemyMp(data);
+      } else if (prefix === 'player') {
+        // handled above
+      }
     }
     const atbPct = (data.atb / 300) * 100;
     const atbBar = document.getElementById(prefix + '-atb-bar');
     const atbText = document.getElementById(prefix + '-atb-text');
     if (atbBar) atbBar.style.width = atbPct + '%';
     if (atbText) atbText.textContent = data.atb + ' / 300';
+
+    // Phase 12: 渲染状态栏（Buff/Debuff 显式化）
+    this._renderStatusBar(prefix, data);
   }
 
   _renderDistance(s) {
@@ -416,7 +543,12 @@ init_battle(json.dumps(save_data))
       if (l.includes('【黑闪！】') || l.includes('漆黑的光芒')) entry.classList.add('log-black-flash');
       if (l.includes('胜利') || l.includes('祓除')) entry.classList.add('log-victory');
       if (l.includes('败北') || l.includes('倒下')) entry.classList.add('log-defeat');
-      entry.textContent = l;
+      // Phase 17: 完整咒词 log — 用 innerHTML 渲染彩色 HTML
+      if (l.includes('<span style=')) {
+        entry.innerHTML = l;
+      } else {
+        entry.textContent = l;
+      }
       container.appendChild(entry);
     }
     container.scrollTop = container.scrollHeight;
@@ -428,7 +560,12 @@ init_battle(json.dumps(save_data))
     const entry = document.createElement('div');
     entry.className = 'battle-log-entry';
     if (msg.includes('【黑闪！】') || msg.includes('漆黑的光芒')) entry.classList.add('log-black-flash');
-    entry.textContent = msg;
+    // Phase 17: 完整咒词 log 用紫色高亮
+    if (msg.includes('<span style=')) {
+      entry.innerHTML = msg;
+    } else {
+      entry.textContent = msg;
+    }
     container.appendChild(entry);
     container.scrollTop = container.scrollHeight;
   }
@@ -438,22 +575,59 @@ init_battle(json.dumps(save_data))
     if (!body) { const c = document.getElementById('battle-skills'); if (c) { body = document.createElement('div'); body.id = 'battle-attack-body'; c.appendChild(body); } else return; }
     body.innerHTML = '';
     const skills = playerData.skills || [];
+    // Phase 17: 完整咒词开关状态
+    const fullChantActive = this._fullChantActive || false;
     for (const skill of skills) {
+      // Phase 17: 如果完整咒词激活且技能有 fullChant 配置，使用完整数值
+      // fullChant 来自 JS 端 SKILL_TREES（不依赖 Python 序列化）
+      const skillDef = _lookupSkillDef(skill.id);
+      let effectiveSkill = skill;
+      if (fullChantActive && skillDef && skillDef.fullChant) {
+        effectiveSkill = {
+          ...skill,
+          cast_time: skillDef.fullChant.castTime,
+          base_recovery_speed: skillDef.fullChant.recoverySpeed,
+          damage_multiplier: skillDef.fullChant.damageMultiplier,
+          cost: Math.ceil(skill.cost * (skillDef.fullChant.cursedEnergyCostMultiplier || 1.0)),
+          name: skill.name + '【完整】'
+        };
+      }
       const btn = document.createElement('button');
       btn.className = 'btn battle-skill-btn'; btn.dataset.skillId = skill.id;
-      if (skill.type === 'martial') btn.classList.add('skill-martial');
-      else if (skill.type === 'cursed') btn.classList.add('skill-cursed');
-      else if (skill.type === 'movement') btn.classList.add('skill-movement');
-      else if (skill.type === 'summon') btn.classList.add('skill-summon');
-      if (skill.cost > 0 && playerData.mp < skill.cost) btn.classList.add('cost-too-high');
+      if (effectiveSkill.type === 'martial') btn.classList.add('skill-martial');
+      else if (effectiveSkill.type === 'cursed') btn.classList.add('skill-cursed');
+      else if (effectiveSkill.type === 'movement') btn.classList.add('skill-movement');
+      else if (effectiveSkill.type === 'summon') btn.classList.add('skill-summon');
+      // Phase 18: category-specific class for refined styling
+      const category = skill.category || '';
+      if (category === 'cursed_buff') btn.classList.add('skill-category-buff');
+      else if (category === 'cursed_control') btn.classList.add('skill-category-control');
+      // Phase 17: 完整咒词按钮高亮
+      if (fullChantActive && skillDef && skillDef.fullChant) btn.classList.add('skill-chant-full');
+      if (effectiveSkill.cost > 0 && playerData.mp < effectiveSkill.cost) btn.classList.add('cost-too-high');
       const dn = ['贴身', '近', '中', '远'];
-      const minD = skill.min_distance !== undefined ? dn[skill.min_distance] : '?';
-      const maxD = skill.max_distance !== undefined ? dn[skill.max_distance] : '?';
-      const dr = (skill.type === 'movement') ? '' : ' [' + minD + '~' + maxD + ']';
-      const cl = skill.cost > 0 ? ' (MP ' + skill.cost + ')' : '';
-      const ctl = skill.cast_time !== undefined ? ' 咏唱' + skill.cast_time + '帧' : '';
-      const rvl = skill.base_recovery_speed !== undefined ? ' 补偿' + skill.base_recovery_speed : '';
-      btn.innerHTML = '<span class="skill-name">' + skill.name + dr + '</span><span class="skill-cost">' + cl + ctl + rvl + '</span>';
+      const minD = effectiveSkill.min_distance !== undefined ? dn[effectiveSkill.min_distance] : '?';
+      const maxD = effectiveSkill.max_distance !== undefined ? dn[effectiveSkill.max_distance] : '?';
+      const dr = (effectiveSkill.type === 'movement') ? '' : ' [' + minD + '~' + maxD + ']';
+      const cl = effectiveSkill.cost > 0 ? ' (MP ' + effectiveSkill.cost + ')' : '';
+      const ctl = effectiveSkill.cast_time !== undefined ? ' 咏唱' + effectiveSkill.cast_time + '帧' : '';
+      const rvl = effectiveSkill.base_recovery_speed !== undefined ? ' 补偿' + effectiveSkill.base_recovery_speed : '';
+      const enemyData = this.currentState?.enemy || (this.currentState?.units || []).find(u => u.unit_type === 'enemy');
+
+      // Phase 18: 按 category 不同显示不同信息，非攻击技能不显示伤害预估
+      let extraInfo = dr;  // 距离范围始终展示
+      if (category === 'cursed_buff') {
+        extraInfo = dr + ' <span style="font-size:0.65rem;color:#60a5fa;">🔼 自身强化</span>';
+      } else if (category === 'cursed_control') {
+        extraInfo = dr + ' <span style="font-size:0.65rem;color:#f59e0b;">🎯 控制/干扰</span>';
+      }
+
+      if (['martial', 'cursed_martial', 'cursed_attack'].includes(category) && effectiveSkill.damage_multiplier > 0 && enemyData) {
+          const baseDmg = Math.max(1, Math.floor(playerData.martial_arts * 2 + effectiveSkill.damage_multiplier * 10 - (enemyData.constitution || 10) * 0.5));
+          btn.innerHTML = '<span class="skill-name">' + effectiveSkill.name + extraInfo + ' <span style="color:#fbbf24;font-size:0.7rem;">基础' + baseDmg + '</span></span><span class="skill-cost">' + cl + ctl + rvl + '</span>';
+      } else {
+          btn.innerHTML = '<span class="skill-name">' + effectiveSkill.name + extraInfo + '</span><span class="skill-cost">' + cl + ctl + rvl + '</span>';
+      }
       body.appendChild(btn);
     }
   }
@@ -502,7 +676,7 @@ init_battle(json.dumps(save_data))
     } else {
       const st = this.uiManager.saveManager?.getState();
       const hasDomainUnlocked = st && st.domainUnlocked === st.techniqueId;
-      const TECHNIQUES_WITH_DOMAIN = ['limitless', 'tenShadows', 'boogieWoogie', 'curseManipulation', 'pureMartial'];
+      const TECHNIQUES_WITH_DOMAIN = ['limitless', 'tenShadows', 'boogieWoogie', 'curseManipulation', 'pureMartial', 'hakariGambling'];
       const hasDomainConfig = st && TECHNIQUES_WITH_DOMAIN.includes(st.techniqueId);
       const canExpand = hasDomainUnlocked && hasDomainConfig;
       html += '<button class="btn battle-domain-btn btn-primary" data-domain-id="' + (st?.techniqueId || 'cursedEnergyBoost') + '_domain"' + (canExpand ? '' : ' disabled') + '>🏛️ 领域展开' + (canExpand ? '' : ' (未学习)') + '</button>';
@@ -556,6 +730,14 @@ init_battle(json.dumps(save_data))
     const tracker = s._tracker || {};
     const usage = tracker.skill_usage || {};
 
+    // Phase 16 fix: 消耗战斗中使用过的道具
+    if (s._item_used && this.uiManager.saveManager) {
+      const saveSt = this.uiManager.saveManager.getState();
+      if (saveSt && saveSt.inventory && saveSt.inventory[s._item_used] > 0) {
+        saveSt.inventory[s._item_used]--;
+      }
+    }
+
     const examQuestId = this.uiManager.saveManager?.getState()?._examQuestId;
     if (examQuestId) {
       // Phase 11: 考核战斗胜利 - 完成考核任务
@@ -564,6 +746,20 @@ init_battle(json.dumps(save_data))
     }
 
     // 普通战斗奖励
+    // Phase 12 fix: 先回写战斗后的 HP/MP 到存档状态（兼容模块缓存）
+    const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    if (player && this.uiManager.saveManager) {
+      if (typeof this.uiManager.saveManager.applyBattleStatus === 'function') {
+        this.uiManager.saveManager.applyBattleStatus(player.hp, player.mp);
+      }
+      // 同时更新 state 上的 hp/mp 防止 renderMainScreen 覆盖
+      const st2 = this.uiManager.saveManager.getState();
+      if (st2) { st2.hp = player.hp; st2.mp = player.mp; }
+    }
+
+    // Phase 18 fix: 将 s._tracker 中的 skill_usage 传入 generate_battle_rewards，
+    // 而非使用空的 BattleTracker()（原代码丢弃了战斗期间积累的技能使用记录，导致熟练度始终为 0）
+    const trackerJson = JSON.stringify(tracker);
     this.pyodideLoader.runPython(`
 import sys, json
 sys.path.insert(0,"/home/pyodide")
@@ -571,7 +767,13 @@ for k in list(sys.modules.keys()):
  if "python" in k: sys.modules.pop(k,None)
 with open("/home/pyodide/python/battle_engine.py","r",encoding="utf-8") as f:
  exec(f.read())
-json.dumps(generate_battle_rewards(BattleTracker(), None))
+_td = json.loads('''${trackerJson}''')
+_tracker = BattleTracker()
+_tracker.skill_usage = _td.get("skill_usage", {})
+_tracker.money_reward = _td.get("money_reward", 0)
+_tracker.skill_points_reward = _td.get("skill_points_reward", 0)
+_tracker.inspiration_gained = _td.get("inspiration_gained", False)
+json.dumps(generate_battle_rewards(_tracker, None))
     `.trim()).then(rs => {
       try {
         const rewards = JSON.parse(rs);
@@ -589,6 +791,17 @@ json.dumps(generate_battle_rewards(BattleTracker(), None))
   }
 
   _completeExamQuest(examQuestId, tracker) {
+    // Phase 12 fix: 先回写战斗后 HP/MP 状态（兼容模块缓存：检查方法是否存在）
+    const s = this.currentState;
+    const player = s?.player || (s?.units || []).find(u => u.unit_type === 'player');
+    if (player && this.uiManager.saveManager) {
+      if (typeof this.uiManager.saveManager.applyBattleStatus === 'function') {
+        this.uiManager.saveManager.applyBattleStatus(player.hp, player.mp);
+      }
+      const st = this.uiManager.saveManager.getState();
+      if (st) { st.hp = player.hp; st.mp = player.mp; }
+    }
+
     // 调用 HubSystem 完成考核
     if (this.uiManager._hubSystem && typeof this.uiManager._hubSystem.completeExam === 'function') {
       const state = this.uiManager.saveManager.getState();
@@ -639,7 +852,7 @@ json.dumps(generate_battle_rewards(BattleTracker(), None))
       if (this.uiManager.saveManager && typeof this.uiManager.saveManager.applyBattleRewards === 'function') {
         this.uiManager.saveManager.applyBattleRewards(rewards);
       }
-      // Phase 11: 返回主界面防止反复领取奖励
+      // Phase 12: 返回主界面，HP/MP 已在 _showVictoryScreen 中回写
       if (this.uiManager && typeof this.uiManager.renderMainScreen === 'function') {
         this.uiManager.renderMainScreen();
         this.uiManager.showScreen('screen-main');
@@ -652,6 +865,82 @@ json.dumps(generate_battle_rewards(BattleTracker(), None))
     document.querySelectorAll('#battle-vow-body .battle-vow-btn').forEach(b => b.disabled = true);
     const dBtn = document.querySelector('#battle-domain-bar .battle-domain-btn');
     if (dBtn) dBtn.disabled = true;
+    // Phase 14: 锁定逃跑按钮
+    const fleeBtn = document.getElementById('btn-battle-flee');
+    if (fleeBtn) fleeBtn.disabled = true;
+  }
+
+  // ===== Phase 14: 重伤惩罚画面 =====
+
+  _showDefeatScreen(s) {
+    // Phase 18 fix: 清理考核标记，防止败北后下一场战斗误触考核结算
+    const defeatSt = this.uiManager.saveManager?.getState();
+    if (defeatSt) {
+      if (defeatSt._examQuestId) delete defeatSt._examQuestId;
+      if (defeatSt._forcedEnemyId) delete defeatSt._forcedEnemyId;
+    }
+
+    const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    if (player && this.uiManager.saveManager) {
+      const playerSaveSt = this.uiManager.saveManager.getState();
+      if (playerSaveSt) {
+        playerSaveSt.hp = 1; // 保底 1 HP
+        playerSaveSt.mp = Math.max(0, player.mp);
+        this.uiManager.saveManager.setState(playerSaveSt);
+      }
+    }
+
+    // 调用重伤惩罚逻辑
+    const hub = this.uiManager._hubSystem;
+    const injurySt = this.uiManager.saveManager.getState();
+    if (!injurySt) return;
+
+    const result = hub.applyHeavyInjuryPenalty(injurySt);
+    if (result.updatePayload) {
+      this.uiManager.saveManager.applyGrowthUpdate(result.updatePayload);
+    }
+
+    // 显示重伤弹窗
+    const penaltyText = result.penalties.join('\n');
+    this.uiManager.showModal(
+      `💀 重伤昏迷！\n\n${penaltyText}\n\n你被送回了咒术高专的医务室。`,
+      {
+        confirmOnly: true,
+        onConfirm: () => {
+          this.uiManager.hideModal();
+          this.uiManager.renderMainScreen();
+        }
+      }
+    );
+  }
+
+  /**
+   * Phase 18: 烟雾弹/逃跑成功 — 正常返回主界面，不触发胜利或败北逻辑
+   */
+  _handleFledEscape(s) {
+    // 回写 HP/MP
+    const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    if (player && this.uiManager.saveManager) {
+      const fledSaveSt = this.uiManager.saveManager.getState();
+      if (fledSaveSt) { fledSaveSt.hp = player.hp; fledSaveSt.mp = player.mp; this.uiManager.saveManager.setState(fledSaveSt); }
+    }
+    // 消耗道具
+    if (s._item_used && this.uiManager.saveManager) {
+      const itemSt = this.uiManager.saveManager.getState();
+      if (itemSt && itemSt.inventory && itemSt.inventory[s._item_used] > 0) {
+        itemSt.inventory[s._item_used]--;
+      }
+    }
+    // 清理考核残留标记（防止逃跑后下一场战斗误触考核结算）
+    const st = this.uiManager.saveManager?.getState();
+    if (st) {
+      if (st._examQuestId) delete st._examQuestId;
+      if (st._forcedEnemyId) delete st._forcedEnemyId;
+    }
+    setTimeout(() => {
+      this.uiManager.renderMainScreen();
+      this.uiManager.showScreen('screen-main');
+    }, 800);
   }
 
   async _executeAction(action) {
@@ -737,7 +1026,366 @@ execute_action(json.dumps(_action), json.dumps(_state))
     let hp = 100 * barrier + 5 * barrier;
     let atkDmg = 50 * Math.max(1, totalTech);
     if (!isComplete) { hp = Math.floor(hp * 0.6); atkDmg = Math.floor(atkDmg * 0.6); }
-    const domainNames = { limitless: '无量空处', tenShadows: '嵌合暗翳庭', boogieWoogie: '不义游戏·领域', curseManipulation: '极之番·漩涡', pureMartial: '天与咒缚·体' };
+    // Phase 17 fix: 坐杀博徒领域攻击力为 0（纯抽奖机制）
+    const domainNames = { limitless: '无量空处', tenShadows: '嵌合暗翳庭', boogieWoogie: '不义游戏·领域', curseManipulation: '极之番·漩涡', pureMartial: '天与咒缚·体', hakariGambling: '坐杀博徒' };
+    if (techId === 'hakariGambling') {
+      atkDmg = 0;
+      hp = 400;  // 坐杀博徒固定 HP
+    }
     this._executeAction({ type: 'expand_domain', actor: 'player', domain_id: domainId, domain_name: domainNames[techId] || '领域', is_complete: isComplete, domain_hp: hp, attack_interval: 10, attack_damage: atkDmg, mp_cost: 5 });
+  }
+
+  // ===== Phase 14: 动态逃跑机制 =====
+
+  _calculateEscapeChance() {
+    const s = this.currentState;
+    if (!s) return 0;
+
+    const enemy = s.enemy || (s.units || []).find(u => u.unit_type === 'enemy');
+    const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    if (!enemy || !player) return 0;
+
+    // 从敌人数据中读取 baseChance (战斗中无法直接读 JS 数据, 使用敌人属性推断)
+    // 优先使用 enemy 对象上可能附带的 escapeBaseChance
+    const baseChance = enemy.escapeBaseChance !== undefined ? enemy.escapeBaseChance : 50;
+
+    // 攻击次数: 从 battle tracker 统计
+    const tracker = s._tracker || {};
+    const skillUsage = tracker.skill_usage || {};
+    let attackCount = 0;
+    for (const count of Object.values(skillUsage)) attackCount += count;
+
+    // HP 百分比
+    const hpRatio = player.max_hp > 0 ? (player.hp / player.max_hp) : 1;
+
+    // Phase 14 公式: max(0, baseChance - attackCount*20 - (1-hpRatio)*100*0.5)
+    let chance = baseChance - (attackCount * 20) - ((1 - hpRatio) * 100 * 0.5);
+    chance = Math.max(0, Math.min(100, Math.round(chance)));
+
+    // 如果已逃跑失败过, 锁定为 0
+    if (this._escapeLocked) chance = 0;
+
+    return chance;
+  }
+
+  _handleEscapeAttempt() {
+    const s = this.currentState;
+    if (!s) return;
+
+    // 逃跑失败已被锁定
+    if (this._escapeLocked) {
+      this._appendLog('逃跑已不可用——你错过了逃跑的最佳时机。');
+      return;
+    }
+
+    const chance = this._calculateEscapeChance();
+    const roll = Math.floor(Math.random() * 100) + 1; // 1-100
+
+    if (roll <= chance) {
+      // 逃跑成功
+      this._appendLog(`逃跑成功！（概率 ${chance}%，掷出 ${roll}）`);
+      this._disableAllSkills();
+      // 回写 HP/MP
+      const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+      if (player && this.uiManager.saveManager) {
+        const st = this.uiManager.saveManager.getState();
+        if (st) { st.hp = player.hp; st.mp = player.mp; this.uiManager.saveManager.setState(st); }
+      }
+      // 延迟返回主界面
+      setTimeout(() => {
+        this.uiManager.renderMainScreen();
+        this.uiManager.showScreen('screen-main');
+      }, 800);
+    } else {
+      // 逃跑失败 — 锁定逃跑按钮
+      this._escapeLocked = true;
+      this._appendLog(`逃跑失败！（概率 ${chance}%，掷出 ${roll}）———— 逃跑已不可用！`);
+      // 禁用逃跑按钮
+      const fleeBtn = document.getElementById('btn-battle-flee');
+      if (fleeBtn) { fleeBtn.disabled = true; fleeBtn.textContent = '逃跑(已失败)'; }
+      // 强制结束玩家回合
+      this._executeAction({ type: 'tick' });
+    }
+  }
+
+  // ===== Phase 12: 状态栏渲染（Buff/Debuff 显式化）=====
+
+  _renderStatusBar(prefix, data) {
+    const statuses = data.status_effects || [];
+    // Also include mapped domain_counter_buffs as statuses
+    const domainCounters = data.domain_counter_buffs || [];
+    let container = document.getElementById(prefix + '-status-bar');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = prefix + '-status-bar';
+      container.className = 'battle-status-bar';
+      const cardEl = document.querySelector(`#screen-battle .battle-${prefix}-section .battle-char-card`);
+      if (cardEl) cardEl.appendChild(container);
+    }
+
+    if (statuses.length === 0 && domainCounters.length === 0) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = 'flex';
+    container.style.flexWrap = 'wrap';
+    container.style.gap = '4px';
+
+    let html = '';
+    // Render status_effects
+    for (const se of statuses) {
+      const type = se.type || 'buff';
+      const borderColor = type === 'debuff' ? 'var(--color-danger, #ef4444)' : 'var(--color-gold, #eab308)';
+      const bgColor = type === 'debuff' ? 'rgba(239,68,68,0.15)' : 'rgba(234,179,8,0.15)';
+      const durText = se.duration > 0 ? Math.floor(se.duration) + 's' : '';
+      const detail = se.description ? ` title="${escapeHtml(se.description)}"` : '';
+      html += `<span class="battle-status-badge" data-status-id="${escapeHtml(se.id)}" data-status-type="${type}" style="border:2px solid ${borderColor};background:${bgColor};cursor:pointer;padding:2px 6px;border-radius:4px;font-size:0.75rem;display:inline-flex;align-items:center;gap:2px;"${detail}>
+        <span class="status-icon">${escapeHtml(se.icon || (type === 'debuff' ? '✕' : '✦'))}</span>
+        <span class="status-name status-collapsed">${escapeHtml(se.name)}</span>
+        ${durText ? `<span class="status-dur">${durText}</span>` : ''}
+      </span>`;
+    }
+    // Also render domain_counter_buffs not already in status_effects
+    const statusIds = new Set(statuses.map(s => s.id));
+    const mapped = { simple_domain: 'simple_domain_active', falling_blossom: 'falling_blossom_active', hollow_wicker: 'hollow_wicker_active' };
+    for (const db of domainCounters) {
+      const statusId = mapped[db.id];
+      if (statusId && statusIds.has(statusId)) continue; // already shown via status_effects
+      const isBuff = true;
+      const borderColor = 'var(--color-gold, #eab308)';
+      const bgColor = 'rgba(234,179,8,0.15)';
+      const shieldText = db.current_shield_hp ? ` 护盾${db.current_shield_hp}` : '';
+      html += `<span class="battle-status-badge" data-status-id="${escapeHtml(db.id)}" data-status-type="buff" style="border:2px solid ${borderColor};background:${bgColor};cursor:pointer;padding:2px 6px;border-radius:4px;font-size:0.75rem;display:inline-flex;align-items:center;gap:2px;" title="${escapeHtml(db.name + shieldText)}">
+        <span class="status-icon">🛡️</span>
+        <span class="status-name status-collapsed">${escapeHtml(db.name)}</span>
+      </span>`;
+    }
+    container.innerHTML = html;
+  }
+
+  _toggleStatusBadge(badge) {
+    if (!badge) return;
+    // Toggle pin: click to permanently expand/collapse
+    const isPinned = badge.classList.toggle('status-pinned');
+    const nameSpan = badge.querySelector('.status-name');
+    const descEl = badge.querySelector('.status-desc-inline');
+    if (isPinned) {
+      if (nameSpan) nameSpan.classList.add('status-expanded');
+      // Show inline description
+      const desc = badge.getAttribute('title') || '';
+      if (desc && !descEl) {
+        const descSpan = document.createElement('span');
+        descSpan.className = 'status-desc-inline';
+        descSpan.style.cssText = 'font-size:0.65rem;color:var(--color-text-dim, #888);margin-left:4px;max-width:150px;white-space:normal;';
+        descSpan.textContent = desc;
+        badge.appendChild(descSpan);
+      }
+    } else {
+      if (nameSpan) nameSpan.classList.remove('status-expanded');
+      if (descEl) descEl.remove();
+    }
+  }
+
+  // ===== Phase 12: 反转术式 UI（技能按钮 + 消耗滑块弹窗）=====
+
+  _renderItemPanel(s) {
+    const body = document.getElementById('battle-items-body');
+    if (!body) return;
+    const playerData = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    if (!playerData) return;
+
+    const st = this.uiManager.saveManager?.getState();
+    const inventory = st?.inventory || {};
+
+    // 战斗可用道具：烟雾弹、肾上腺素
+    const battleItems = [
+      { id: 'smokeBomb', name: '烟雾弹', desc: '必定逃跑成功' },
+      { id: 'adrenalineShot', name: '肾上腺素', desc: '恢复 60 HP' }
+    ];
+
+    let html = '';
+    for (const item of battleItems) {
+      const owned = inventory[item.id] || 0;
+      const canUse = owned > 0;
+      html += `<button class="btn btn-primary battle-item-btn" data-action="use-item" data-item-id="${item.id}" ${canUse ? '' : 'disabled'}>
+        ${item.name} (持有: ${owned}) — ${item.desc}
+      </button>`;
+    }
+    body.innerHTML = html || '<span style="color:var(--color-text-dim);">没有可用的战斗道具。</span>';
+  }
+
+  _renderToolPanel(s) {
+    const body = document.getElementById('battle-tools-body');
+    if (!body) return;
+    const st = this.uiManager.saveManager?.getState();
+    const equipment = st?.equipment || {};
+
+    // 检查已装备中的有 activeBuff 的咒具
+    const toolsWithActive = [
+      { id: 'playfulCloud', name: '游云', desc: '体术伤害 +体术×0.5，咒术 +咒力操控×0.5，持续80AV。ATB归零。' },
+    ];
+
+    let html = '';
+    for (const tool of toolsWithActive) {
+      const isEquipped = Object.values(equipment).includes(tool.id);
+      if (!isEquipped) continue;
+      const alreadyUsed = s.used_tool_active_skill;
+      html += `<button class="btn btn-primary battle-tool-btn" data-action="use-tool-active" data-tool-id="${tool.id}" ${alreadyUsed ? 'disabled' : ''}>
+        ${tool.name} — ${tool.desc} ${alreadyUsed ? '(已使用)' : ''}
+      </button>`;
+    }
+    body.innerHTML = html || '<span style="color:var(--color-text-dim);">未装备具备主动技能的咒具。</span>';
+  }
+
+  _renderRCTButton(s) {
+    // Create or get the RCT button container
+    let container = document.getElementById('battle-rct-area');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'battle-rct-area';
+      container.className = 'battle-rct-area';
+      const skillsEl = document.getElementById('battle-skills');
+      if (skillsEl && skillsEl.parentNode) {
+        skillsEl.parentNode.insertBefore(container, skillsEl);
+      }
+    }
+
+    const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    if (!player || !player.is_alive) {
+      container.innerHTML = '';
+      return;
+    }
+
+    // Check if player has unlocked RCT
+    const saveState = this.uiManager.saveManager?.getState();
+    const rctUnlocked = saveState && (saveState.advanced_skills_unlocked || []).includes('rct');
+    if (!rctUnlocked) {
+      container.innerHTML = '';
+      return;
+    }
+
+    // Check for blocking debuffs
+    const statuses = player.status_effects || [];
+    const hasCooldown = statuses.some(se => se.id === 'rct_cooldown');
+    const hasBurnout = statuses.some(se => se.id === 'domain_burnout');
+    const hasCurseSeal = statuses.some(se => se.id === 'curse_seal');
+
+    const blockedReason = hasBurnout ? '领域熔断中' : hasCurseSeal ? '咒力被封' : hasCooldown ? '冷却中' : '';
+    const canUse = !blockedReason && player.mp > 0;
+
+    container.innerHTML = `
+      <button class="btn btn-rct-heal${canUse ? '' : ' cost-too-high'}" data-action="rct-dialog" ${canUse ? '' : 'disabled'}>
+        💚 反转术式${blockedReason ? ' (' + blockedReason + ')' : ''}
+        <span class="skill-cost">${canUse ? 'MP 1~' + player.mp : ''}</span>
+      </button>
+    `;
+  }
+
+  /**
+   * Phase 17: 完整咒词切换开关 — 仅限无下限术式玩家
+   */
+  _renderFullChantToggle(s) {
+    let container = document.getElementById('battle-chant-toggle-area');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'battle-chant-toggle-area';
+      container.className = 'battle-chant-toggle-area';
+      const skillsEl = document.getElementById('battle-skills');
+      if (skillsEl && skillsEl.parentNode) {
+        skillsEl.parentNode.insertBefore(container, skillsEl);
+      }
+    }
+    const st = this.uiManager.saveManager?.getState();
+    const isLimitless = st?.techniqueId === 'limitless';
+    if (!isLimitless) { container.innerHTML = ''; return; }
+
+    const fullChantActive = this._fullChantActive || false;
+    container.innerHTML = '<button id="btn-chant-toggle" class="btn btn-system" style="font-size:0.8rem;margin:0.2rem 0;">' +
+      (fullChantActive ? '📜 完整咒词 ·开' : '📜 完整咒词 ·关') +
+      '</button>';
+
+    setTimeout(() => {
+      const btn = document.getElementById('btn-chant-toggle');
+      if (btn) {
+        btn.onclick = () => {
+          this._fullChantActive = !this._fullChantActive;
+          // Full re-render to update skill buttons and toggle label
+          this._renderAll();
+        };
+      }
+    }, 50);
+  }
+
+  _showRCTDialog() {
+    const s = this.currentState;
+    const player = s.player || (s.units || []).find(u => u.unit_type === 'player');
+    if (!player) return;
+
+    const mpAvailable = player.mp;
+    if (mpAvailable <= 0) return;
+
+    // Get save state for efficiency preview
+    const saveState = this.uiManager.saveManager?.getState();
+    const cee = (saveState && saveState.attributes && saveState.attributes.cursedEnergyEfficiency) || player.cursed_energy_efficiency || 10;
+    const efficiency = calculateRCTEfficiency(cee);
+
+    const containerId = 'rct-dialog-' + Date.now();
+    const html = `
+      <div id="${containerId}" class="rct-dialog">
+        <h4>💚 反转术式</h4>
+        <p class="rct-efficiency">咒力效率: ${cee} → 回复倍率: ${efficiency.toFixed(3)}</p>
+        <input type="range" id="${containerId}-slider" min="1" max="${mpAvailable}" value="${Math.floor(mpAvailable / 2)}" class="rct-slider">
+        <div class="rct-values">
+          <span>消耗: <strong id="${containerId}-cost">${Math.floor(mpAvailable / 2)}</strong> MP</span>
+          <span>回复: <strong id="${containerId}-heal" style="color:#22c55e;">${Math.floor(Math.floor(mpAvailable / 2) * efficiency)}</strong> HP</span>
+        </div>
+        <p class="rct-preview" id="${containerId}-cap-warn"></p>
+        <button class="btn btn-primary btn-rct-confirm" id="${containerId}-confirm">确认回复</button>
+      </div>
+    `;
+
+    this.uiManager.showModal(html, { confirmOnly: false, useHTML: true });
+
+    // Wire up slider and confirm button after DOM is rendered
+    setTimeout(() => {
+      const slider = document.getElementById(containerId + '-slider');
+      const costEl = document.getElementById(containerId + '-cost');
+      const healEl = document.getElementById(containerId + '-heal');
+      const warnEl = document.getElementById(containerId + '-cap-warn');
+      const confirmBtn = document.getElementById(containerId + '-confirm');
+
+      if (!slider || !confirmBtn) return;
+
+      const hpMax = player.max_hp;
+      const hpCur = player.hp;
+      const hpRoom = hpMax - hpCur;
+
+      const updatePreview = (val) => {
+        const consume = parseInt(val);
+        const rawHeal = Math.floor(consume * efficiency);
+        const actualHeal = Math.min(rawHeal, hpRoom);
+        costEl.textContent = consume;
+        healEl.textContent = actualHeal;
+        if (rawHeal > hpRoom) {
+          warnEl.textContent = `⚠️ 溢出 ${rawHeal - hpRoom} HP（当前 ${hpCur}/${hpMax}）`;
+        } else {
+          warnEl.textContent = '';
+        }
+      };
+
+      slider.oninput = () => updatePreview(slider.value);
+      updatePreview(slider.value);
+
+      confirmBtn.onclick = () => {
+        const consume = parseInt(slider.value);
+        this.uiManager.hideModal();
+        this._executeAction({
+          type: 'rct_heal',
+          actor: 'player',
+          consume_amount: consume
+        });
+      };
+    }, 100);
   }
 }

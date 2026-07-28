@@ -72,5 +72,13 @@ export const TECHNIQUES = [
     flavorText: "筋力。速度。反射。以纯粹的肉体极限超越一切。",
     requirements: { martialArts: 26, constitution: 26 },
     isDefault: false
+  },
+  {
+    id: "hakariGambling",
+    name: "坐杀博徒",
+    description: "将一切赌在概率之上。以小钢珠与门起手，展开领域进行抽奖。",
+    flavorText: "\"下一抽就会中了。\"——秤金次的狂言，赌徒的浪漫。",
+    requirements: { cursedEnergy: 22, talent: 24 },
+    isDefault: false
   }
 ];

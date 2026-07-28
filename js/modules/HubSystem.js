@@ -202,20 +202,26 @@ export class HubSystem {
     }
 
     if (effect.type === 'unlock_prerequisite') {
-      // Phase 11: 请教获得的解锁基础（如 simple_domain_basics）
+      // Phase 11/18: 请教获得的解锁基础（如 simple_domain_basics, black_market）
       const unlockedPrereqs = characterState.advanced_skills_unlocked || [];
       if (unlockedPrereqs.includes(effect.unlockKey)) {
         return { success: false, log: '你已经掌握了这项基础。', updatePayload: null };
       }
 
+      const payload = {
+        ap: -(action.cost.ap || 0),
+        [`relationships.${npcId}`]: -(action.cost.relationship || 0),
+        advanced_skills_unlocked_add: effect.unlockKey
+      };
+      // Phase 18 fix: black_market 需要写入 _unlocks 供 shopSystem 校验
+      if (effect.unlockKey === 'black_market') {
+        payload._unlocks = { black_market: true };
+      }
+
       return {
         success: true,
         log: `你向${npc.name}请教了「${action.name}」——${effect.description || '获得了新的知识基础。'}`,
-        updatePayload: {
-          ap: -(action.cost.ap || 0),
-          [`relationships.${npcId}`]: -(action.cost.relationship || 0),
-          advanced_skills_unlocked_add: effect.unlockKey
-        }
+        updatePayload: payload
       };
     }
 

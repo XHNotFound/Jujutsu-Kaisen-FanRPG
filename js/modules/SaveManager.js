@@ -361,6 +361,14 @@ export class SaveManager {
         }
         continue;
       }
+      // Phase 18: _unlocks 合并（黑市等解锁标记）
+      if (key === '_unlocks' && typeof value === 'object') {
+        if (!this.state._unlocks) this.state._unlocks = {};
+        for (const [k, v] of Object.entries(value)) {
+          this.state._unlocks[k] = v;
+        }
+        continue;
+      }
       // Phase 11: 考核冷却
       if (key === 'examCooldownDays') {
         this.state.examCooldownDays = Math.max(0, (this.state.examCooldownDays || 0) + value);
